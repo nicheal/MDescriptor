@@ -30,7 +30,7 @@ std::vector<double> ewald_matrix_values(
     if (r_cut <= 0.0 || g_cut <= 0.0) {
         throw std::invalid_argument("r_cut and g_cut must be provided together");
     }
-    // Match DScribe's Lattice.get_points_in_sphere: image bounds depend on
+    // Match reference implementation's Lattice.get_points_in_sphere: image bounds depend on
     // the center atom and the upper integer bound is exclusive. This avoids
     // double-counting images exactly on the real-space cutoff sphere.
     const double inverse_norms[3] = {

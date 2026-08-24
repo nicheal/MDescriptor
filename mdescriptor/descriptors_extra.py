@@ -1,7 +1,7 @@
 """C++-backed matrix and histogram descriptors.
 
 This module is deliberately a thin Python adapter. Descriptor kernels are
-computed by ``mdescriptor._descriptor_cpp``; NumPy retains DScribe-compatible
+computed by ``mdescriptor._descriptor_cpp``; NumPy retains reference implementation-compatible
 sorting semantics and the public array contract, while ASE is used only by
 :class:`StructureBatch` input packing.
 """
@@ -54,7 +54,7 @@ class _StructureCalculator:
         return self.compute(value, control).values
 
 
-def _sort_matrix_values_like_dscribe(
+def _sort_matrix_values_like_reference(
     values: np.ndarray,
     batch: StructureBatch,
     counts: np.ndarray,
@@ -117,7 +117,7 @@ class _MatrixCalculator(_StructureCalculator):
                     float(getattr(self, "a", 0.0) or 0.0), control,
                 )
             if python_sorted_l2:
-                values = _sort_matrix_values_like_dscribe(
+                values = _sort_matrix_values_like_reference(
                     np.asarray(values, dtype=np.float64), batch, counts, max_atoms,
                     sine_diagonal=self.kind == 0, exponent=self.exponent,
                 )

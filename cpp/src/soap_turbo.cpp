@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "featomic_spherical_common.hpp"
+#include "local_spherical_common.hpp"
 
 namespace mdescriptor {
 using namespace detail;

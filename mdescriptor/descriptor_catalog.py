@@ -12,7 +12,7 @@ from .descriptors_extra import (
     SineMatrixCalculator,
     ValleOganovCalculator,
 )
-from .descriptors_featomic import (
+from .descriptors_local import (
     AtomicCompositionCalculator,
     LodeSphericalExpansionCalculator,
     NeighborListCalculator,
@@ -22,7 +22,7 @@ from .descriptors_featomic import (
     SphericalExpansionByPairCalculator,
     SphericalExpansionCalculator,
 )
-from .descriptors_pyxtal import EadCalculator, LbispectrumCalculator, SnapCalculator, So3Calculator, So4Calculator
+from .descriptors_rotational import EadCalculator, LbispectrumCalculator, SnapCalculator, So3Calculator, So4Calculator
 from .descriptors_mtp import MtpCalculator
 from .descriptors_nep import NepCalculator
 from .descriptors_dpa4 import Dpa4Calculator

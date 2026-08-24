@@ -13,7 +13,7 @@ inline std::vector<double> eigenvalues_symmetric(std::vector<double> matrix, int
 
     // Reduce the symmetric matrix to tridiagonal form with Householder
     // reflections. The implicit QL iteration below is O(n^3), matching the
-    // algorithmic cost of Eigen::SelfAdjointEigenSolver used by DScribe.
+    // algorithmic cost of Eigen::SelfAdjointEigenSolver used by reference implementation.
     std::vector<double> diagonal(static_cast<std::size_t>(size), 0.0);
     std::vector<double> off_diagonal(static_cast<std::size_t>(size), 0.0);
     for (int row = size - 1; row > 0; --row) {
@@ -167,7 +167,7 @@ inline void write_matrix(
     }
     std::vector<std::size_t> order(static_cast<std::size_t>(count));
     if (permutation == "sorted_l2") {
-        order = dscribe_sorted_l2_order(matrix, static_cast<std::size_t>(count));
+        order = reference_sorted_l2_order(matrix, static_cast<std::size_t>(count));
     } else if (permutation != "none") {
         throw std::invalid_argument("permutation must be 'none', 'sorted_l2', or 'eigenspectrum'");
     } else {

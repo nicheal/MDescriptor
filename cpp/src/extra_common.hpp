@@ -30,13 +30,13 @@ inline double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 inline double norm2(Vec3 value) { return dot(value, value); }
 inline double norm(Vec3 value) { return std::sqrt(norm2(value)); }
 
-inline double dscribe_row_l2_norm(
+inline double reference_row_l2_norm(
     const std::vector<double>& matrix,
     std::size_t row,
     std::size_t columns) {
     const std::size_t offset = row * columns;
     double squared_norm = 0.0;
-    // CoulombMatrix is calculated and sorted by DScribe's Eigen extension.
+    // CoulombMatrix is calculated and sorted by reference implementation's Eigen extension.
     // Keep its four-value packet reduction order for near-tied row norms.
     const std::size_t grouped_end = columns & ~std::size_t(3);
     for (std::size_t column = 0; column < grouped_end; column += 4) {
@@ -51,14 +51,14 @@ inline double dscribe_row_l2_norm(
     return std::sqrt(squared_norm);
 }
 
-inline std::vector<std::size_t> dscribe_sorted_l2_order(
+inline std::vector<std::size_t> reference_sorted_l2_order(
     const std::vector<double>& matrix,
     std::size_t count) {
     std::vector<std::size_t> order(count);
     std::iota(order.begin(), order.end(), 0);
     std::vector<double> norms(count, 0.0);
     for (std::size_t row = 0; row < count; ++row) {
-        norms[row] = dscribe_row_l2_norm(matrix, row, count);
+        norms[row] = reference_row_l2_norm(matrix, row, count);
     }
     std::stable_sort(order.begin(), order.end(), [&](std::size_t left, std::size_t right) {
         return norms[left] > norms[right];

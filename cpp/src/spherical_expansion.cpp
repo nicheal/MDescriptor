@@ -1,6 +1,6 @@
-#include "mdescriptor/featomic.hpp"
+#include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/neighbor.hpp"
-#include "featomic_spherical_common.hpp"
+#include "local_spherical_common.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,18 +10,18 @@
 namespace mdescriptor {
 using namespace detail;
 
-std::int64_t featomic_feature_count(const FeatomicOptions& options, FeatomicKind kind) {
+std::int64_t local_descriptor_feature_count(const LocalDescriptorOptions& options, LocalDescriptorKind kind) {
     validate_options(options);
     if (options.species.empty()) {
         throw std::invalid_argument("species must not be empty");
     }
-    return local_feature_count(options, kind);
+    return detail::local_feature_count(options, kind);
 }
 
-void compute_featomic_spherical(
+void compute_spherical_expansion(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
-    FeatomicKind kind,
+    const LocalDescriptorOptions& options,
+    LocalDescriptorKind kind,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
     validate_options(options);
@@ -31,7 +31,7 @@ void compute_featomic_spherical(
     }
     const TypeMap mapping = make_type_map(options.species);
     const auto atom_types = make_atom_types(batch, mapping);
-    if (kind == FeatomicKind::LodeSphericalExpansion) {
+    if (kind == LocalDescriptorKind::LodeSphericalExpansion) {
         if (options.exponent > 9) {
             throw std::invalid_argument("LODE exponent must be between 1 and 9");
         }
@@ -46,9 +46,9 @@ void compute_featomic_spherical(
     }
     const NeighborGraph graph = build_neighbor_graph(batch, options.cutoff, control, options.num_threads);
     const int n_radial = options.max_radial + 1;
-    const int max_angular = kind == FeatomicKind::SoapRadialSpectrum ? 0 : options.max_angular;
+    const int max_angular = kind == LocalDescriptorKind::SoapRadialSpectrum ? 0 : options.max_angular;
     const std::int64_t features = local_feature_count(options, kind);
-    FeatomicOptions coefficient_options = options;
+    LocalDescriptorOptions coefficient_options = options;
     coefficient_options.max_angular = max_angular;
     std::fill(output, output + batch.atoms * features, 0.0);
     static thread_local int cached_max_radial = -1;
@@ -102,7 +102,7 @@ void compute_featomic_spherical(
                 batch, graph, center, coefficient_options, atom_types, radial_bases, false,
                 coefficients, harmonics, legendre, radial, radial_raw);
             double* row = output + center * features;
-            if (kind == FeatomicKind::SoapRadialSpectrum) {
+            if (kind == LocalDescriptorKind::SoapRadialSpectrum) {
                 row += center_type * species_count * radial_count;
                 for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
                     for (int n = 0; n < n_radial; ++n) {
@@ -110,7 +110,7 @@ void compute_featomic_spherical(
                             = coefficients[coefficient_index(neighbor_type, n, 0, 0, n_radial, coefficient_options.max_angular)];
                         }
                     }
-            } else if (kind == FeatomicKind::SoapPowerSpectrum) {
+            } else if (kind == LocalDescriptorKind::SoapPowerSpectrum) {
                 row += center_type * power_center_stride;
                 std::size_t offset = 0;
                 const int coefficient_width = 2 * options.max_angular + 1;

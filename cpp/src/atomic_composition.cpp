@@ -1,5 +1,5 @@
-#include "mdescriptor/featomic.hpp"
-#include "featomic_common.hpp"
+#include "mdescriptor/local_descriptors.hpp"
+#include "local_common.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -8,7 +8,7 @@
 namespace mdescriptor {
 using namespace detail;
 
-void compute_featomic_atomic_composition(
+void compute_atomic_composition(
     const StructureBatchView& batch,
     const std::vector<std::int32_t>& species,
     bool per_system,

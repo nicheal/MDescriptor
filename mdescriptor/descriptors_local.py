@@ -1,6 +1,6 @@
-"""C++-backed Featomic-compatible descriptor adapters.
+"""C++-backed local descriptor adapters.
 
-The names mirror the supported Featomic families, but no Featomic package is
+The names mirror the supported local descriptor families, but no external package is
 imported or required. Every value path enters ``_descriptor_cpp`` directly.
 """
 
@@ -63,7 +63,7 @@ class AtomicCompositionCalculator:
         batch = _as_batch(value)
         species = self.species or tuple(int(item) for item in np.unique(batch.numbers))
         self.species = species
-        values = _cpp.compute_featomic_atomic_composition(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.per_system, control)
+        values = _cpp.compute_atomic_composition(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.per_system, control)
         self._feature_count = int(values.shape[1])
         return _atom_result(values, batch, self.name, species, level="structure" if self.per_system else "atom", offsets=None if self.per_system else batch.offsets.copy())
 
@@ -84,7 +84,7 @@ class SortedDistancesCalculator(_AtomCalculator):
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
         species = self._species_for(batch)
-        values = _cpp.compute_featomic_sorted_distances(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.max_neighbors, self.separate_neighbor_types, self.num_threads, control)
+        values = _cpp.compute_sorted_distances(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.max_neighbors, self.separate_neighbor_types, self.num_threads, control)
         self._feature_count = int(values.shape[1])
         return _atom_result(values, batch, self.name, species, offsets=batch.offsets.copy())
 
@@ -102,7 +102,7 @@ class NeighborListCalculator:
         return 9
 
     def _raw(self, batch: StructureBatch, control: Any = None) -> tuple[np.ndarray, np.ndarray]:
-        values, offsets = _cpp.compute_featomic_neighbor_list(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, self.cutoff, self.full_neighbor_list, self.self_pairs, control)
+        values, offsets = _cpp.compute_neighbor_list(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, self.cutoff, self.full_neighbor_list, self.self_pairs, control)
         return np.asarray(values, dtype=np.float64), np.asarray(offsets, dtype=np.int64)
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
@@ -134,11 +134,11 @@ class SphericalExpansionCalculator(_AtomCalculator):
         batch = _as_batch(value)
         species = self._species_for(batch)
         if self.name == "SphericalExpansionByPair":
-            values, offsets, identifiers = _cpp.compute_featomic_spherical_by_pair(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self.num_threads, control)
+            values, offsets, identifiers = _cpp.compute_spherical_expansion_by_pair(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self.num_threads, control)
             values = np.asarray(values, dtype=np.float64)
             self._feature_count = int(values.shape[1])
             return DescriptorResult(values, "pair", batch.ids, np.asarray(offsets, dtype=np.int64), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name, "species": species, "pair_records": np.asarray(identifiers, dtype=np.float64)})
-        values = _cpp.compute_featomic_spherical(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self._kind, getattr(self, "k_cutoff", 2.5), getattr(self, "exponent", 1), getattr(self, "radial_radius", self.cutoff), self.num_threads, control)
+        values = _cpp.compute_spherical_expansion(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self._kind, getattr(self, "k_cutoff", 2.5), getattr(self, "exponent", 1), getattr(self, "radial_radius", self.cutoff), self.num_threads, control)
         values = np.asarray(values, dtype=np.float64)
         self._feature_count = int(values.shape[1])
         return _atom_result(values, batch, self.name, species, offsets=batch.offsets.copy())

@@ -143,15 +143,15 @@ private:
     std::atomic<bool> closed_{false};
 };
 
-enum class PyxtalKind : std::int32_t {
+enum class RotationalDescriptorKind : std::int32_t {
     SO3 = 0,
     SO4 = 1,
     SNAP = 2,
     LBispectrum = 3,
 };
 
-struct PyxtalOptions {
-    PyxtalKind kind = PyxtalKind::SO3;
+struct RotationalDescriptorOptions {
+    RotationalDescriptorKind kind = RotationalDescriptorKind::SO3;
     int n_max = 3;
     int l_max = 3;
     double cutoff = 3.5;
@@ -168,10 +168,10 @@ struct PyxtalOptions {
     int diagonal = 3;
 };
 
-std::int64_t pyxtal_feature_count(const PyxtalOptions& options);
-void compute_pyxtal(
+std::int64_t rotational_feature_count(const RotationalDescriptorOptions& options);
+void compute_rotational_descriptors(
     const StructureBatchView& batch,
-    const PyxtalOptions& options,
+    const RotationalDescriptorOptions& options,
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 

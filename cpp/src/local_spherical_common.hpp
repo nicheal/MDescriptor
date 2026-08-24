@@ -1,6 +1,6 @@
 #pragma once
 
-#include "featomic_common.hpp"
+#include "local_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -25,7 +25,7 @@ constexpr double kSqrt2 = 1.414213562373095048801688724209698079;
 inline double gamma_value(double x) {
     const double value = std::tgamma(x);
     if (!std::isfinite(value) || value <= 0.0) {
-        throw std::invalid_argument("Featomic radial basis is numerically singular");
+        throw std::invalid_argument("local descriptor radial basis is numerically singular");
     }
     return value;
 }
@@ -40,7 +40,7 @@ inline double hyp1f1_series(double a, double b, double x) {
             break;
         }
         if (!std::isfinite(sum)) {
-            throw std::invalid_argument("Featomic radial integral overflow");
+            throw std::invalid_argument("local descriptor radial integral overflow");
         }
     }
     return sum;
@@ -232,7 +232,7 @@ inline double hyp1f1(double a, double b, double x) {
 
 // The direct series loses most significant digits for positive x once the
 // exponentially growing branch dominates. This is the same large-x branch as
-// Featomic's CHGM implementation, reduced to the regularized combination used
+// local descriptor's CHGM implementation, reduced to the regularized combination used
 // by the GTO radial integral. It avoids forming Gamma(a)/Gamma(b) * exp(x)
 // separately and therefore remains stable for narrow densities.
 inline double regularized_hyp1f1_positive(double a, double b, double x) {
@@ -573,7 +573,7 @@ inline void compute_coefficients_into(
     const StructureBatchView& batch,
     const NeighborGraph& graph,
     std::int64_t center,
-    const FeatomicOptions& options,
+    const LocalDescriptorOptions& options,
     const std::vector<std::int32_t>& atom_types,
     const std::vector<GtoRadialBasis>& radial_bases,
     bool lode,
@@ -630,14 +630,14 @@ inline void compute_coefficients_into(
     }
 }
 
-inline std::int64_t local_feature_count(const FeatomicOptions& options, FeatomicKind kind) {
+inline std::int64_t local_feature_count(const LocalDescriptorOptions& options, LocalDescriptorKind kind) {
     const std::int64_t species = static_cast<std::int64_t>(options.species.size());
     const std::int64_t radial = static_cast<std::int64_t>(options.max_radial + 1);
     const std::int64_t angular = static_cast<std::int64_t>(options.max_angular + 1);
     switch (kind) {
-    case FeatomicKind::SoapRadialSpectrum:
+    case LocalDescriptorKind::SoapRadialSpectrum:
         return species * species * radial;
-    case FeatomicKind::SoapPowerSpectrum:
+    case LocalDescriptorKind::SoapPowerSpectrum:
         return species * (species + 1) / 2 * species * angular * radial * radial;
     default:
         return species * species * radial * angular * angular;
@@ -823,12 +823,12 @@ inline double lode_density_fourier(double k_norm, double smearing, int exponent)
 
 inline void compute_lode_values(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
+    const LocalDescriptorOptions& options,
     const std::vector<std::int32_t>& atom_types,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
     const int n_radial = options.max_radial + 1;
-    const std::int64_t features = local_feature_count(options, FeatomicKind::LodeSphericalExpansion);
+    const std::int64_t features = local_feature_count(options, LocalDescriptorKind::LodeSphericalExpansion);
     std::fill(output, output + batch.atoms * features, 0.0);
     static thread_local int cached_max_radial = -1;
     static thread_local int cached_max_angular = -1;

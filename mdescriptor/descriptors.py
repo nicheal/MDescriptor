@@ -36,11 +36,11 @@ ComputeControl = _cpp.ComputeControl
 CancelledError = _cpp.CancelledError
 _build_neighbor_graph = _cpp.build_neighbor_graph
 _compute_coulomb_matrix = _cpp.compute_coulomb_matrix
-_compute_featomic_atomic_composition = _cpp.compute_featomic_atomic_composition
-_compute_featomic_sorted_distances = _cpp.compute_featomic_sorted_distances
-_compute_featomic_neighbor_list = _cpp.compute_featomic_neighbor_list
-_compute_featomic_spherical = _cpp.compute_featomic_spherical
-_compute_featomic_spherical_by_pair = _cpp.compute_featomic_spherical_by_pair
+_compute_atomic_composition = _cpp.compute_atomic_composition
+_compute_sorted_distances = _cpp.compute_sorted_distances
+_compute_neighbor_list = _cpp.compute_neighbor_list
+_compute_spherical_expansion = _cpp.compute_spherical_expansion
+_compute_spherical_expansion_by_pair = _cpp.compute_spherical_expansion_by_pair
 
 @dataclass(frozen=True)
 class StructureBatch:
@@ -257,7 +257,7 @@ def _normalise_species(species: Iterable[int] | None) -> tuple[int, ...] | None:
 
 
 def _basis_gto(r_cut: float, n_max: int, l_max: int) -> tuple[np.ndarray, np.ndarray]:
-    """Construct DScribe's orthonormalized GTO radial basis."""
+    """Construct reference implementation's orthonormalized GTO radial basis."""
 
     from math import gamma
 
@@ -276,7 +276,7 @@ def _basis_gto(r_cut: float, n_max: int, l_max: int) -> tuple[np.ndarray, np.nda
 
 
 def _basis_polynomial(r_cut: float, n_max: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Construct DScribe's orthonormalized polynomial radial basis and quadrature."""
+    """Construct reference implementation's orthonormalized polynomial radial basis and quadrature."""
     nodes, weights = np.polynomial.legendre.leggauss(100)
     grid = 0.5 * r_cut * (nodes + 1.0)
     quadrature_weights = 0.5 * r_cut * weights

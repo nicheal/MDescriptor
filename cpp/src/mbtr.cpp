@@ -183,7 +183,7 @@ void compute_mbtr(
     const int pair_count = species_count * (species_count + 1) / 2;
     NeighborGraph graph;
     if (options.geometry != MBTRGeometry::AtomicNumber) {
-        // DScribe's periodic extension uses a strict distance cutoff. The shared
+        // reference implementation's periodic extension uses a strict distance cutoff. The shared
         // neighbor graph keeps its inclusive boundary for the other descriptors.
         graph = build_neighbor_graph(batch, cutoff, control, 0, true, true);
     }
@@ -276,7 +276,7 @@ void compute_mbtr(
                         add_histogram(target + channel * options.grid_n, value, mbtr_weight(options, distance, 0.0), options);
                     }
                 } else {
-                    const int element_count = species_count + 1; // Include DScribe's ghost center X.
+                    const int element_count = species_count + 1; // Include reference implementation's ghost center X.
                     const int reserved = element_count * (element_count + 1) / 2;
                     auto add_angle = [&](int channel, double first_distance, double second_distance, double opposite_distance, double weight) {
                         const double denominator = 2.0 * first_distance * second_distance;

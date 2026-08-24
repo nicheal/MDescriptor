@@ -1,6 +1,6 @@
-#include "mdescriptor/featomic.hpp"
+#include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/neighbor.hpp"
-#include "featomic_common.hpp"
+#include "local_common.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,9 +14,9 @@
 namespace mdescriptor {
 using namespace detail;
 
-void compute_featomic_sorted_distances(
+void compute_sorted_distances(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
+    const LocalDescriptorOptions& options,
     int max_neighbors,
     bool separate_neighbor_types,
     double* output,

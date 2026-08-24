@@ -403,13 +403,13 @@ std::vector<BispectrumComponent> bispectrum_components(int max_order, int diagon
     return components;
 }
 
-double pyxtal_neighbor_weight(
+double rotational_neighbor_weight(
     const StructureBatchView& batch,
     std::int32_t atom,
-    PyxtalKind kind,
+    RotationalDescriptorKind kind,
     double weight_scale,
     const std::vector<double>& neighbor_weights) {
-    if (kind == PyxtalKind::SO4) {
+    if (kind == RotationalDescriptorKind::SO4) {
         return static_cast<double>(batch.numbers[atom]);
     }
     if (!neighbor_weights.empty()) {
@@ -423,7 +423,7 @@ std::vector<double> compute_bispectrum_center(
     std::int64_t center,
     int max_order,
     double cutoff,
-    PyxtalKind kind,
+    RotationalDescriptorKind kind,
     bool normalize_u,
     double weight_scale,
     double rfac0,
@@ -434,9 +434,9 @@ std::vector<double> compute_bispectrum_center(
     int diagonal,
     const NeighborGraph& graph) {
     const auto offsets = u_offsets(max_order);
-    const auto components = bispectrum_components(max_order, diagonal, kind == PyxtalKind::LBispectrum);
+    const auto components = bispectrum_components(max_order, diagonal, kind == RotationalDescriptorKind::LBispectrum);
     std::vector<Complex> total(offsets.back() + static_cast<std::size_t>((max_order + 1) * (max_order + 1)), Complex{0.0, 0.0});
-    const double center_weight = kind == PyxtalKind::SO4 ? static_cast<double>(batch.numbers[center]) : 1.0;
+    const double center_weight = kind == RotationalDescriptorKind::SO4 ? static_cast<double>(batch.numbers[center]) : 1.0;
     for (int l = 0; l <= max_order; ++l) {
         for (int m = 0; m <= l; ++m) {
             total[offsets[static_cast<std::size_t>(l)] + static_cast<std::size_t>(m * (l + 1) + m)] = center_weight;
@@ -461,7 +461,7 @@ std::vector<double> compute_bispectrum_center(
         }
         const auto values = hyperspherical_u(vector, max_order, offsets, neighbor_cutoff, rfac0, rmin0);
         const double scale = bispectrum_cutoff(radius, neighbor_cutoff, rmin0)
-            * pyxtal_neighbor_weight(batch, neighbors.atoms[index], kind, weight_scale, neighbor_weights);
+            * rotational_neighbor_weight(batch, neighbors.atoms[index], kind, weight_scale, neighbor_weights);
         for (std::size_t value = 0; value < total.size(); ++value) {
             total[value] += scale * values[value];
         }
@@ -537,19 +537,19 @@ std::vector<double> compute_bispectrum_center(
 }
 } // namespace
 
-std::int64_t pyxtal_feature_count(const PyxtalOptions& options) {
-    const int l_max = options.kind == PyxtalKind::SO3 ? options.l_max
-        : options.kind == PyxtalKind::LBispectrum ? std::max(0, options.twojmax) : 2 * options.l_max;
-    if (options.kind == PyxtalKind::SO3) {
+std::int64_t rotational_feature_count(const RotationalDescriptorOptions& options) {
+    const int l_max = options.kind == RotationalDescriptorKind::SO3 ? options.l_max
+        : options.kind == RotationalDescriptorKind::LBispectrum ? std::max(0, options.twojmax) : 2 * options.l_max;
+    if (options.kind == RotationalDescriptorKind::SO3) {
         return static_cast<std::int64_t>(l_max + 1) * options.n_max * (options.n_max + 1) / 2;
     }
     return static_cast<std::int64_t>(bispectrum_components(
-        l_max, options.diagonal, options.kind == PyxtalKind::LBispectrum).size());
+        l_max, options.diagonal, options.kind == RotationalDescriptorKind::LBispectrum).size());
 }
 
-void compute_pyxtal(
+void compute_rotational_descriptors(
     const StructureBatchView& batch,
-    const PyxtalOptions& options,
+    const RotationalDescriptorOptions& options,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
     validate_batch(batch);
@@ -558,8 +558,8 @@ void compute_pyxtal(
         || !std::isfinite(options.weight_scale) || options.cutoff <= 0.0 || options.l_max < 0
         || options.n_max < 1 || options.alpha <= 0.0 || options.rfac0 <= 0.0
         || options.rmin0 < 0.0 || options.rcutfac <= 0.0
-        || (options.kind == PyxtalKind::LBispectrum && options.twojmax < 0)) {
-        throw std::invalid_argument("invalid PyXtal descriptor parameters");
+        || (options.kind == RotationalDescriptorKind::LBispectrum && options.twojmax < 0)) {
+        throw std::invalid_argument("invalid rotational descriptor parameters");
     }
     if (!options.neighbor_weights.empty() && options.neighbor_weights.size() != static_cast<std::size_t>(batch.atoms)) {
         throw std::invalid_argument("neighbor_weights must contain one value per atom");
@@ -584,14 +584,14 @@ void compute_pyxtal(
             throw std::invalid_argument("neighbor_weights must be finite");
         }
     }
-    const auto features = pyxtal_feature_count(options);
+    const auto features = rotational_feature_count(options);
     std::fill(output, output + batch.atoms * features, 0.0);
     check_cancelled(control);
     if (control) {
         control->reset(batch.structures);
     }
     double graph_cutoff = options.cutoff;
-    if (options.kind == PyxtalKind::LBispectrum && !options.neighbor_radii.empty()) {
+    if (options.kind == RotationalDescriptorKind::LBispectrum && !options.neighbor_radii.empty()) {
         graph_cutoff = 2.0 * *std::max_element(options.neighbor_radii.begin(), options.neighbor_radii.end()) * options.rcutfac;
     }
     const NeighborGraph graph = build_neighbor_graph(batch, graph_cutoff, control);
@@ -599,13 +599,13 @@ void compute_pyxtal(
         check_cancelled(control);
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
-        const bool so3 = options.kind == PyxtalKind::SO3;
-        const int l_max = options.kind == PyxtalKind::LBispectrum ? std::max(0, options.twojmax / 2) : options.l_max;
+        const bool so3 = options.kind == RotationalDescriptorKind::SO3;
+        const int l_max = options.kind == RotationalDescriptorKind::LBispectrum ? std::max(0, options.twojmax / 2) : options.l_max;
         const auto so3_basis = so3 ? so3_radial_basis(options.n_max, l_max, options.cutoff, options.alpha)
                                    : std::vector<double>{};
         const int so3_width = 2 * l_max + 1;
         if (!so3) {
-            const int expansion_order = options.kind == PyxtalKind::LBispectrum
+            const int expansion_order = options.kind == RotationalDescriptorKind::LBispectrum
                 ? std::max(0, options.twojmax) : 2 * options.l_max;
             for (std::int64_t center = begin; center < end; ++center) {
                 const auto values = compute_bispectrum_center(

@@ -1,6 +1,6 @@
-#include "mdescriptor/featomic.hpp"
+#include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/neighbor.hpp"
-#include "featomic_spherical_common.hpp"
+#include "local_spherical_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,9 +11,9 @@
 namespace mdescriptor {
 using namespace detail;
 
-FeatomicPairTable compute_featomic_spherical_by_pair(
+DescriptorPairTable compute_spherical_expansion_by_pair(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
+    const LocalDescriptorOptions& options,
     const std::shared_ptr<ComputeControl>& control) {
     validate_options(options);
     validate_species(batch, options.species);
@@ -33,7 +33,7 @@ FeatomicPairTable compute_featomic_spherical_by_pair(
     for (int l = 0; l <= options.max_angular; ++l) {
         radial_bases.emplace_back(n_radial, options.cutoff, l);
     }
-    FeatomicPairTable result;
+    DescriptorPairTable result;
     const std::size_t pair_count = graph.offsets().empty()
         ? 0
         : static_cast<std::size_t>(graph.offsets().back());

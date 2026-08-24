@@ -262,7 +262,7 @@ LocalGraph build_structure_graph(
         return include_boundary ? distance2 <= cutoff2 : distance2 < cutoff2;
     };
     LocalGraph result;
-    // DScribe consumes one cell-list query per center. For the serial SOAP
+    // reference implementation consumes one cell-list query per center. For the serial SOAP
     // path, do the same and append neighbors directly; the old count-then-fill
     // pass scanned the same candidate cells twice.
     if (num_threads == 1) {

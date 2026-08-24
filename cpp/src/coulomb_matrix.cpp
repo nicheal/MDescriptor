@@ -22,7 +22,7 @@ namespace {
 
 double reference_pow(double base, double exponent) {
 #if defined(_WIN32) && defined(__MINGW32__)
-    // DScribe's Windows wheels use UCRT; MinGW otherwise resolves pow from legacy msvcrt.
+    // reference implementation's Windows wheels use UCRT; MinGW otherwise resolves pow from legacy msvcrt.
     using PowFunction = double(__cdecl*)(double, double);
     static const PowFunction ucrt_pow = [] {
         HMODULE module = GetModuleHandleW(L"ucrtbase.dll");

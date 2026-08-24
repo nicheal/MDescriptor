@@ -140,8 +140,8 @@ def test_matrix_kernel_has_expected_coulomb_diagonal_and_shapes():
     assert EwaldSumMatrixCalculator(3).compute(batch).values.shape == (1, 9)
 
 
-def test_ewald_matches_dscribe_at_real_cutoff_boundary():
-    dscribe = pytest.importorskip("dscribe")
+def test_ewald_matches_reference_at_real_cutoff_boundary():
+    reference = pytest.importorskip("dscribe")
     from dscribe.descriptors import EwaldSumMatrix
     from mdescriptor import EwaldSumMatrixCalculator
 
@@ -175,7 +175,7 @@ def test_matrix_eigenspectrum_is_native_and_padded():
     assert np.isfinite(result.values).all()
 
 
-def test_sine_sorted_l2_matches_dscribe_numpy_sort_contract():
+def test_sine_sorted_l2_matches_reference_numpy_sort_contract():
     from mdescriptor import SineMatrixCalculator
 
     batch = _batch()
@@ -208,7 +208,7 @@ def test_coulomb_eigenspectrum_keeps_batch_structure_stride():
         np.testing.assert_array_equal(spectrum[index, count:], 0.0)
 
 
-def test_coulomb_sorted_l2_matches_dscribe_tie_order():
+def test_coulomb_sorted_l2_matches_reference_tie_order():
     from ase import Atoms
     from mdescriptor import CoulombMatrixCalculator
 
@@ -247,7 +247,7 @@ def test_mbtr_family_is_native():
         assert np.isfinite(result.values).all()
 
 
-def test_valle_oganov_near_linear_angles_match_dscribe():
+def test_valle_oganov_near_linear_angles_match_reference():
     pytest.importorskip("dscribe")
     from pathlib import Path
 
@@ -266,7 +266,7 @@ def test_valle_oganov_near_linear_angles_match_dscribe():
     np.testing.assert_allclose(actual, reference, rtol=1e-9, atol=1e-7)
 
 
-def test_lmbtr_k3_matches_dscribe_channel_layout():
+def test_lmbtr_k3_matches_reference_channel_layout():
     pytest.importorskip("dscribe")
     from dscribe.descriptors import LMBTR
     from mdescriptor import LMBTRCalculator
@@ -295,7 +295,7 @@ def test_lmbtr_k3_matches_dscribe_channel_layout():
         np.testing.assert_allclose(actual, reference, rtol=1e-9, atol=1e-10)
 
 
-def test_featomic_family_uses_native_backend():
+def test_local_descriptor_family_uses_native_backend():
     from mdescriptor import (
         AtomicCompositionCalculator, LodeSphericalExpansionCalculator, NeighborListCalculator,
         SoapPowerSpectrumCalculator, SoapRadialSpectrumCalculator, SortedDistancesCalculator,
@@ -319,7 +319,7 @@ def test_featomic_family_uses_native_backend():
         assert np.isfinite(result.values).all(), name
 
 
-def test_pyxtal_family_repeats_identically_in_native_kernel():
+def test_rotational_descriptor_family_repeats_identically_in_native_kernel():
     from mdescriptor import EadCalculator, LbispectrumCalculator, SnapCalculator, So3Calculator, So4Calculator
 
     batch = _batch()

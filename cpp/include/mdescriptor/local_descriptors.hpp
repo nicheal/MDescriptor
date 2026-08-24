@@ -7,7 +7,7 @@
 
 namespace mdescriptor {
 
-enum class FeatomicKind : std::int32_t {
+enum class LocalDescriptorKind : std::int32_t {
     SphericalExpansion = 0,
     SphericalExpansionByPair = 1,
     SoapRadialSpectrum = 2,
@@ -15,7 +15,7 @@ enum class FeatomicKind : std::int32_t {
     LodeSphericalExpansion = 4,
 };
 
-struct FeatomicOptions {
+struct LocalDescriptorOptions {
     std::vector<std::int32_t> species;
     double cutoff = 6.0;
     double density_width = 0.3;
@@ -27,47 +27,47 @@ struct FeatomicOptions {
     int num_threads = 0;
 };
 
-struct FeatomicPairTable {
+struct DescriptorPairTable {
     // columns: first, second, cell_shift_a, cell_shift_b, cell_shift_c,
     //          displacement_x, displacement_y, displacement_z, distance
     std::vector<double> values;
     std::vector<std::int64_t> offsets;
 };
 
-std::int64_t featomic_feature_count(const FeatomicOptions& options, FeatomicKind kind);
+std::int64_t local_descriptor_feature_count(const LocalDescriptorOptions& options, LocalDescriptorKind kind);
 
-void compute_featomic_atomic_composition(
+void compute_atomic_composition(
     const StructureBatchView& batch,
     const std::vector<std::int32_t>& species,
     bool per_system,
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 
-void compute_featomic_sorted_distances(
+void compute_sorted_distances(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
+    const LocalDescriptorOptions& options,
     int max_neighbors,
     bool separate_neighbor_types,
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 
-FeatomicPairTable compute_featomic_neighbor_list(
+DescriptorPairTable compute_neighbor_list(
     const StructureBatchView& batch,
     double cutoff,
     bool full_neighbor_list,
     bool self_pairs,
     const std::shared_ptr<ComputeControl>& control);
 
-void compute_featomic_spherical(
+void compute_spherical_expansion(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
-    FeatomicKind kind,
+    const LocalDescriptorOptions& options,
+    LocalDescriptorKind kind,
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 
-FeatomicPairTable compute_featomic_spherical_by_pair(
+DescriptorPairTable compute_spherical_expansion_by_pair(
     const StructureBatchView& batch,
-    const FeatomicOptions& options,
+    const LocalDescriptorOptions& options,
     const std::shared_ptr<ComputeControl>& control);
 
 } // namespace mdescriptor

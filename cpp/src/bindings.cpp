@@ -1,6 +1,6 @@
 #include "mdescriptor/descriptor.hpp"
 #include "mdescriptor/extra.hpp"
-#include "mdescriptor/featomic.hpp"
+#include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/nep.hpp"
 #include "mdescriptor/neighbor.hpp"
 
@@ -336,7 +336,7 @@ py::array compute_ead_array(
     return output;
 }
 
-py::array compute_pyxtal_array(
+py::array compute_rotational_descriptors_array(
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -360,8 +360,8 @@ py::array compute_pyxtal_array(
     const std::vector<double>& neighbor_radii
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    mdescriptor::PyxtalOptions options;
-    options.kind = static_cast<mdescriptor::PyxtalKind>(kind);
+    mdescriptor::RotationalDescriptorOptions options;
+    options.kind = static_cast<mdescriptor::RotationalDescriptorKind>(kind);
     options.n_max = n_max;
     options.l_max = l_max;
     options.cutoff = cutoff;
@@ -376,17 +376,17 @@ py::array compute_pyxtal_array(
     options.neighbor_radii = neighbor_radii;
     options.twojmax = twojmax;
     options.diagonal = diagonal;
-    const auto columns = mdescriptor::pyxtal_feature_count(options);
+    const auto columns = mdescriptor::rotational_feature_count(options);
     py::array_t<double> output({batch.atoms, columns});
     auto ctrl = control_or_default(control);
     {
         py::gil_scoped_release release;
-        mdescriptor::compute_pyxtal(batch, options, output.mutable_data(), ctrl);
+        mdescriptor::compute_rotational_descriptors(batch, options, output.mutable_data(), ctrl);
     }
     return output;
 }
 
-py::array compute_featomic_atomic_composition_array(
+py::array compute_atomic_composition_array(
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -403,13 +403,13 @@ py::array compute_featomic_atomic_composition_array(
     auto ctrl = control_or_default(control);
     {
         py::gil_scoped_release release;
-        mdescriptor::compute_featomic_atomic_composition(
+        mdescriptor::compute_atomic_composition(
             batch, species, per_system, static_cast<double*>(output_info.ptr), ctrl);
     }
     return output;
 }
 
-py::array compute_featomic_sorted_distances_array(
+py::array compute_sorted_distances_array(
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -428,21 +428,21 @@ py::array compute_featomic_sorted_distances_array(
         : max_neighbors;
     py::array_t<double> output({batch.atoms, columns});
     auto output_info = output.request();
-    mdescriptor::FeatomicOptions options;
+    mdescriptor::LocalDescriptorOptions options;
     options.species = species;
     options.cutoff = cutoff;
     options.num_threads = num_threads;
     auto ctrl = control_or_default(control);
     {
         py::gil_scoped_release release;
-        mdescriptor::compute_featomic_sorted_distances(
+        mdescriptor::compute_sorted_distances(
             batch, options, max_neighbors, separate_neighbor_types,
             static_cast<double*>(output_info.ptr), ctrl);
     }
     return output;
 }
 
-py::tuple compute_featomic_neighbor_list_array(
+py::tuple compute_neighbor_list_array(
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -455,10 +455,10 @@ py::tuple compute_featomic_neighbor_list_array(
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
     auto ctrl = control_or_default(control);
-    mdescriptor::FeatomicPairTable pairs;
+    mdescriptor::DescriptorPairTable pairs;
     {
         py::gil_scoped_release release;
-        pairs = mdescriptor::compute_featomic_neighbor_list(
+        pairs = mdescriptor::compute_neighbor_list(
             batch, cutoff, full_neighbor_list, self_pairs, ctrl);
     }
     py::array_t<double> values(std::vector<py::ssize_t>{
@@ -469,7 +469,7 @@ py::tuple compute_featomic_neighbor_list_array(
     return py::make_tuple(values, pair_offsets);
 }
 
-py::array compute_featomic_spherical_array(
+py::array compute_spherical_expansion_array(
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -488,7 +488,7 @@ py::array compute_featomic_spherical_array(
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    mdescriptor::FeatomicOptions options;
+    mdescriptor::LocalDescriptorOptions options;
     options.species = species;
     options.cutoff = cutoff;
     options.density_width = density_width;
@@ -498,20 +498,20 @@ py::array compute_featomic_spherical_array(
     options.exponent = exponent;
     options.radial_radius = radial_radius > 0.0 ? radial_radius : cutoff;
     options.num_threads = num_threads;
-    const auto descriptor_kind = static_cast<mdescriptor::FeatomicKind>(kind);
-    const auto features = mdescriptor::featomic_feature_count(options, descriptor_kind);
+    const auto descriptor_kind = static_cast<mdescriptor::LocalDescriptorKind>(kind);
+    const auto features = mdescriptor::local_descriptor_feature_count(options, descriptor_kind);
     py::array_t<double> output({batch.atoms, features});
     auto output_info = output.request();
     auto ctrl = control_or_default(control);
     {
         py::gil_scoped_release release;
-        mdescriptor::compute_featomic_spherical(
+        mdescriptor::compute_spherical_expansion(
             batch, options, descriptor_kind, static_cast<double*>(output_info.ptr), ctrl);
     }
     return output;
 }
 
-py::tuple compute_featomic_spherical_by_pair_array(
+py::tuple compute_spherical_expansion_by_pair_array(
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -526,7 +526,7 @@ py::tuple compute_featomic_spherical_by_pair_array(
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    mdescriptor::FeatomicOptions options;
+    mdescriptor::LocalDescriptorOptions options;
     options.species = species;
     options.cutoff = cutoff;
     options.density_width = density_width;
@@ -536,10 +536,10 @@ py::tuple compute_featomic_spherical_by_pair_array(
     const auto features = static_cast<std::int64_t>(
         (max_angular + 1) * (max_angular + 1) * (max_radial + 1));
     auto ctrl = control_or_default(control);
-    mdescriptor::FeatomicPairTable pairs;
+    mdescriptor::DescriptorPairTable pairs;
     {
         py::gil_scoped_release release;
-        pairs = mdescriptor::compute_featomic_spherical_by_pair(batch, options, ctrl);
+        pairs = mdescriptor::compute_spherical_expansion_by_pair(batch, options, ctrl);
     }
     const auto rows = static_cast<py::ssize_t>(pairs.values.size() / static_cast<std::size_t>(9 + features));
     py::array_t<double> output(std::vector<py::ssize_t>{rows, static_cast<py::ssize_t>(features)});
@@ -652,7 +652,7 @@ PYBIND11_MODULE(_descriptor_cpp, module) {
                py::arg("offsets"), py::arg("max_degree") = 3, py::arg("cutoff") = 6.0,
                py::arg("eta"), py::arg("rs"), py::arg("control") = nullptr);
 
-    module.def("compute_pyxtal", &compute_pyxtal_array,
+    module.def("compute_rotational_descriptors", &compute_rotational_descriptors_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("kind") = 0, py::arg("n_max") = 3,
                py::arg("l_max") = 3, py::arg("cutoff") = 3.5, py::arg("alpha") = 2.0,
@@ -663,23 +663,23 @@ PYBIND11_MODULE(_descriptor_cpp, module) {
                py::arg("rmin0") = 0.0, py::arg("rcutfac") = 1.0,
                py::arg("neighbor_radii") = std::vector<double>{});
 
-    module.def("compute_featomic_atomic_composition", &compute_featomic_atomic_composition_array,
+    module.def("compute_atomic_composition", &compute_atomic_composition_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("species"), py::arg("per_system") = true,
                py::arg("control") = nullptr);
 
-    module.def("compute_featomic_sorted_distances", &compute_featomic_sorted_distances_array,
+    module.def("compute_sorted_distances", &compute_sorted_distances_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("species"), py::arg("cutoff"),
                py::arg("max_neighbors"), py::arg("separate_neighbor_types") = true,
                py::arg("num_threads") = 0, py::arg("control") = nullptr);
 
-    module.def("compute_featomic_neighbor_list", &compute_featomic_neighbor_list_array,
+    module.def("compute_neighbor_list", &compute_neighbor_list_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("cutoff"), py::arg("full_neighbor_list") = true,
                py::arg("self_pairs") = false, py::arg("control") = nullptr);
 
-    module.def("compute_featomic_spherical", &compute_featomic_spherical_array,
+    module.def("compute_spherical_expansion", &compute_spherical_expansion_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("species"), py::arg("cutoff") = 6.0,
                py::arg("density_width") = 0.3, py::arg("max_radial") = 6,
@@ -688,7 +688,7 @@ PYBIND11_MODULE(_descriptor_cpp, module) {
                py::arg("radial_radius") = 0.0, py::arg("num_threads") = 0,
                py::arg("control") = nullptr);
 
-    module.def("compute_featomic_spherical_by_pair", &compute_featomic_spherical_by_pair_array,
+    module.def("compute_spherical_expansion_by_pair", &compute_spherical_expansion_by_pair_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("species"), py::arg("cutoff") = 6.0,
                py::arg("density_width") = 0.3, py::arg("max_radial") = 6,

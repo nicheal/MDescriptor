@@ -308,7 +308,7 @@ inline void solid_harmonics_l3_soa(
     }
 }
 
-// DScribe's common l_max=4 path uses literal regular-solid-harmonic
+// reference implementation's common l_max=4 path uses literal regular-solid-harmonic
 // coefficients and a structure-of-arrays layout. Keeping the neighbor index
 // as the innermost dimension lets the compiler vectorize this whole kernel.
 inline void solid_harmonics_l4_soa(
@@ -863,7 +863,7 @@ void compute_soap_structure(
                 }
             }
         } else {
-            // DScribe groups neighbors by species, accumulates each radial
+            // reference implementation groups neighbors by species, accumulates each radial
             // channel over that group, and applies beta afterwards.
             const bool use_gto_cache = options.compression != 0 || options.inner_average;
             const std::size_t radial_count = static_cast<std::size_t>(options.l_max + 1) * options.n_max;

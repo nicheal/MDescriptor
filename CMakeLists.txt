@@ -23,7 +23,7 @@ set(MDESCRIPTOR_CPP_SOURCES
     cpp/src/ead.cpp
     cpp/src/mtp.cpp
     cpp/src/mtp4.cpp
-    cpp/src/pyxtal.cpp
+    cpp/src/rotational_descriptors.cpp
     cpp/src/neighbor.cpp
     cpp/src/nep.cpp
     cpp/src/atomic_composition.cpp

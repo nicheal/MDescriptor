@@ -1,6 +1,6 @@
-"""C++-backed PyXtal-compatible descriptor adapters.
+"""C++-backed rotational descriptor adapters.
 
-The public names are retained for API compatibility. No PyXtal_FF, SciPy,
+The public names are retained for API compatibility. No external package, SciPy,
 Torch, or Python neighbor-loop is used by the calculation path.
 """
 
@@ -65,7 +65,7 @@ class So3Calculator(_AtomCalculator):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_pyxtal(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 0, self.nmax, self.lmax, self.rcut, self.alpha, self.weight_on, False, 1.0, 3, 3, control, 1.0), dtype=np.float64)
+        values = np.asarray(_cpp.compute_rotational_descriptors(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 0, self.nmax, self.lmax, self.rcut, self.alpha, self.weight_on, False, 1.0, 3, 3, control, 1.0), dtype=np.float64)
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
 
@@ -79,7 +79,7 @@ class So4Calculator(_AtomCalculator):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_pyxtal(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 1, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U, 1.0, 3, 3, control, 1.0), dtype=np.float64)
+        values = np.asarray(_cpp.compute_rotational_descriptors(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 1, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U, 1.0, 3, 3, control, 1.0), dtype=np.float64)
         self._feature_count = int(values.shape[1])
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
@@ -117,7 +117,7 @@ class SnapCalculator(So4Calculator):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_pyxtal(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 2, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U, 1.0, 3, 3, control, 0.99363, self._neighbor_weights(batch)), dtype=np.float64)
+        values = np.asarray(_cpp.compute_rotational_descriptors(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 2, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U, 1.0, 3, 3, control, 0.99363, self._neighbor_weights(batch)), dtype=np.float64)
         self._feature_count = int(values.shape[1])
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
@@ -176,7 +176,7 @@ class LbispectrumCalculator(SnapCalculator):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_pyxtal(
+        values = np.asarray(_cpp.compute_rotational_descriptors(
             batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
             3, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
             1.0, self.twojmax, self.diagonal, control, self.rfac0,

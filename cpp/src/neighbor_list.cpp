@@ -1,6 +1,6 @@
-#include "mdescriptor/featomic.hpp"
+#include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/neighbor.hpp"
-#include "featomic_common.hpp"
+#include "local_common.hpp"
 
 #include <cmath>
 #include <cstddef>
@@ -9,7 +9,7 @@
 namespace mdescriptor {
 using namespace detail;
 
-FeatomicPairTable compute_featomic_neighbor_list(
+DescriptorPairTable compute_neighbor_list(
     const StructureBatchView& batch,
     double cutoff,
     bool full_neighbor_list,
@@ -22,7 +22,7 @@ FeatomicPairTable compute_featomic_neighbor_list(
         control->reset(batch.structures);
     }
     const NeighborGraph graph = build_neighbor_graph(batch, cutoff, control);
-    FeatomicPairTable result;
+    DescriptorPairTable result;
     result.offsets.push_back(0);
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         check_cancelled(control);

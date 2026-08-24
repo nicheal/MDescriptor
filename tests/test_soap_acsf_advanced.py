@@ -14,7 +14,7 @@ def _system():
     )
 
 
-def test_acsf_g1_to_g5_matches_dscribe():
+def test_acsf_g1_to_g5_matches_reference():
     pytest.importorskip("dscribe")
     from dscribe.descriptors import ACSF
 
@@ -64,7 +64,7 @@ def test_acsf_g1_to_g5_matches_dscribe():
         },
     ],
 )
-def test_soap_advanced_parameters_match_dscribe(parameters):
+def test_soap_advanced_parameters_match_reference(parameters):
     pytest.importorskip("dscribe")
     from dscribe.descriptors import SOAP
 
