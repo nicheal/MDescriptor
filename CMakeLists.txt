@@ -34,20 +34,20 @@ set(MDESCRIPTOR_CPP_SOURCES
     cpp/src/bindings.cpp
 )
 
-pybind11_add_module(_descriptor_cpp ${MDESCRIPTOR_CPP_SOURCES})
-target_compile_features(_descriptor_cpp PRIVATE cxx_std_17)
-target_include_directories(_descriptor_cpp PRIVATE cpp/include)
+pybind11_add_module(_native ${MDESCRIPTOR_CPP_SOURCES})
+target_compile_features(_native PRIVATE cxx_std_17)
+target_include_directories(_native PRIVATE cpp/include)
 if(OpenMP_CXX_FOUND)
     if(MSVC AND CMAKE_VERSION VERSION_LESS 3.30)
         # /openmp:experimental subsumes /openmp and enables omp simd.
-        target_compile_options(_descriptor_cpp PRIVATE /openmp:experimental)
+        target_compile_options(_native PRIVATE /openmp:experimental)
     else()
-        target_link_libraries(_descriptor_cpp PRIVATE OpenMP::OpenMP_CXX)
+        target_link_libraries(_native PRIVATE OpenMP::OpenMP_CXX)
     endif()
 endif()
 
 install(
-    TARGETS _descriptor_cpp
+    TARGETS _native
     LIBRARY DESTINATION mdescriptor
     RUNTIME DESTINATION mdescriptor
 )

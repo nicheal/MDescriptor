@@ -20,20 +20,20 @@ dependencies = [
 
 [project.optional-dependencies]
 ase = ["ase>=3.22"]
-torch = ["torch>=2.0"]
+model = ["torch>=2.10,<2.14"]
 sparse = ["sparse>=0.14"]
 test = ["pytest>=8", "ase>=3.22", "sparse>=0.14"]
-all = ["ase>=3.22", "sparse>=0.14", "torch>=2.0"]
+all = ["ase>=3.22", "sparse>=0.14", "torch>=2.10,<2.14"]
 
 [tool.scikit-build]
 minimum-version = "1.0"
-wheel.packages = ["mdescriptor"]
+wheel.packages = ["src/mdescriptor"]
 
 [[tool.dynamic-metadata]]
 provider = "scikit_build_core.metadata.setuptools_scm"
 
 [tool.setuptools_scm]
-write_to = "mdescriptor/_version.py"
+write_to = "src/mdescriptor/_version.py"
 fallback_version = "0.1.0.dev0"
 
 [tool.scikit-build.sdist]
@@ -41,8 +41,9 @@ inclusion-mode = "explicit"
 include = [
     "/CMakeLists.txt",
     "/cpp/**",
-    "/mdescriptor/**",
+    "/src/mdescriptor/**",
     "/tests/**",
+    "/docs/**",
     "/README.md",
     "/LICENSE",
     "/pyproject.toml",

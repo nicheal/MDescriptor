@@ -607,8 +607,8 @@ py::tuple build_neighbor_graph_arrays(
 
 } // namespace
 
-PYBIND11_MODULE(_descriptor_cpp, module) {
-    module.doc() = "MDescriptor periodic SOAP and ACSF CPU descriptors";
+PYBIND11_MODULE(_native, module) {
+    module.doc() = "MDescriptor periodic descriptor kernels";
     py::register_exception<mdescriptor::CancelledError>(module, "CancelledError");
 
     py::class_<ComputeControl, std::shared_ptr<ComputeControl>>(module, "ComputeControl")

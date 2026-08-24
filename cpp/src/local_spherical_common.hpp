@@ -1,6 +1,7 @@
 #pragma once
 
 #include "local_common.hpp"
+#include "mdescriptor/detail/math3.hpp"
 
 #include <algorithm>
 #include <array>
@@ -644,34 +645,6 @@ inline std::int64_t local_feature_count(const LocalDescriptorOptions& options, L
     }
 }
 
-struct Matrix3 {
-    double value[3][3]{};
-};
-
-inline double determinant(const Matrix3& matrix) {
-    return matrix.value[0][0] * (matrix.value[1][1] * matrix.value[2][2] - matrix.value[1][2] * matrix.value[2][1])
-        - matrix.value[0][1] * (matrix.value[1][0] * matrix.value[2][2] - matrix.value[1][2] * matrix.value[2][0])
-        + matrix.value[0][2] * (matrix.value[1][0] * matrix.value[2][1] - matrix.value[1][1] * matrix.value[2][0]);
-}
-
-inline Matrix3 inverse(const Matrix3& matrix) {
-    const double det = determinant(matrix);
-    if (!std::isfinite(det) || std::abs(det) < 1e-14) {
-        throw std::invalid_argument("cell matrix is singular");
-    }
-    Matrix3 result;
-    result.value[0][0] = (matrix.value[1][1] * matrix.value[2][2] - matrix.value[1][2] * matrix.value[2][1]) / det;
-    result.value[0][1] = (matrix.value[0][2] * matrix.value[2][1] - matrix.value[0][1] * matrix.value[2][2]) / det;
-    result.value[0][2] = (matrix.value[0][1] * matrix.value[1][2] - matrix.value[0][2] * matrix.value[1][1]) / det;
-    result.value[1][0] = (matrix.value[1][2] * matrix.value[2][0] - matrix.value[1][0] * matrix.value[2][2]) / det;
-    result.value[1][1] = (matrix.value[0][0] * matrix.value[2][2] - matrix.value[0][2] * matrix.value[2][0]) / det;
-    result.value[1][2] = (matrix.value[0][2] * matrix.value[1][0] - matrix.value[0][0] * matrix.value[1][2]) / det;
-    result.value[2][0] = (matrix.value[1][0] * matrix.value[2][1] - matrix.value[1][1] * matrix.value[2][0]) / det;
-    result.value[2][1] = (matrix.value[0][1] * matrix.value[2][0] - matrix.value[0][0] * matrix.value[2][1]) / det;
-    result.value[2][2] = (matrix.value[0][0] * matrix.value[1][1] - matrix.value[0][1] * matrix.value[1][0]) / det;
-    return result;
-}
-
 inline std::array<double, 3> cross(const std::array<double, 3>& left, const std::array<double, 3>& right) {
     return {
         left[1] * right[2] - left[2] * right[1],
@@ -695,18 +668,18 @@ struct KVector {
 };
 
 inline std::vector<KVector> make_k_vectors(const double* cell_data, double cutoff) {
-    Matrix3 cell;
+    Mat3 cell;
     for (int row = 0; row < 3; ++row) {
         for (int column = 0; column < 3; ++column) {
-            cell.value[row][column] = cell_data[row * 3 + column];
+            cell.a[row][column] = cell_data[row * 3 + column];
         }
     }
-    const Matrix3 inverse_cell = inverse(cell);
+    const Mat3 inverse_cell = inverse(cell);
     std::array<std::array<double, 3>, 3> reciprocal{};
     for (int row = 0; row < 3; ++row) {
         for (int column = 0; column < 3; ++column) {
             reciprocal[static_cast<std::size_t>(row)][static_cast<std::size_t>(column)]
-                = 2.0 * kPi * inverse_cell.value[column][row];
+                = 2.0 * kPi * inverse_cell.a[column][row];
         }
     }
     const std::array<double, 3> b0 = reciprocal[0];

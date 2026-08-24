@@ -10,7 +10,7 @@ still reporting a single permutation-symmetry result for each descriptor.
 import numpy as np
 from ase import Atoms
 
-from mdescriptor import DESCRIPTOR_CATALOG, StructureBatch
+from tests._public import DESCRIPTOR_CATALOG, StructureBatch
 
 
 _SYMMETRY_RTOL = 1e-5
@@ -129,8 +129,8 @@ def _structure_rows(result, structure: int, permutation: np.ndarray | None = Non
     if result.level == "structure":
         return values[structure : structure + 1]
 
-    start = int(result.atom_offsets[structure])
-    stop = int(result.atom_offsets[structure + 1])
+    start = int(result.row_offsets[structure])
+    stop = int(result.row_offsets[structure + 1])
     rows = values[start:stop].copy()
     if result.level == "atom":
         if permutation is not None:

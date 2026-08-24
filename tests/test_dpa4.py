@@ -6,10 +6,12 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from mdescriptor import Dpa4Calculator, StructureBatch
+from tests._public import DPA4, StructureBatch
+from tests._public import ModelLoadError
+from mdescriptor.models import DPA4_MODEL
 
 
-MODEL = Path(__file__).parents[1] / "mdescriptor" / "models" / "DPA4-Air-OMat24-v20260704.pt"
+MODEL = DPA4_MODEL
 
 
 def _batch() -> StructureBatch:
@@ -31,7 +33,7 @@ def _batch() -> StructureBatch:
 
 
 def test_official_checkpoint_and_batch_output():
-    calculator = Dpa4Calculator(MODEL)
+    calculator = DPA4(MODEL)
 
     result = calculator.compute(_batch())
 
@@ -39,12 +41,12 @@ def test_official_checkpoint_and_batch_output():
     assert np.isfinite(result.values).all()
     assert result.level == "atom"
     assert result.metadata["backend"] == "mdescriptor-dpa4-official-native"
-    assert result.atom_offsets.tolist() == [0, 3, 4]
+    assert result.row_offsets.tolist() == [0, 3, 4]
     assert result.labels[0] == "dpa4:scalar,channel=0"
 
 
 def test_geometry_rotation_and_atom_permutation_are_invariant():
-    calculator = Dpa4Calculator(MODEL)
+    calculator = DPA4(MODEL)
     batch = _batch()
     reference = calculator.compute(batch).values
 
@@ -82,5 +84,5 @@ def test_dpa4_rejects_project_native_archive(tmp_path):
     path = tmp_path / "mdescriptor.pt"
     torch.save({"format": "mdescriptor.dpa4.v1", "config": {}, "state_dict": {}}, path)
 
-    with pytest.raises(ValueError, match="official DPA4"):
-        Dpa4Calculator(path)
+    with pytest.raises(ModelLoadError, match="failed to load DPA4 model"):
+        DPA4(path)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mdescriptor/descriptor.hpp"
+#include "mdescriptor/detail/math3.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,46 +14,6 @@
 #endif
 
 namespace mdescriptor::detail {
-
-struct Vec3 {
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-};
-
-inline Vec3 operator+(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-inline Vec3 operator-(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-inline Vec3 operator*(double a, Vec3 b) { return {a * b.x, a * b.y, a * b.z}; }
-inline double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-inline double norm2(Vec3 a) { return dot(a, a); }
-
-struct Mat3 {
-    double a[3][3]{};
-};
-
-inline double determinant(const Mat3& m) {
-    return m.a[0][0] * (m.a[1][1] * m.a[2][2] - m.a[1][2] * m.a[2][1])
-         - m.a[0][1] * (m.a[1][0] * m.a[2][2] - m.a[1][2] * m.a[2][0])
-         + m.a[0][2] * (m.a[1][0] * m.a[2][1] - m.a[1][1] * m.a[2][0]);
-}
-
-inline Mat3 inverse(const Mat3& m) {
-    const double d = determinant(m);
-    if (!std::isfinite(d) || std::abs(d) < 1e-14) {
-        throw std::invalid_argument("cell matrix is singular");
-    }
-    Mat3 r;
-    r.a[0][0] = (m.a[1][1] * m.a[2][2] - m.a[1][2] * m.a[2][1]) / d;
-    r.a[0][1] = (m.a[0][2] * m.a[2][1] - m.a[0][1] * m.a[2][2]) / d;
-    r.a[0][2] = (m.a[0][1] * m.a[1][2] - m.a[0][2] * m.a[1][1]) / d;
-    r.a[1][0] = (m.a[1][2] * m.a[2][0] - m.a[1][0] * m.a[2][2]) / d;
-    r.a[1][1] = (m.a[0][0] * m.a[2][2] - m.a[0][2] * m.a[2][0]) / d;
-    r.a[1][2] = (m.a[0][2] * m.a[1][0] - m.a[0][0] * m.a[1][2]) / d;
-    r.a[2][0] = (m.a[1][0] * m.a[2][1] - m.a[1][1] * m.a[2][0]) / d;
-    r.a[2][1] = (m.a[0][1] * m.a[2][0] - m.a[0][0] * m.a[2][1]) / d;
-    r.a[2][2] = (m.a[0][0] * m.a[1][1] - m.a[0][1] * m.a[1][0]) / d;
-    return r;
-}
 
 inline Mat3 cell(const StructureBatchView& batch, std::int64_t structure) {
     Mat3 result;
@@ -152,4 +113,3 @@ inline void run_parallel_structures(
 }
 
 } // namespace mdescriptor::detail
-

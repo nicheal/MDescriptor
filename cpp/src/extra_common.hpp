@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mdescriptor/extra.hpp"
+#include "mdescriptor/detail/math3.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,19 +17,6 @@ namespace mdescriptor::detail {
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
 constexpr double kSqrt2 = 1.414213562373095048801688724209698079;
-
-struct Vec3 {
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-};
-
-inline Vec3 operator+(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-inline Vec3 operator-(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-inline Vec3 operator*(double scale, Vec3 value) { return {scale * value.x, scale * value.y, scale * value.z}; }
-inline double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-inline double norm2(Vec3 value) { return dot(value, value); }
-inline double norm(Vec3 value) { return std::sqrt(norm2(value)); }
 
 inline double reference_row_l2_norm(
     const std::vector<double>& matrix,
@@ -66,10 +54,6 @@ inline std::vector<std::size_t> reference_sorted_l2_order(
     return order;
 }
 
-struct Mat3 {
-    double a[3][3]{};
-};
-
 inline Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
     Mat3 result;
     const double* source = batch.cells + structure * 9;
@@ -78,34 +62,6 @@ inline Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
             result.a[row][column] = source[row * 3 + column];
         }
     }
-    return result;
-}
-
-inline Vec3 row(const Mat3& matrix, int index) {
-    return {matrix.a[index][0], matrix.a[index][1], matrix.a[index][2]};
-}
-
-inline double determinant(const Mat3& matrix) {
-    return matrix.a[0][0] * (matrix.a[1][1] * matrix.a[2][2] - matrix.a[1][2] * matrix.a[2][1])
-        - matrix.a[0][1] * (matrix.a[1][0] * matrix.a[2][2] - matrix.a[1][2] * matrix.a[2][0])
-        + matrix.a[0][2] * (matrix.a[1][0] * matrix.a[2][1] - matrix.a[1][1] * matrix.a[2][0]);
-}
-
-inline Mat3 inverse(const Mat3& matrix) {
-    const double det = determinant(matrix);
-    if (!std::isfinite(det) || std::abs(det) < 1e-14) {
-        throw std::invalid_argument("cell matrix is singular");
-    }
-    Mat3 result;
-    result.a[0][0] = (matrix.a[1][1] * matrix.a[2][2] - matrix.a[1][2] * matrix.a[2][1]) / det;
-    result.a[0][1] = (matrix.a[0][2] * matrix.a[2][1] - matrix.a[0][1] * matrix.a[2][2]) / det;
-    result.a[0][2] = (matrix.a[0][1] * matrix.a[1][2] - matrix.a[0][2] * matrix.a[1][1]) / det;
-    result.a[1][0] = (matrix.a[1][2] * matrix.a[2][0] - matrix.a[1][0] * matrix.a[2][2]) / det;
-    result.a[1][1] = (matrix.a[0][0] * matrix.a[2][2] - matrix.a[0][2] * matrix.a[2][0]) / det;
-    result.a[1][2] = (matrix.a[0][2] * matrix.a[1][0] - matrix.a[0][0] * matrix.a[1][2]) / det;
-    result.a[2][0] = (matrix.a[1][0] * matrix.a[2][1] - matrix.a[1][1] * matrix.a[2][0]) / det;
-    result.a[2][1] = (matrix.a[0][1] * matrix.a[2][0] - matrix.a[0][0] * matrix.a[2][1]) / det;
-    result.a[2][2] = (matrix.a[0][0] * matrix.a[1][1] - matrix.a[0][1] * matrix.a[1][0]) / det;
     return result;
 }
 

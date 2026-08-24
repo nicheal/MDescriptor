@@ -1,4 +1,5 @@
 #include "mdescriptor/neighbor.hpp"
+#include "mdescriptor/detail/math3.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,24 +14,8 @@
 namespace mdescriptor {
 namespace {
 
-struct Vec3 {
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-};
-
-Vec3 operator+(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-Vec3 operator-(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-Vec3 operator*(double scale, Vec3 value) { return {scale * value.x, scale * value.y, scale * value.z}; }
-double norm2(Vec3 value) { return value.x * value.x + value.y * value.y + value.z * value.z; }
-
-struct Mat3 {
-    double a[3][3]{};
-};
-
-Vec3 row(const Mat3& matrix, int index) {
-    return {matrix.a[index][0], matrix.a[index][1], matrix.a[index][2]};
-}
+using detail::Mat3;
+using detail::Vec3;
 
 Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
     Mat3 result;
@@ -40,30 +25,6 @@ Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
             result.a[i][j] = source[i * 3 + j];
         }
     }
-    return result;
-}
-
-double determinant(const Mat3& matrix) {
-    return matrix.a[0][0] * (matrix.a[1][1] * matrix.a[2][2] - matrix.a[1][2] * matrix.a[2][1])
-         - matrix.a[0][1] * (matrix.a[1][0] * matrix.a[2][2] - matrix.a[1][2] * matrix.a[2][0])
-         + matrix.a[0][2] * (matrix.a[1][0] * matrix.a[2][1] - matrix.a[1][1] * matrix.a[2][0]);
-}
-
-Mat3 inverse(const Mat3& matrix) {
-    const double det = determinant(matrix);
-    if (!std::isfinite(det) || std::abs(det) < 1e-14) {
-        throw std::invalid_argument("cell matrix is singular");
-    }
-    Mat3 result;
-    result.a[0][0] = (matrix.a[1][1] * matrix.a[2][2] - matrix.a[1][2] * matrix.a[2][1]) / det;
-    result.a[0][1] = (matrix.a[0][2] * matrix.a[2][1] - matrix.a[0][1] * matrix.a[2][2]) / det;
-    result.a[0][2] = (matrix.a[0][1] * matrix.a[1][2] - matrix.a[0][2] * matrix.a[1][1]) / det;
-    result.a[1][0] = (matrix.a[1][2] * matrix.a[2][0] - matrix.a[1][0] * matrix.a[2][2]) / det;
-    result.a[1][1] = (matrix.a[0][0] * matrix.a[2][2] - matrix.a[0][2] * matrix.a[2][0]) / det;
-    result.a[1][2] = (matrix.a[0][2] * matrix.a[1][0] - matrix.a[0][0] * matrix.a[1][2]) / det;
-    result.a[2][0] = (matrix.a[1][0] * matrix.a[2][1] - matrix.a[1][1] * matrix.a[2][0]) / det;
-    result.a[2][1] = (matrix.a[0][1] * matrix.a[2][0] - matrix.a[0][0] * matrix.a[2][1]) / det;
-    result.a[2][2] = (matrix.a[0][0] * matrix.a[1][1] - matrix.a[0][1] * matrix.a[1][0]) / det;
     return result;
 }
 

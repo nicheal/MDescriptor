@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from mdescriptor import MtpCalculator, StructureBatch
+from tests._public import MTP, StructureBatch
 
 
 def _system():
@@ -25,21 +25,22 @@ def test_mtp_is_invariant_to_rigid_rotation_and_atom_order():
     rotated.positions = (system.positions - center) @ rotation.T + center
     permuted = system[[2, 0, 1]]
 
-    calculator = MtpCalculator(
+    calculator = MTP(
         species=[1, 8],
         min_dist=0.1,
         max_dist=4.0,
         radial_basis_size=2,
         max_rank=2,
     )
-    first = calculator.compute(StructureBatch.from_ase([system])).values
+    first_result = calculator.compute(StructureBatch.from_ase([system]))
+    first = first_result.values
     second = calculator.compute(StructureBatch.from_ase([rotated])).values
     third = calculator.compute(StructureBatch.from_ase([permuted])).values
 
     np.testing.assert_allclose(first, second, rtol=1e-11, atol=1e-12)
     np.testing.assert_allclose(first, third[[1, 2, 0]], rtol=1e-11, atol=1e-12)
     assert first.shape == (3, calculator.feature_count)
-    assert len(calculator._labels()) == calculator.feature_count
+    assert len(first_result.labels) == calculator.feature_count
     assert np.isfinite(first).all()
 
 
@@ -53,7 +54,7 @@ def test_mtp_official_mlip2_basis_matches_reference_prefix():
         cell=np.diag([8.0, 8.0, 8.0]),
         pbc=True,
     )
-    calculator = MtpCalculator(species=[1], potential_path=potential, num_threads=1)
+    calculator = MTP(species=[1], potential_path=potential, num_threads=1)
     result = calculator.compute(StructureBatch.from_ase([system]))
 
     assert calculator.feature_count == 93
@@ -84,7 +85,7 @@ def test_mtp_native_mlip4_json_matches_official_radial_prefix():
         cell=np.diag([10.0, 10.0, 10.0]),
         pbc=True,
     )
-    calculator = MtpCalculator(
+    calculator = MTP(
         species=[13, 14], potential_path=potential, num_threads=1
     )
     result = calculator.compute(StructureBatch.from_ase([system]))
@@ -131,7 +132,7 @@ def test_mtp_native_mlip4_additional_radial_basis_classes(
         cell=np.diag([10.0, 10.0, 10.0]),
         pbc=True,
     )
-    result = MtpCalculator(
+    result = MTP(
         species=[13, 14], potential_path=path, num_threads=1
     ).compute(StructureBatch.from_ase([system]))
     assert result.values.shape == (2, 5)

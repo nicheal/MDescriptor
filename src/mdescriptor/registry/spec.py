@@ -1,0 +1,63 @@
+"""Descriptor definition records used by discovery, tests, and docs."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+import importlib
+from typing import Any, TypeAlias
+
+
+class AssetPolicy(str, Enum):
+    NONE = "none"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
+DescriptorClass: TypeAlias = type[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class DescriptorSpec:
+    name: str
+    import_path: str
+    asset_policy: AssetPolicy
+    backend: str
+    level: str
+    aliases: tuple[str, ...] = ()
+    capabilities: frozenset[str] = field(default_factory=frozenset)
+    optional_extra: str | None = None
+
+    def __post_init__(self) -> None:
+        name = str(self.name).strip()
+        if not name or any(character.isspace() for character in name):
+            raise ValueError("descriptor spec name must be a non-empty token")
+        module, separator, attribute = self.import_path.partition(":")
+        if not separator or not module or not attribute:
+            raise ValueError("descriptor spec import_path must be 'module:attribute'")
+        try:
+            policy = AssetPolicy(self.asset_policy)
+        except ValueError as exc:
+            raise ValueError(f"unknown asset policy {self.asset_policy!r}") from exc
+        level = str(self.level)
+        if level not in {"atom", "structure", "pair"}:
+            raise ValueError("descriptor spec level must be atom, structure, or pair")
+        aliases = tuple(str(alias).strip() for alias in self.aliases)
+        if any(not alias or any(character.isspace() for character in alias) for alias in aliases):
+            raise ValueError("descriptor aliases must be non-empty tokens")
+        if len(set(aliases)) != len(aliases) or name in aliases:
+            raise ValueError("descriptor aliases must be unique and differ from name")
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "asset_policy", policy)
+        object.__setattr__(self, "level", level)
+        object.__setattr__(self, "aliases", aliases)
+        object.__setattr__(self, "capabilities", frozenset(str(item) for item in self.capabilities))
+        if self.optional_extra is not None:
+            object.__setattr__(self, "optional_extra", str(self.optional_extra))
+
+    def load_class(self) -> DescriptorClass:
+        module_name, separator, attribute = self.import_path.partition(":")
+        if not separator or not module_name or not attribute:
+            raise ValueError(f"invalid descriptor import path {self.import_path!r}")
+        module = importlib.import_module(module_name)
+        return getattr(module, attribute)

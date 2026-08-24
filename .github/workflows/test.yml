@@ -35,3 +35,25 @@ jobs:
       - name: Run tests
         working-directory: /tmp
         run: python -m pytest --import-mode=importlib "$GITHUB_WORKSPACE/tests"
+
+  model:
+    name: Model contract (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install model test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install ".[test,model]"
+
+      - name: Run model-backed contract tests
+        working-directory: /tmp
+        run: python -m pytest --import-mode=importlib "$GITHUB_WORKSPACE/tests" -k "dpa4 or nep"

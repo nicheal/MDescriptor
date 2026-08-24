@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from mdescriptor import C00PSMlffCalculator, CancelledError, ComputeControl, StructureBatch
+from tests._public import C00PSMLFF, CancelledError, ComputeControl, StructureBatch
 
 
 def _system(positions):
@@ -18,7 +18,7 @@ def test_c00ps_mlff_shape_labels_and_metadata():
     batch = StructureBatch.from_ase([
         _system([[5.0, 5.0, 5.0], [5.8, 5.0, 5.0], [5.0, 5.9, 5.0]])
     ])
-    calculator = C00PSMlffCalculator(species=[1, 8], r_cut=3.0, n_radial=3, l_max=2)
+    calculator = C00PSMLFF(species=[1, 8], r_cut=3.0, n_radial=3, l_max=2)
     result = calculator.compute(batch)
     # The common q-grid cutoff gives nrb(l) = [3, 2, 2] here.
     expected_features = 2 * 3 + (2 * 3) * (2 * 3 + 1) // 2
@@ -41,7 +41,7 @@ def test_c00ps_mlff_is_translation_and_rotation_invariant():
     rotated = (positions - center) @ rotation.T + center
     batch = StructureBatch.from_ase([_system(positions), _system(shifted), _system(rotated)])
 
-    result = C00PSMlffCalculator(species=[1, 8], r_cut=3.0, n_radial=2, l_max=3).compute(batch)
+    result = C00PSMLFF(species=[1, 8], r_cut=3.0, n_radial=2, l_max=3).compute(batch)
     values = result.values.reshape(3, 3, -1)
 
     np.testing.assert_allclose(values[0], values[1], rtol=1e-10, atol=1e-12)
@@ -53,10 +53,10 @@ def test_c00ps_mlff_radial_or_angular_only_modes():
         _system([[5.0, 5.0, 5.0], [5.8, 5.0, 5.0], [5.0, 5.9, 5.0]])
     ])
 
-    radial = C00PSMlffCalculator(
+    radial = C00PSMLFF(
         species=[1, 8], r_cut=3.0, n_radial=4, l_max=1, include_angular=False
     ).compute(batch)
-    angular = C00PSMlffCalculator(
+    angular = C00PSMLFF(
         species=[1, 8], r_cut=3.0, n_radial=4, l_max=1, include_radial=False
     ).compute(batch)
 
@@ -74,7 +74,7 @@ def test_c00ps_mlff_angular_descriptor_excludes_neighbor_self_terms():
             pbc=True,
         )
     ])
-    result = C00PSMlffCalculator(
+    result = C00PSMLFF(
         species=[1, 8],
         r_cut=3.0,
         n_radial=2,
@@ -94,7 +94,7 @@ def test_c00ps_mlff_higher_angular_channels_use_nonzero_bessel_basis():
             pbc=True,
         )
     ])
-    result = C00PSMlffCalculator(
+    result = C00PSMLFF(
         species=[1],
         r_cut=3.0,
         n_radial=1,
@@ -110,7 +110,7 @@ def test_c00ps_mlff_honors_pre_cancelled_control():
     control.reset(1)
     control.cancel()
     with pytest.raises(CancelledError):
-        C00PSMlffCalculator(species=[1, 8], r_cut=3.0, n_radial=1, l_max=1).compute(
+        C00PSMLFF(species=[1, 8], r_cut=3.0, n_radial=1, l_max=1).compute(
             StructureBatch.from_ase([_system([
                 [5.0, 5.0, 5.0], [5.8, 5.0, 5.0], [5.0, 5.9, 5.0]
             ])]),

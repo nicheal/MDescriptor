@@ -1,8 +1,8 @@
 import numpy as np
 
-from mdescriptor.descriptors import _build_neighbor_graph
-from mdescriptor.descriptors_extra import _periodic_neighbors
-from mdescriptor import StructureBatch
+from mdescriptor._legacy.core import _build_neighbor_graph
+from mdescriptor._legacy.extra import _periodic_neighbors
+from tests._public import StructureBatch
 
 
 def test_native_neighbor_graph_matches_bruteforce_periodic_images():

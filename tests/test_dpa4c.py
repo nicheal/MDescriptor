@@ -6,16 +6,13 @@ import pytest
 
 pytest.importorskip("torch")
 
-from mdescriptor import Dpa4cCalculator, StructureBatch
+from tests._public import DPA4C, StructureBatch
+from mdescriptor.models import DPA4C_MODEL
 
 
 ROOT = Path(__file__).parents[1]
-MODEL = ROOT / ".deps" / "DPA4C-Air-OMat24-v20260819.pt"
+MODEL = DPA4C_MODEL
 GOLDEN = ROOT / "tests" / "data" / "dpa4c_air_h2o_golden.json"
-
-if not MODEL.exists():
-    pytest.skip("DPA4C oracle checkpoint is not present", allow_module_level=True)
-
 
 def _fixture() -> tuple[StructureBatch, np.ndarray]:
     payload = json.loads(GOLDEN.read_text(encoding="utf-8"))
@@ -33,7 +30,7 @@ def _fixture() -> tuple[StructureBatch, np.ndarray]:
 
 def test_dpa4c_matches_official_golden_fixture():
     batch, expected = _fixture()
-    result = Dpa4cCalculator(MODEL).compute(batch)
+    result = DPA4C(MODEL).compute(batch)
     assert result.values.shape == (6, 219)
     assert result.level == "atom"
     assert result.metadata["backend"] == "mdescriptor-torch"
@@ -43,7 +40,7 @@ def test_dpa4c_matches_official_golden_fixture():
 
 def test_dpa4c_is_rotation_and_atom_permutation_invariant():
     batch, _ = _fixture()
-    calculator = Dpa4cCalculator(MODEL)
+    calculator = DPA4C(MODEL)
     baseline = calculator.compute(batch).values
 
     rotation = np.asarray([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
@@ -69,7 +66,7 @@ def test_dpa4c_is_rotation_and_atom_permutation_invariant():
 
 def test_dpa4c_maps_atomic_numbers_through_checkpoint_type_map():
     batch, _ = _fixture()
-    calculator = Dpa4cCalculator(MODEL)
+    calculator = DPA4C(MODEL)
     with pytest.raises(ValueError, match="absent from the checkpoint type_map"):
         calculator.compute(
             StructureBatch(
@@ -84,5 +81,5 @@ def test_dpa4c_maps_atomic_numbers_through_checkpoint_type_map():
 
 
 def test_dpa4c_uses_the_bundled_checkpoint_by_default():
-    calculator = Dpa4cCalculator()
+    calculator = DPA4C()
     assert calculator.model_path.endswith("DPA4C-Air-OMat24-v20260819.pt")
