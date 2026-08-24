@@ -56,49 +56,6 @@ sparse=True on a calculator that supports sparse output.
 只有使用 StructureBatch.from_ase，或直接传入 ASE Atoms 对象时才需要 ASE，
 可通过 pip install ase 安装。需要 sparse=True 时，请安装 sparse。
 
-### Build and release / 构建与发布
-
-The project uses `scikit-build-core` as the PEP 517 backend. The C++17 core is
-configured by `CMakeLists.txt`, and the extension is installed next to the
-Python package as `mdescriptor._descriptor_cpp`. To build distributions locally:
-Package versions are read from Git tags by `setuptools-scm`: tag `v1.2.3`
-produces version `1.2.3`. Untagged source builds use a development version
-derived from the fallback and Git state.
-
-项目使用 `scikit-build-core` 作为 PEP 517 构建后端。C++17 核心由
-`CMakeLists.txt` 配置，扩展模块会与 Python 包一起安装为
-`mdescriptor._descriptor_cpp`。版本号由 `setuptools-scm` 从 Git tag 读取：
-tag `v1.2.3` 会生成版本 `1.2.3`；没有 tag 的源码构建会根据 fallback 和 Git
-状态生成开发版本。本地构建发布产物：
-
-~~~bash
-python -m pip install build
-python -m build
-~~~
-
-Pushing a tag such as `v0.1.0` starts
-`.github/workflows/release.yml`. `cibuildwheel` builds CPython 3.10–3.14
-wheels for Linux x86_64, Windows x86_64, macOS Intel, and macOS arm64; a source
-distribution is built in parallel. The final job publishes all artifacts to
-PyPI using GitHub OIDC Trusted Publishing and creates a matching GitHub Release
-with all wheels and the sdist attached, so no long-lived `PYPI_TOKEN` is stored
-in GitHub Secrets.
-
-推送 `v0.1.0` 之类的 tag 后会触发 `.github/workflows/release.yml`。
-`cibuildwheel` 会为 Linux x86_64、Windows x86_64、macOS Intel 和 macOS arm64
-构建 CPython 3.10–3.14 的 wheel，并同时构建源码包。随后通过 GitHub OIDC
-Trusted Publishing 发布到 PyPI，并创建对应的 GitHub Release，将所有 wheel 和
-源码包作为附件上传；不需要在 GitHub Secrets 中保存长期有效的 `PYPI_TOKEN`。
-
-Before the first release, configure a PyPI Trusted Publisher with the actual
-GitHub owner, repository, workflow `release.yml`, and GitHub environment `pypi`.
-Create the `pypi` environment in the repository and add required reviewers if
-manual release approval is desired.
-
-首次发布前，需要在 PyPI Trusted Publisher 中填写实际的 GitHub 用户/组织、仓库、
-workflow `release.yml`，以及 GitHub 环境 `pypi`。在仓库中创建 `pypi` environment；
-如果希望人工审批发布，可以为该环境配置 required reviewers。
-
 ## Input contract / 输入结构
 
 All calculators accept one of the following:
@@ -332,3 +289,15 @@ required at runtime for the native calculation path.
 
 MDescriptor 包含原生描述符计算核心和面向兼容性的 Python 适配器。类名或元数据中
 出现的参考包名称表示所支持的数学约定；原生计算路径运行时不要求安装这些参考包。
+
+## License / 许可证
+
+MDescriptor is licensed under the GNU General Public License v3.0. See
+[LICENSE](LICENSE) for the full text.
+
+MDescriptor 采用 GNU General Public License v3.0，完整协议文本请参见
+[LICENSE](LICENSE)。
+
+## Developer / 开发者
+
+Developer email / 开发者邮箱：[nicheal@gmail.com](mailto:nicheal@gmail.com)
