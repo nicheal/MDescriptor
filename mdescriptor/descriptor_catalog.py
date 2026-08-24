@@ -24,6 +24,8 @@ from .descriptors_featomic import (
 )
 from .descriptors_pyxtal import EadCalculator, LbispectrumCalculator, SnapCalculator, So3Calculator, So4Calculator
 from .descriptors_mtp import MtpCalculator
+from .descriptors_nep import NepCalculator
+from .descriptors_dpa4 import Dpa4Calculator
 from .descriptors_dpa4c import Dpa4cCalculator
 from .descriptors_c00ps_mlff import C00PSMlffCalculator
 
@@ -53,6 +55,12 @@ DESCRIPTOR_CATALOG = {
     "LBispectrum": LbispectrumCalculator,
     "MTP": MtpCalculator,
     "C00PSMLFF": C00PSMlffCalculator,
+}
+
+
+MODEL_DESCRIPTOR_CATALOG = {
+    "NEP": NepCalculator,
+    "DPA4": Dpa4Calculator,
     "DPA4C": Dpa4cCalculator,
 }
 
@@ -61,4 +69,13 @@ def descriptor_inventory() -> tuple[str, ...]:
     return tuple(DESCRIPTOR_CATALOG)
 
 
-__all__ = ["DESCRIPTOR_CATALOG", "descriptor_inventory"]
+def model_descriptor_inventory() -> tuple[str, ...]:
+    return tuple(MODEL_DESCRIPTOR_CATALOG)
+
+
+__all__ = [
+    "DESCRIPTOR_CATALOG",
+    "MODEL_DESCRIPTOR_CATALOG",
+    "descriptor_inventory",
+    "model_descriptor_inventory",
+]

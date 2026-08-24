@@ -16,16 +16,16 @@ C++17 实现，并通过简洁的 Python API 调用。库接收一个或多个�
 - Atom-level, structure-level, and pair-level outputs.
 - Stable feature labels and metadata for every result.
 - Optional ASE input conversion and optional sparse.COO output.
-- 25 entries in DESCRIPTOR_CATALOG: native descriptors, the C00PS-MLFF
-  C00/PS descriptor, and bundled model-backed DPA4/DPA4C/NEP descriptors.
+- 24 entries in DESCRIPTOR_CATALOG for native descriptors, including the
+  C00PS-MLFF C00/PS descriptor; model-backed descriptors have a separate catalog.
 
 - 原生 C++17 计算核心，可选 OpenMP 并行。
 - 所有描述符统一使用同一种输入契约。
 - 支持原子级、结构级和邻居对级输出。
 - 每个结果都包含稳定的特征标签和元数据。
 - 可选使用 ASE 构造输入，也可选输出 sparse.COO。
-- DESCRIPTOR_CATALOG 中包含 25 个入口：原生描述符、C00PS-MLFF
-  C00/PS 描述符，以及内置模型驱动的 DPA4/DPA4C/NEP 描述符。
+- DESCRIPTOR_CATALOG 中包含 24 个原生描述符入口，包括 C00PS-MLFF
+  C00/PS 描述符；模型驱动描述符使用独立目录。
 
 ## Installation / 安装
 
@@ -266,18 +266,25 @@ first_structure_pairs = result.values[
 
 ## Public catalog / 公共目录
 
-DESCRIPTOR_CATALOG contains 25 entries: the 24 native descriptors and the
-DPA4C model-backed descriptor. DPA4 and NEP are intentionally separate because
-their feature dimensions and parameters come from a model checkpoint.
+DESCRIPTOR_CATALOG contains 24 native descriptor entries. NEP, DPA4, and DPA4C
+are model-backed descriptors, so they are exposed through the separate
+MODEL_DESCRIPTOR_CATALOG.
 
-DESCRIPTOR_CATALOG 包含 25 个入口：24 个原生描述符和 DPA4C 模型驱动描述符。
-DPA4 和 NEP 没有加入目录，因为它们的特征维度和参数由模型检查点决定。
+DESCRIPTOR_CATALOG 包含 24 个原生描述符入口。NEP、DPA4 和 DPA4C
+都是模型驱动描述符，因此通过独立的 MODEL_DESCRIPTOR_CATALOG 暴露。
 
 ~~~python
-from mdescriptor import DESCRIPTOR_CATALOG, descriptor_inventory
+from mdescriptor import (
+    DESCRIPTOR_CATALOG,
+    MODEL_DESCRIPTOR_CATALOG,
+    descriptor_inventory,
+    model_descriptor_inventory,
+)
 
 print(descriptor_inventory())
+print(model_descriptor_inventory())
 calculator_class = DESCRIPTOR_CATALOG["SOAP"]
+model_calculator_class = MODEL_DESCRIPTOR_CATALOG["DPA4C"]
 ~~~
 
 ## Scope / 范围

@@ -40,7 +40,12 @@ from .descriptors_nep import NEP, NEPCalculator, NepCalculator
 from .descriptors_dpa4c import DPA4C, DPA4CCalculator, Dpa4cCalculator
 from .descriptors_dpa4 import DPA4, DPA4Calculator, Dpa4Calculator
 from .descriptors_c00ps_mlff import C00PSMLFF, C00PSMlffCalculator
-from .descriptor_catalog import DESCRIPTOR_CATALOG, descriptor_inventory
+from .descriptor_catalog import (
+    DESCRIPTOR_CATALOG,
+    MODEL_DESCRIPTOR_CATALOG,
+    descriptor_inventory,
+    model_descriptor_inventory,
+)
 
 __all__ = [
     "AcsfCalculator",
@@ -84,5 +89,7 @@ __all__ = [
     "C00PSMLFF",
     "C00PSMlffCalculator",
     "DESCRIPTOR_CATALOG",
+    "MODEL_DESCRIPTOR_CATALOG",
     "descriptor_inventory",
+    "model_descriptor_inventory",
 ]

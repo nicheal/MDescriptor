@@ -11,7 +11,6 @@ import numpy as np
 from ase import Atoms
 
 from mdescriptor import DESCRIPTOR_CATALOG, StructureBatch
-from mdescriptor.models import DPA4C_MODEL
 
 
 _SYMMETRY_RTOL = 1e-5
@@ -121,8 +120,6 @@ def _calculator(name: str, calculator_class: type):
         )
     if name == "C00PSMLFF":
         return calculator_class(species=[1, 8], r_cut=3.0, n_radial=2, l_max=2)
-    if name == "DPA4C":
-        return calculator_class(model_path=DPA4C_MODEL)
     raise AssertionError(f"no water configuration for catalog descriptor {name!r}")
 
 
@@ -205,16 +202,6 @@ def test_all_catalog_descriptors_on_water_symmetry_report():
         "NeighborList", "SphericalExpansion", "SphericalExpansionByPair", "LodeSphericalExpansion"
     }
     for name, calculator_class in DESCRIPTOR_CATALOG.items():
-        if name == "DPA4C":
-            try:
-                import torch  # noqa: F401
-            except ImportError:
-                skipped.append(f"{name}: torch is unavailable")
-                continue
-            if not DPA4C_MODEL.exists():
-                skipped.append(f"{name}: {DPA4C_MODEL} is unavailable")
-                continue
-
         calculator = _calculator(name, calculator_class)
         result = calculator.compute(batch)
         assert np.isfinite(np.asarray(result.values)).all(), name

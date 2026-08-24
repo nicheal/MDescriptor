@@ -1,12 +1,15 @@
 import numpy as np
 import pytest
 from ase import Atoms
-from pathlib import Path
 
-from mdescriptor import CancelledError, ComputeControl, DESCRIPTOR_CATALOG, MBTRCalculator, StructureBatch
-
-
-DPA4C_MODEL = Path(__file__).parents[1] / ".deps" / "DPA4C-Air-OMat24-v20260819.pt"
+from mdescriptor import (
+    CancelledError,
+    ComputeControl,
+    DESCRIPTOR_CATALOG,
+    MBTRCalculator,
+    MODEL_DESCRIPTOR_CATALOG,
+    StructureBatch,
+)
 
 
 def _batch():
@@ -20,8 +23,6 @@ def _batch():
 
 
 def _calculator(name, cls):
-    if name == "DPA4C":
-        return cls(model_path=DPA4C_MODEL)
     if name == "ACSF":
         return cls(species=[8, 11, 14, 17], r_cut=3.5)
     if name in {"CoulombMatrix", "SineMatrix", "EwaldSumMatrix"}:
@@ -46,25 +47,20 @@ def _calculator(name, cls):
 
 
 def test_every_catalog_descriptor_is_native_and_finite():
-    assert len(DESCRIPTOR_CATALOG) == 25
+    assert len(DESCRIPTOR_CATALOG) == 24
     assert len(set(DESCRIPTOR_CATALOG.values())) == len(DESCRIPTOR_CATALOG)
     batch = _batch()
     for name, cls in DESCRIPTOR_CATALOG.items():
-        if name in {"DPA4", "DPA4C"}:
-            try:
-                import torch  # noqa: F401
-            except ImportError:
-                continue
-            if not DPA4C_MODEL.exists():
-                continue
         result = _calculator(name, cls).compute(batch)
-        expected_backend = {
-            "DPA4": "mdescriptor-dpa4-official-native",
-            "DPA4C": "mdescriptor-torch",
-        }.get(name, "mdescriptor-cpp")
-        assert result.metadata["backend"] == expected_backend, name
+        assert result.metadata["backend"] == "mdescriptor-cpp", name
         assert result.values.ndim == 2 and result.values.shape[0] > 0, name
         assert np.isfinite(result.values).all(), name
+
+
+def test_model_descriptor_catalog_is_separate():
+    assert tuple(MODEL_DESCRIPTOR_CATALOG) == ("NEP", "DPA4", "DPA4C")
+    assert len(set(MODEL_DESCRIPTOR_CATALOG.values())) == len(MODEL_DESCRIPTOR_CATALOG)
+    assert set(DESCRIPTOR_CATALOG).isdisjoint(MODEL_DESCRIPTOR_CATALOG)
 
 
 def test_soap_turbo_has_rotation_invariant_core_and_central_filter():
