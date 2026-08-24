@@ -1,0 +1,13 @@
+build/
+dist/
+.deps/
+.venv/
+*.egg-info/
+benchmarks/*
+docs/
+mdescriptor/*.so
+mdescriptor/*.pyd
+mdescriptor/_version.py
+mlffkit/__pycache__/
+tests/__pycache__/
+__pycache__/
