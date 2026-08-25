@@ -5438,7 +5438,7 @@
       "configuration": {
         "descriptor": "DPA4C",
         "parameters": {
-          "calibrate": null,
+          "calibrate": true,
           "execution": {
             "device": "cpu",
             "num_threads": null
@@ -5452,8 +5452,7 @@
           "output": {
             "dtype": "float64",
             "sparse": false
-          },
-          "use_amp": null
+          }
         },
         "schema_version": 1
       },
@@ -5952,9 +5951,13 @@
       "values": "mtp_mlip4.npz"
     }
   ],
+  "dpa_reference": {
+    "implementation": "bundled dpa4desc DescriptorEvaluator",
+    "sha256": "31c6c9141094d0367fef64564f81c4d728aba57b77271e2b647774e323f981da"
+  },
   "reference_wheel": {
     "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
-    "sha256": "5e2d09ac13f633a8fc7edb5d2143ad76b0c0bbd1fc7f63bed4963ebb6189dfd2"
+    "sha256": "5e8132e6537351300c5251ef08e1559bdb89c5aa94c05e5142621bcc4a9e5d6f"
   },
   "schema_version": 1,
   "source_commit": "60dccbb"

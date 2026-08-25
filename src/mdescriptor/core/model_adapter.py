@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from os import PathLike
 from types import MappingProxyType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from ..models import (
     LoadedModel,
@@ -17,6 +17,7 @@ from ..models import (
     shared_loaded_model,
 )
 from .adapter import DescriptorAdapter
+from .control import ComputeControl
 from .errors import (
     DescriptorConfigError,
     DescriptorInputError,
@@ -47,6 +48,7 @@ class ModelBackedAdapter(DescriptorAdapter):
         self.session: ModelSession | None = None
         self._preloaded_model_weights: Any = None
         self._resolved_model_path = False
+        self._resolved_model_digest: str | None = None
 
         if self.model_keyword in options:
             raise DescriptorConfigError(
@@ -63,9 +65,10 @@ class ModelBackedAdapter(DescriptorAdapter):
                 loader_schema=self.loader_schema,
                 loader=self._load_shared_artifact,
             )
-            self._preloaded_model_weights = self.loaded_model.weights
+            self._preloaded_model_weights = self.loaded_model.materialize_weights()
             options[self.model_keyword] = self.resolved_model.path
             self._resolved_model_path = True
+            self._resolved_model_digest = self.resolved_model.digest
 
         try:
             super()._initialize(options)
@@ -124,64 +127,27 @@ class ModelBackedAdapter(DescriptorAdapter):
         """Load immutable CPU-side artifact data using the safe checkpoint path."""
 
         if resolved.path.suffix.lower() == ".pt":
-            try:
-                import torch
-
-                weights = torch.load(
-                    str(resolved.path),
-                    map_location="cpu",
-                    weights_only=True,
-                )
-            except ImportError as exc:  # pragma: no cover - optional model extra
+            if self.name not in {"DPA4", "DPA4C"}:
                 raise ModelLoadError(
-                    f"{self.name} requires the project's PyTorch dependency"
-                ) from exc
-            if self.name == "DPA4":
-                from ..descriptors.model_backed.dpa4._vendor.official import (
-                    validate_official_dpa4_checkpoint,
+                    f"official .pt checkpoint loading is not available for {self.name}; "
+                    "only DPA4/DPA4C checkpoints have the bundled NumPy loader"
                 )
+            from ..descriptors.model_backed.dpa import load_dpa_checkpoint
 
-                return validate_official_dpa4_checkpoint(weights), weights
-            if self.name == "DPA4C":
-                from ..descriptors.model_backed.dpa4c._vendor.model import (
-                    validate_dpa4c_checkpoint,
-                )
-
-                return validate_dpa4c_checkpoint(weights), weights
-            return self._checkpoint_identity(resolved, weights), weights
+            expected_descriptor: Literal["DPA4", "DPA4C"] = (
+                "DPA4" if self.name == "DPA4" else "DPA4C"
+            )
+            info, weights = load_dpa_checkpoint(
+                resolved.path,
+                expected_descriptor=expected_descriptor,
+            )
+            return info, weights
         try:
             return MappingProxyType(
                 {"format": resolved.path.suffix.lower().lstrip("."), "digest": resolved.digest}
             ), resolved.path.read_bytes()
         except OSError as exc:
             raise ModelLoadError(f"cannot read model resource {resolved.path}") from exc
-
-    def _checkpoint_identity(self, resolved: ResolvedModel, checkpoint: Any) -> Any:
-        """Keep a small immutable identity beside the shared CPU checkpoint."""
-
-        descriptor_type = None
-        type_map: tuple[str, ...] = ()
-        if isinstance(checkpoint, Mapping):
-            model = checkpoint.get("model", checkpoint)
-            if isinstance(model, Mapping):
-                extra = model.get("_extra_state")
-                if isinstance(extra, Mapping):
-                    params = extra.get("model_params")
-                    if isinstance(params, Mapping):
-                        descriptor = params.get("descriptor")
-                        if isinstance(descriptor, Mapping):
-                            descriptor_type = descriptor.get("type")
-                        raw_type_map = params.get("type_map", ())
-                        if isinstance(raw_type_map, (list, tuple)):
-                            type_map = tuple(str(item) for item in raw_type_map)
-        return MappingProxyType(
-            {
-                "format": resolved.path.suffix.lower().lstrip("."),
-                "digest": resolved.digest,
-                "descriptor_type": descriptor_type,
-                "type_map": type_map,
-            }
-        )
 
     @property
     def model_path(self) -> str | None:
@@ -204,19 +170,24 @@ class ModelBackedAdapter(DescriptorAdapter):
         if self.session is not None:
             self.session.ensure_open()
 
-    def _compute_batch(self, batch: StructureBatch, *, control: Any = None):
+    def _compute_batch(
+        self,
+        batch: StructureBatch,
+        *,
+        control: ComputeControl | None = None,
+    ) -> DescriptorResult:
         self._ensure_model_session()
         return super()._compute_batch(batch, control=control)
 
 
-class TorchModelAdapter(ModelBackedAdapter):
+class ModelInferenceAdapter(ModelBackedAdapter):
     """Model wrapper using spin/charge fields carried by ``StructureBatch``."""
 
     def _compute_batch(
         self,
         batch: StructureBatch,
         *,
-        control: Any = None,
+        control: ComputeControl | None = None,
     ) -> DescriptorResult:
         self._ensure_open()
         self._ensure_model_session()
@@ -240,4 +211,4 @@ class TorchModelAdapter(ModelBackedAdapter):
         return adapted
 
 
-__all__ = ["ModelBackedAdapter", "TorchModelAdapter"]
+__all__ = ["ModelBackedAdapter", "ModelInferenceAdapter"]

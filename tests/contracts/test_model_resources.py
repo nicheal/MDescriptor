@@ -6,6 +6,7 @@ import gc
 import hashlib
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from mdescriptor import ClosedDescriptorError, DescriptorConfigError, ModelLoadError
@@ -91,6 +92,56 @@ def test_loaded_model_cache_shares_cpu_artifact_but_sessions_are_independent(tmp
     gc.collect()
     shared_loaded_model(resolved, loader_kind="test", loader_schema=1, loader=loader)
     assert calls == 2
+
+
+def test_loaded_model_snapshots_nested_state_and_tensor_storage(tmp_path):
+    clear_loaded_model_cache()
+    path = tmp_path / "snapshot.bin"
+    path.write_bytes(b"snapshot")
+    resolved = ModelResolver().resolve(ModelResource.explicit(path))
+    source_config = {"nested": {"values": [1]}}
+    source_array = np.array([2.0])
+    source_weights = {
+        "tensor": np.array([1.0]),
+        "nested": {"payload": bytearray(b"abc")},
+        "array": source_array,
+    }
+
+    loaded = shared_loaded_model(
+        resolved,
+        loader_kind="snapshot",
+        loader_schema=1,
+        loader=lambda _resolved: (source_config, source_weights),
+    )
+
+    source_config["nested"]["values"].append(2)
+    source_weights["tensor"] += 10.0
+    source_weights["nested"]["payload"][0] = ord("z")
+    source_array[0] = 20.0
+
+    assert tuple(loaded.config["nested"]["values"]) == (1,)
+    assert bytes(loaded.weights["nested"]["payload"]) == b"abc"
+    np.testing.assert_array_equal(loaded.weights["tensor"], np.array([1.0]))
+    np.testing.assert_array_equal(loaded.weights["array"], np.array([2.0]))
+
+    with pytest.raises(TypeError):
+        loaded.config["new"] = True
+    with pytest.raises(TypeError):
+        loaded.config["nested"]["new"] = True
+    with pytest.raises(TypeError):
+        loaded.weights["nested"]["new"] = True
+
+    exposed_tensor = loaded.weights["tensor"]
+    exposed_tensor += 20.0
+    np.testing.assert_array_equal(loaded.weights["tensor"], np.array([1.0]))
+    loaded.weights["array"][0] = 30.0
+    np.testing.assert_array_equal(loaded.weights["array"], np.array([2.0]))
+
+    runtime_weights = loaded.materialize_weights()
+    runtime_weights["tensor"] += 40.0
+    runtime_weights["array"][0] = 50.0
+    np.testing.assert_array_equal(loaded.weights["tensor"], np.array([1.0]))
+    np.testing.assert_array_equal(loaded.weights["array"], np.array([2.0]))
 
 
 def test_failed_model_load_is_not_cached(tmp_path):

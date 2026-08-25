@@ -73,6 +73,37 @@ def test_mtp_native_mlip4_json_matches_official_radial_prefix():
     )
 
 
+def test_mtp_reloads_replaced_model_at_same_path(tmp_path):
+    source = Path(__file__).parent / "data" / "mlip4_test_mtp.json"
+    potential = json.loads(source.read_text(encoding="utf-8"))
+    path = tmp_path / "potential.json"
+    path.write_text(json.dumps(potential), encoding="utf-8")
+    system = Atoms(
+        numbers=[13, 14],
+        positions=[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        cell=np.diag([10.0, 10.0, 10.0]),
+        pbc=True,
+    )
+    batch = StructureBatch.from_ase([system])
+
+    first = MTP(species=[13, 14], model=path)
+    try:
+        first_values = first.compute(batch).values.copy()
+
+        potential[1]["PairDescriptorPot"]["params"][20] += 1.0
+        path.write_text(json.dumps(potential), encoding="utf-8")
+
+        second = MTP(species=[13, 14], model=path)
+        try:
+            second_values = second.compute(batch).values
+        finally:
+            second.close()
+    finally:
+        first.close()
+
+    assert not np.allclose(first_values, second_values)
+
+
 @pytest.mark.parametrize(
     ("radial_type", "radial_config"),
     [

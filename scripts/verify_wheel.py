@@ -83,11 +83,6 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "tests" / "data" / "numerical_baselines",
     )
-    parser.add_argument(
-        "--model",
-        action="store_true",
-        help="also compute the bundled DPA4 and DPA4C models",
-    )
     args = parser.parse_args(argv)
     target = None if args.target is None else args.target.resolve()
     if target is not None:
@@ -137,23 +132,21 @@ def main(argv: list[str] | None = None) -> int:
 
     _verify_standalone_baselines(mdescriptor, args.baseline_dir)
 
-    if args.model:
-        from mdescriptor.descriptors import DPA4, DPA4C
+    from mdescriptor.descriptors import DPA4, DPA4C
 
-        for descriptor_type in (DPA4, DPA4C):
-            descriptor = descriptor_type()
-            try:
-                assert descriptor.compute(batch).values.shape[0] == 3
-            finally:
-                descriptor.close()
+    for descriptor_type in (DPA4, DPA4C):
+        descriptor = descriptor_type()
+        try:
+            assert descriptor.compute(batch).values.shape[0] == 3
+        finally:
+            descriptor.close()
     for resource in (NEP_RESOURCE, DPA4_RESOURCE, DPA4C_RESOURCE):
         resolved = ModelResolver().resolve(resource)
         if resolved.digest != resource.expected_sha256:
             raise SystemExit(
                 f"asset hash mismatch for {resource.name}: {resolved.digest}"
             )
-    mode = " with model descriptors" if args.model else ""
-    print(f"verified {package_file} ({len(names)} descriptors){mode}")
+    print(f"verified {package_file} ({len(names)} descriptors, including DPA4/DPA4C)")
     return 0
 
 

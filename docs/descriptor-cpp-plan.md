@@ -7,12 +7,13 @@
 `mdescriptor._native` is the only pybind11 extension exposed to Python
 internals. Its C++17 kernels own periodic neighbor construction, cancellation,
 finite-value validation and numerical loops. Python owns configuration parsing,
-input conversion and result metadata.
+input conversion and result metadata. DPA4 and DPA4C use the private pure
+NumPy vendor package and do not import Torch.
 
 The public Python layer is split into `descriptors/standalone` and
 `descriptors/model_backed`. Standalone descriptors do not load models. NEP,
-DPA4 and DPA4C resolve model resources explicitly; Torch is a runtime extra,
-not a build dependency.
+DPA4 and DPA4C resolve model resources explicitly; the DPA adapters are
+CPU-only and Torch-free.
 
 ## Shared native helpers
 
@@ -35,8 +36,8 @@ Supported model-wheel target policy:
 - Linux arm64 can be added later; Windows arm64 is not promised.
 
 The release workflow builds sdist and wheels separately, tests the installed
-artifact, and keeps Torch out of the base build. DPA tests that exercise
-checkpoints run in a model-extra job.
+artifact outside the repository, and verifies the bundled model checkpoints
+without a model-runtime extra.
 
 ## Contract tests
 

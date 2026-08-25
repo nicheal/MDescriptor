@@ -16,7 +16,7 @@ class AssetPolicy(str, Enum):
 
 DescriptorClass: TypeAlias = type[Any]
 CAPABILITIES = frozenset(
-    {"sparse", "model", "cuda", "spin", "charge_spin", "num_threads", "cooperative_cancel"}
+    {"sparse", "model", "spin", "charge_spin", "num_threads", "cooperative_cancel"}
 )
 
 

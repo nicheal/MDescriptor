@@ -19,6 +19,11 @@ from typing import Any
 import numpy as np
 
 from mdescriptor import StructureBatch, get_descriptor, list_descriptors
+from mdescriptor.descriptors.model_backed.dpa import (
+    _ATOMIC_SYMBOLS,
+    load_dpa_checkpoint,
+    new_runtime,
+)
 from mdescriptor.models import ModelResource
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -360,22 +365,70 @@ def _current_result(
     batch: StructureBatch,
 ) -> tuple[Any, dict[str, Any]]:
     descriptor = get_descriptor(name)(**parameters)
-    result = descriptor.compute(batch)
-    resolved = getattr(descriptor, "resolved_model", None)
-    model = None
-    if resolved is not None:
-        model = {
-            "digest": resolved.digest,
-            "source": resolved.source,
-            "path": str(resolved.path),
-        }
-    elif isinstance(parameters.get("model"), Path):
-        model = {
-            "digest": _digest(parameters["model"]),
-            "source": "explicit",
-            "path": str(parameters["model"]),
-        }
-    return result, {"configuration": descriptor.configuration.to_dict(), "model": model}
+    try:
+        result = descriptor.compute(batch)
+        resolved = getattr(descriptor, "resolved_model", None)
+        model = None
+        if resolved is not None:
+            model = {
+                "digest": resolved.digest,
+                "source": resolved.source,
+                "path": str(resolved.path),
+            }
+        elif isinstance(parameters.get("model"), Path):
+            model = {
+                "digest": _digest(parameters["model"]),
+                "source": "explicit",
+                "path": str(parameters["model"]),
+            }
+        return result, {"configuration": descriptor.configuration.to_dict(), "model": model}
+    finally:
+        descriptor.close()
+
+
+def _dpa_reference_values(
+    name: str,
+    model_path: Path,
+    batch: StructureBatch,
+    calibrate: Any,
+) -> np.ndarray:
+    """Evaluate DPA through the bundled reference evaluator, not its adapter."""
+
+    _info, checkpoint = load_dpa_checkpoint(
+        model_path,
+        expected_descriptor="DPA4" if name == "DPA4" else "DPA4C",
+    )
+    evaluator = new_runtime(model_path, checkpoint)
+    if name == "DPA4C":
+        evaluator.descriptor._calibrate_output = True if calibrate is None else bool(calibrate)
+
+    rows: list[np.ndarray] = []
+    for frame in range(batch.structures):
+        begin = int(batch.offsets[frame])
+        end = int(batch.offsets[frame + 1])
+        symbols = [_ATOMIC_SYMBOLS[int(number)] for number in batch.numbers[begin:end]]
+        atype = evaluator.symbols_to_atype(symbols)
+        values = evaluator.compute(
+            batch.positions[begin:end],
+            atype,
+            batch.cells[frame],
+        )
+        rows.append(np.asarray(values)[0])
+    if not rows:
+        return np.empty((0, int(evaluator.dim_out)), dtype=np.float64)
+    return np.concatenate(rows, axis=0).astype(np.float64, copy=False)
+
+
+def _reference_package_digest() -> str:
+    """Hash the direct NumPy evaluator used as the DPA wrapper reference."""
+
+    package = ROOT / "src" / "mdescriptor" / "descriptors" / "model_backed" / "_vendor" / "dpa4desc"
+    checksum = hashlib.sha256()
+    for path in sorted(package.rglob("*")):
+        if path.is_file() and "__pycache__" not in path.parts:
+            checksum.update(str(path.relative_to(package)).encode("utf-8"))
+            checksum.update(path.read_bytes())
+    return checksum.hexdigest()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -411,14 +464,40 @@ def main(argv: list[str] | None = None) -> int:
                 "parameters": _json_safe(parameters),
                 "batch": _batch_json(batch),
             }
-            with tempfile.TemporaryDirectory(dir=temp) as case_dir:
-                reference = _reference_result(
-                    args.reference_wheel,
-                    request,
-                    batch,
-                    Path(case_dir),
-                )
             current, info = _current_result(name, parameters, batch)
+            if name in {"DPA4", "DPA4C"}:
+                # The frozen external wheel predates the Torch-free DPA
+                # adapter. Compare the public adapter against the direct
+                # bundled evaluator, while the official checkpoint goldens
+                # remain the independent regression evidence for the core.
+                if info["model"] is None:
+                    raise SystemExit(f"{name} did not resolve a model resource")
+                reference_values = _dpa_reference_values(
+                    name,
+                    Path(info["model"]["path"]),
+                    batch,
+                    parameters.get("calibrate"),
+                )
+                reference = {
+                    "values": reference_values,
+                    "samples": np.asarray(current.samples),
+                    "labels": list(current.labels),
+                    "level": current.level.value,
+                    "structure_ids": list(current.structure_ids),
+                    "row_offsets": (
+                        None
+                        if current.row_offsets is None
+                        else current.row_offsets.tolist()
+                    ),
+                }
+            else:
+                with tempfile.TemporaryDirectory(dir=temp) as case_dir:
+                    reference = _reference_result(
+                        args.reference_wheel,
+                        request,
+                        batch,
+                        Path(case_dir),
+                    )
             tolerance = (
                 {"rtol": 2e-5, "atol": 1e-6}
                 if name in {"DPA4", "DPA4C"}
@@ -464,6 +543,10 @@ def main(argv: list[str] | None = None) -> int:
         "reference_wheel": {
             "name": args.reference_wheel.name,
             "sha256": _digest(args.reference_wheel),
+        },
+        "dpa_reference": {
+            "implementation": "bundled dpa4desc DescriptorEvaluator",
+            "sha256": _reference_package_digest(),
         },
         "cases": manifest_cases,
     }

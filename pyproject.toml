@@ -16,15 +16,15 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.23",
     "array-api-compat>=1.8",
+    "packaging>=23",
 ]
 
 [project.optional-dependencies]
 ase = ["ase>=3.22"]
-model = ["torch>=2.10,<2.14"]
 sparse = ["scipy>=1.11"]
 test = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
-reference = ["pytest>=8", "ase>=3.22", "scipy>=1.11", "dscribe==2.1.2"]
-all = ["ase>=3.22", "scipy>=1.11", "torch>=2.10,<2.14"]
+reference = ["pytest>=8", "ase==3.26.0", "scipy>=1.11", "dscribe==2.1.2"]
+all = ["ase>=3.22", "scipy>=1.11"]
 dev = ["pytest>=8", "ase>=3.22", "scipy>=1.11", "ruff>=0.8", "mypy>=1.13"]
 
 [tool.scikit-build]
@@ -68,9 +68,9 @@ test-command = "python -m pytest --import-mode=importlib tests && python scripts
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not model and not reference'"
+addopts = "-m 'not reference'"
 markers = [
-    "model: tests that require the optional Torch/model stack",
+    "model: tests that exercise bundled model-backed descriptors and assets",
     "reference: tests that require the pinned external numerical reference stack",
 ]
 
@@ -81,6 +81,7 @@ src = ["src", "tests", "scripts"]
 extend-exclude = [
     "src/mdescriptor/descriptors/model_backed/dpa4/_vendor",
     "src/mdescriptor/descriptors/model_backed/dpa4c/_vendor",
+    "src/mdescriptor/descriptors/model_backed/_vendor/dpa4desc",
 ]
 
 [tool.ruff.lint]

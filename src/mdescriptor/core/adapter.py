@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, ClassVar
 
+from .control import ComputeControl
 from .descriptor import Descriptor
 from .errors import (
     CancelledError,
@@ -72,7 +73,7 @@ _PUBLIC_OPTION_NAMES: dict[str, frozenset[str]] = {
     }),
     "NEP": frozenset(),
     "DPA4": frozenset(),
-    "DPA4C": frozenset({"calibrate", "use_amp"}),
+    "DPA4C": frozenset({"calibrate"}),
     "SNAP": frozenset({"weights", "lmax", "rcut", "normalize_U"}),
     "LBispectrum": frozenset({
         "twojmax", "diagonal", "rfac0", "rmin0", "rcutfac", "element_profile",
@@ -102,6 +103,7 @@ def adapt_result(result: Any) -> DescriptorResult:
         result.labels,
         result.metadata,
         getattr(result, "samples", None),
+        _atom_row_offsets=getattr(result, "_atom_row_offsets", None),
     )
 
 
@@ -196,6 +198,11 @@ class DescriptorAdapter(Descriptor):
         ):
             kwargs["_checkpoint"] = preloaded
         parameters = _constructor_parameters(self.kernel_type)
+        resolved_model_digest = getattr(self, "_resolved_model_digest", None)
+        if resolved_model_digest is not None and _accepts_keyword(parameters, "model_digest"):
+            # This implementation identity is deliberately absent from the
+            # public constructor and configuration snapshot.
+            kwargs["model_digest"] = resolved_model_digest
         if self._execution_options.num_threads is not None:
             if not _accepts_keyword(parameters, "num_threads"):
                 raise DescriptorConfigError(
@@ -212,6 +219,9 @@ class DescriptorAdapter(Descriptor):
         snapshot = dict(options)
         snapshot["output"] = self._output_options
         snapshot["execution"] = self._execution_options
+        for key, default in getattr(self.kernel_type, "configuration_defaults", {}).items():
+            if snapshot.get(key) is None:
+                snapshot[key] = default
         self._configuration = DescriptorConfiguration(
             CONFIGURATION_SCHEMA_VERSION,
             self.name,
@@ -371,7 +381,12 @@ class DescriptorAdapter(Descriptor):
             normalized["details"] = details_value
         return _json_safe(normalized)
 
-    def _compute_batch(self, batch: StructureBatch, *, control: Any = None) -> DescriptorResult:
+    def _compute_batch(
+        self,
+        batch: StructureBatch,
+        *,
+        control: ComputeControl | None = None,
+    ) -> DescriptorResult:
         try:
             raw_result = self._kernel.compute(batch, control)
         except NativeCancelledError as exc:

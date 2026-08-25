@@ -134,6 +134,15 @@ class DescriptorResult:
     metadata: Mapping[str, Any] = field(default_factory=dict)
     samples: Any = None
     feature_count: int | None = None
+    # Pair rows need the atom offsets separately from their own row offsets in
+    # order to validate local atom identities. This is construction context,
+    # not part of the serialized/public result payload.
+    _atom_row_offsets: np.ndarray | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        kw_only=True,
+    )
 
     def __post_init__(self) -> None:
         level = DescriptorLevel(self.level)
@@ -164,6 +173,23 @@ class DescriptorResult:
                 raise ValueError("row offsets must be a one-dimensional integer array")
             offsets = np.ascontiguousarray(raw_offsets, dtype=np.int64)
             object.__setattr__(self, "row_offsets", offsets)
+
+        atom_offsets = self._atom_row_offsets
+        if atom_offsets is not None:
+            raw_atom_offsets = np.asarray(atom_offsets)
+            if (
+                raw_atom_offsets.ndim != 1
+                or not np.issubdtype(raw_atom_offsets.dtype, np.integer)
+            ):
+                raise ValueError("atom row offsets must be a one-dimensional integer array")
+            atom_offsets = np.ascontiguousarray(raw_atom_offsets, dtype=np.int64)
+            if len(atom_offsets) != len(self.structure_ids) + 1:
+                raise ValueError("atom row offsets must contain one entry per structure boundary")
+            if len(atom_offsets) == 0 or atom_offsets[0] != 0:
+                raise ValueError("atom row offsets must start at zero")
+            if np.any(np.diff(atom_offsets) < 0):
+                raise ValueError("atom row offsets must be non-decreasing")
+            object.__setattr__(self, "_atom_row_offsets", atom_offsets)
         self._validate_layout(level, rows, offsets)
 
         samples = self.samples
@@ -209,6 +235,14 @@ class DescriptorResult:
             assert offsets is not None  # validated above
             if np.any(samples[:, 0] >= len(offsets) - 1):
                 raise ValueError("pair samples contain an invalid structure index")
+            if self._atom_row_offsets is None:
+                raise ValueError("pair-level results require atom row offsets for sample validation")
+            atom_counts = np.diff(self._atom_row_offsets)
+            if rows and (
+                np.any(samples[:, 1] >= atom_counts[samples[:, 0]])
+                or np.any(samples[:, 2] >= atom_counts[samples[:, 0]])
+            ):
+                raise ValueError("pair samples contain an invalid local atom index")
         object.__setattr__(self, "samples", samples)
 
         metadata = _metadata_v1(self.metadata, level, feature_count)

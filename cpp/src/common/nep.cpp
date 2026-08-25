@@ -473,11 +473,15 @@ struct NepModel {
     }
 };
 
-std::shared_ptr<NepModel> load_model(const std::string& path) {
+std::shared_ptr<NepModel> load_model(
+    const std::string& path,
+    const std::string& model_digest
+) {
     static std::mutex cache_mutex;
     static std::unordered_map<std::string, std::weak_ptr<NepModel>> cache;
+    const std::string cache_key = model_digest.empty() ? path : model_digest;
     std::lock_guard<std::mutex> cache_lock(cache_mutex);
-    if (const auto found = cache.find(path); found != cache.end()) {
+    if (const auto found = cache.find(cache_key); found != cache.end()) {
         if (auto cached = found->second.lock()) return cached;
     }
     const auto lines = read_model_lines(path);
@@ -660,7 +664,7 @@ std::shared_ptr<NepModel> load_model(const std::string& path) {
             }
         }
     }
-    cache[path] = model;
+    cache[cache_key] = model;
     return model;
 }
 
@@ -872,7 +876,7 @@ void compute_nep(
 }
 
 NepCalculator::NepCalculator(NepOptions options)
-    : model_(load_model(options.model_path)), num_threads_(options.num_threads) {
+    : model_(load_model(options.model_path, options.model_digest)), num_threads_(options.num_threads) {
     if (num_threads_ < 0) throw std::invalid_argument("NEP num_threads must be non-negative");
 }
 

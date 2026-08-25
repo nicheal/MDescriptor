@@ -41,6 +41,8 @@ def test_frozen_reference_manifest_covers_all_descriptors_and_mtp_modes():
     manifest = json.loads((BASELINE_DIR / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 1
     assert manifest["source_commit"] == "60dccbb"
+    assert manifest["dpa_reference"]["implementation"] == "bundled dpa4desc DescriptorEvaluator"
+    assert len(manifest["dpa_reference"]["sha256"]) == 64
     cases = manifest["cases"]
     assert len(cases) == 28
     assert {case["name"] for case in cases if case["name"] != "MTP-MLIP4"} == set(

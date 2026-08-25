@@ -80,7 +80,7 @@ jobs:
           path: /tmp/mdescriptor-wheelhouse
           merge-multiple: true
       - name: Install wheel dependencies
-        run: python -m pip install --upgrade pip numpy array-api-compat ase scipy
+        run: python -m pip install --upgrade pip numpy array-api-compat packaging ase scipy
       - name: Install and verify wheel outside the repository
         shell: bash
         run: |
@@ -92,7 +92,7 @@ jobs:
           python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" --target "$target"
 
   verify-model-wheels:
-    name: Verify model wheel (${{ matrix.os }}, Torch ${{ matrix.torch_version }})
+    name: Verify model wheel (${{ matrix.os }}, pure NumPy)
     needs: [build-wheels]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -102,23 +102,12 @@ jobs:
           - os: ubuntu-latest
             python-version: "3.12"
             wheel_pattern: "*cp312-cp312-manylinux*x86_64.whl"
-            torch_version: "2.10"
-            torch_spec: "torch>=2.10,<2.11"
-          - os: ubuntu-latest
-            python-version: "3.12"
-            wheel_pattern: "*cp312-cp312-manylinux*x86_64.whl"
-            torch_version: "2.13"
-            torch_spec: "torch>=2.13,<2.14"
           - os: windows-latest
             python-version: "3.12"
             wheel_pattern: "*cp312-cp312-win_amd64.whl"
-            torch_version: "current"
-            torch_spec: "torch>=2.13,<2.14"
           - os: macos-15
             python-version: "3.12"
             wheel_pattern: "*cp312-cp312-macosx*_arm64.whl"
-            torch_version: "current"
-            torch_spec: "torch>=2.13,<2.14"
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -137,7 +126,7 @@ jobs:
       - name: Install model verification dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy array-api-compat ase scipy "${{ matrix.torch_spec }}"
+          python -m pip install numpy array-api-compat packaging ase scipy
       - name: Install and verify model wheel outside the repository
         shell: bash
         run: |
@@ -146,7 +135,7 @@ jobs:
           test -n "$wheel"
           python -m pip install --no-deps --target "$target" "$wheel"
           cd /tmp
-          python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" --target "$target" --model
+          python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" --target "$target"
 
   benchmark:
     name: Controlled CPU benchmark
@@ -165,7 +154,7 @@ jobs:
       - name: Install benchmark dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "." "ase>=3.22" "scipy>=1.11" "torch>=2.13,<2.14"
+          python -m pip install "." "ase>=3.22" "scipy>=1.11"
       - name: Run controlled benchmark
         run: python scripts/run_benchmark.py --output benchmark.json
       - name: Upload benchmark report

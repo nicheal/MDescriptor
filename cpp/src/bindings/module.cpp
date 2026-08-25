@@ -856,6 +856,7 @@ PYBIND11_MODULE(_native, module) {
         .def(py::init<>())
         .def_readwrite("species", &MtpOptions::species)
         .def_readwrite("potential_path", &MtpOptions::potential_path)
+        .def_readwrite("model_digest", &MtpOptions::model_digest)
         .def_readwrite("min_dist", &MtpOptions::min_dist)
         .def_readwrite("max_dist", &MtpOptions::max_dist)
         .def_readwrite("radial_basis_size", &MtpOptions::radial_basis_size)
@@ -866,5 +867,6 @@ PYBIND11_MODULE(_native, module) {
     py::class_<NepOptions>(module, "NepOptions")
         .def(py::init<>())
         .def_readwrite("model_path", &NepOptions::model_path)
+        .def_readwrite("model_digest", &NepOptions::model_digest)
         .def_readwrite("num_threads", &NepOptions::num_threads);
 }

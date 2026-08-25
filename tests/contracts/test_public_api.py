@@ -92,6 +92,11 @@ def test_builtin_levels_describe_default_output_granularity():
     assert mdescriptor.builtin_registry.get("LMBTR").level == "atom"
     assert mdescriptor.builtin_registry.get("NeighborList").level == "pair"
     assert all("sparse" in spec.capabilities for spec in mdescriptor.builtin_registry)
+    for name in ("DPA4", "DPA4C"):
+        spec = mdescriptor.builtin_registry.get(name)
+        assert spec.backend == "numpy"
+        assert "cuda" not in spec.capabilities
+        assert spec.optional_extra is None
 
 
 def test_result_is_json_safe_and_lifecycle_is_uniform():
@@ -168,6 +173,16 @@ def test_public_adapters_reject_unknown_and_legacy_model_options():
         NEP(model_path="not-a-public-entry-point.txt")
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         NEP(config={"model_path": "not-a-public-entry-point.txt"})
+
+
+def test_dpa_public_options_do_not_expose_torch_runtime_controls():
+    from mdescriptor.descriptors import DPA4, DPA4C
+
+    assert "use_amp" not in inspect.signature(DPA4C).parameters
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        DPA4C(use_amp=False)
+    with pytest.raises(DescriptorConfigError, match="does not support execution.device"):
+        DPA4(execution=ExecutionOptions(device="cuda"))
 
 
 def test_common_options_are_applied_or_rejected_at_the_core_boundary():

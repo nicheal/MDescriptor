@@ -4,14 +4,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import time
 from pathlib import Path
 
-import numpy as np
+# Keep the benchmark deterministic across C++ OpenMP and NumPy BLAS-backed
+# kernels. These must be set before importing NumPy or the native extension.
+for _thread_env in (
+    "OMP_NUM_THREADS",
+    "OMP_DYNAMIC",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ[_thread_env] = "FALSE" if _thread_env == "OMP_DYNAMIC" else "1"
 
-import mdescriptor
-from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor
+import numpy as np  # noqa: E402
+
+import mdescriptor  # noqa: E402
+from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_MANIFEST = ROOT / "tests" / "data" / "numerical_baselines" / "manifest.json"
@@ -95,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         "warmup": args.warmup,
         "repeat": args.repeat,
         "execution": {"device": "cpu", "num_threads": 1},
+        "thread_limits": {"openmp": 1, "blas": 1},
         "cases": measurements,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

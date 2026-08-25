@@ -13,6 +13,9 @@ namespace mdescriptor {
 
 struct NepOptions {
     std::string model_path;
+    // Content identity supplied by the model resolver.  The native model
+    // cache must not identify mutable files by path alone.
+    std::string model_digest;
     int num_threads = 0;
 };
 

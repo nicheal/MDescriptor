@@ -37,6 +37,7 @@ class MtpKernel:
         self,
         species: Iterable[int] | None = None,
         model_path: str | None = None,
+        model_digest: str | None = None,
         min_dist: float = 0.0,
         max_dist: float | None = None,
         r_cut: float | None = None,
@@ -54,6 +55,7 @@ class MtpKernel:
     ) -> None:
         self.species = require_species(species, descriptor=self.name)
         self.model_path = None if model_path is None else str(model_path)
+        self.model_digest = None if model_digest is None else str(model_digest)
         if self.model_path == "":
             raise ValueError("model must not be empty")
         self._official = self.model_path is not None
@@ -104,6 +106,8 @@ class MtpKernel:
         options = _cpp.MtpOptions()
         options.species = list(self.species)
         options.potential_path = self.model_path or ""
+        if self.model_digest is not None:
+            options.model_digest = self.model_digest
         options.min_dist = self.min_dist
         options.max_dist = self.max_dist
         options.radial_basis_size = self.radial_basis_size

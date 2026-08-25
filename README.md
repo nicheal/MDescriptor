@@ -44,17 +44,9 @@ python -m pip install ".[ase]"
 python -m pip install ".[sparse]"
 ```
 
-Torch is an optional runtime dependency for DPA4/DPA4C and is deliberately not
-imported by the base package:
-
-```bash
-python -m pip install ".[model]"
-```
-
-The model extra currently pins `torch>=2.10,<2.14`. DPA4 and DPA4C accept
-official `.pt` checkpoints; loading uses `weights_only=True` and never falls
-back to unsafe pickle loading. CPU is supported; CUDA is selected with
-`ExecutionOptions(device="cuda")` when the installed Torch wheel provides it.
+DPA4 and DPA4C are CPU-only pure-NumPy implementations. Their official `.pt`
+checkpoints are parsed by the bundled restricted reader without importing or
+installing Torch. No network model download is performed.
 
 ## Input contract / 输入契约
 

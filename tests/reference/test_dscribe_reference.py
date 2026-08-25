@@ -21,6 +21,17 @@ from mdescriptor.descriptors import (
 pytestmark = pytest.mark.reference
 
 
+def _rows(value: np.ndarray) -> np.ndarray:
+    """Normalize DScribe's single-structure output to MDescriptor's row layout."""
+
+    result = np.asarray(value)
+    if result.ndim == 1:
+        return result.reshape(1, -1)
+    if result.ndim != 2:
+        raise AssertionError(f"expected a one- or two-dimensional reference, got {result.shape}")
+    return result
+
+
 def _water() -> Atoms:
     return Atoms(
         "OHH",
@@ -89,19 +100,21 @@ def test_matrices_match_pinned_dscribe():
     for native, reference in (
         (
             CoulombMatrix(n_atoms_max=3, permutation="none").compute(batch).values,
-            DscribeCoulombMatrix(n_atoms_max=3, permutation="none").create(system),
+            _rows(DscribeCoulombMatrix(n_atoms_max=3, permutation="none").create(system)),
         ),
         (
             SineMatrix(n_atoms_max=3, permutation="none").compute(batch).values,
-            DscribeSineMatrix(n_atoms_max=3, permutation="none").create(system),
+            _rows(DscribeSineMatrix(n_atoms_max=3, permutation="none").create(system)),
         ),
     ):
         np.testing.assert_allclose(native, reference, rtol=1e-9, atol=1e-11)
 
     parameters = {"accuracy": 1e-5, "w": 1.0, "r_cut": 6.0, "g_cut": 3.0, "a": 0.3}
     native = EwaldSumMatrix(n_atoms_max=2, permutation="none", **parameters).compute(batch).values
-    reference = DscribeEwaldSumMatrix(n_atoms_max=2, permutation="none").create(
-        system, **parameters
+    reference = _rows(
+        DscribeEwaldSumMatrix(n_atoms_max=2, permutation="none").create(
+            system, **parameters
+        )
     )
     np.testing.assert_allclose(native, reference, rtol=1e-9, atol=1e-11)
 
@@ -126,15 +139,15 @@ def test_mbtr_and_valle_oganov_match_pinned_dscribe():
         "weighting": {"function": "exp", "scale": 0.3, "threshold": 1e-3},
         "periodic": True,
     }
-    expected_mbtr = DscribeMBTR(**common).create(system)
+    expected_mbtr = _rows(DscribeMBTR(**common).create(system))
     actual_mbtr = MBTR(**common).compute(batch).values
     np.testing.assert_allclose(actual_mbtr, expected_mbtr, rtol=1e-9, atol=1e-11)
 
-    expected_lmbtr = np.asarray(DscribeLMBTR(**common).create(system))
+    expected_lmbtr = _rows(DscribeLMBTR(**common).create(system))
     actual_lmbtr = LMBTR(**common).compute(batch).values
     np.testing.assert_allclose(actual_lmbtr, expected_lmbtr, rtol=1e-9, atol=1e-11)
 
     parameters = {"species": [1, 8], "function": "distance", "n": 20, "sigma": 0.1, "r_cut": 3.5}
-    expected_valle = DscribeValleOganov(**parameters).create(system)
+    expected_valle = _rows(DscribeValleOganov(**parameters).create(system))
     actual_valle = ValleOganov(**parameters).compute(batch).values
     np.testing.assert_allclose(actual_valle, expected_valle, rtol=1e-9, atol=1e-11)

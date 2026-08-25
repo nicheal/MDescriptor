@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..core.descriptor import Descriptor
 from ..core.options import DescriptorConfiguration, ExecutionOptions, OutputOptions
 from .builtins import builtin_registry
 from .registry import DescriptorRegistry
@@ -27,7 +28,7 @@ def create_descriptor(
     configuration: DescriptorConfiguration,
     *,
     registry: DescriptorRegistry = builtin_registry,
-) -> Any:
+) -> Descriptor:
     """Rebuild one descriptor from its immutable versioned configuration."""
 
     if not isinstance(configuration, DescriptorConfiguration):

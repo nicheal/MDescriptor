@@ -1,0 +1,184 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""
+Public building blocks for the DPA4/SeZM descriptor.
+
+This package re-exports the helper functions, embeddings, equivariant layers,
+and quaternion-based Wigner-D utilities used by the DPA4/SeZM descriptor and model.
+
+This package is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn``.
+"""
+
+from .activation import (
+    GatedActivation,
+    SwiGLU,
+)
+from .attention import (
+    segment_envelope_gated_softmax,
+)
+from .attn_res import (
+    DepthAttnRes,
+)
+from .block import (
+    SeZMInteractionBlock,
+)
+from .cartesian import (
+    EdgeCartesianTensorProduct,
+    NodeCartesianTensorProduct,
+    build_cartesian_basis,
+    build_edge_cartesian_tensors,
+)
+from .edge_cache import (
+    EdgeCache,
+    build_edge_type_feat,
+    compute_edge_src_gate,
+    edge_cache_to_dtype,
+)
+from .embedding import (
+    ChargeSpinEmbedding,
+    EnvironmentInitialEmbedding,
+    GeometricInitialEmbedding,
+    SeZMTypeEmbedding,
+    SpinEmbedding,
+)
+from .ffn import (
+    EquivariantFFN,
+)
+from .grid_net import (
+    BaseGridNet,
+    GridBranch,
+    GridMLP,
+    S2GridNet,
+    SO3GridNet,
+)
+from .indexing import (
+    build_gie_zonal_index,
+    build_l_major_index,
+    build_m_major_index,
+    build_m_major_l_index,
+    build_rotate_inv_rescale,
+    get_so3_dim_of_lmax,
+    map_degree_idx,
+    project_D_to_m,
+    project_Dt_from_m,
+    so3_packed_index,
+)
+from .mlp import (
+    SwiGLUMLP,
+    resolve_swiglu_hidden_width,
+)
+from .norm import (
+    EquivariantRMSNorm,
+    ReducedEquivariantRMSNorm,
+    RMSNorm,
+    ScalarRMSNorm,
+)
+from .projection import (
+    BaseGridProjector,
+    S2GridProjector,
+    SO3GridProjector,
+    resolve_s2_grid_resolution,
+    resolve_so3_grid,
+)
+from .radial import (
+    BridgingSwitch,
+    C3CutoffEnvelope,
+    InnerClamp,
+    RadialBasis,
+    RadialMLP,
+)
+from .so2 import (
+    DynamicRadialDegreeMixer,
+    SO2Convolution,
+    SO2Linear,
+)
+from .so3 import (
+    ChannelLinear,
+    FocusLinear,
+    SO3Linear,
+)
+from .utils import (
+    ATTN_RES_MODES,
+    get_promoted_dtype,
+    init_trunc_normal_fan_in_out,
+    safe_norm,
+)
+from .wignerd import (
+    WignerDCalculator,
+    build_edge_quaternion,
+    quaternion_multiply,
+    quaternion_nlerp,
+    quaternion_normalize,
+    quaternion_to_rotation_matrix,
+    quaternion_z_rotation,
+)
+
+__all__ = [
+    "ATTN_RES_MODES",
+    "BaseGridNet",
+    "BaseGridProjector",
+    "BridgingSwitch",
+    "C3CutoffEnvelope",
+    "ChannelLinear",
+    "ChargeSpinEmbedding",
+    "DepthAttnRes",
+    "DynamicRadialDegreeMixer",
+    "EdgeCache",
+    "EdgeCartesianTensorProduct",
+    "EnvironmentInitialEmbedding",
+    "EquivariantFFN",
+    "EquivariantRMSNorm",
+    "FocusLinear",
+    "GatedActivation",
+    "GeometricInitialEmbedding",
+    "GridBranch",
+    "GridMLP",
+    "InnerClamp",
+    "NodeCartesianTensorProduct",
+    "RMSNorm",
+    "RadialBasis",
+    "RadialMLP",
+    "ReducedEquivariantRMSNorm",
+    "S2GridNet",
+    "S2GridProjector",
+    "SO2Convolution",
+    "SO2Linear",
+    "SO3GridNet",
+    "SO3GridProjector",
+    "SO3Linear",
+    "ScalarRMSNorm",
+    "SeZMInteractionBlock",
+    "SeZMTypeEmbedding",
+    "SpinEmbedding",
+    "SwiGLU",
+    "SwiGLUMLP",
+    "WignerDCalculator",
+    "build_cartesian_basis",
+    "build_edge_cartesian_tensors",
+    "build_edge_quaternion",
+    "build_edge_type_feat",
+    "build_gie_zonal_index",
+    "build_l_major_index",
+    "build_m_major_index",
+    "build_m_major_l_index",
+    "build_rotate_inv_rescale",
+    "compute_edge_src_gate",
+    "edge_cache_to_dtype",
+    "get_promoted_dtype",
+    "get_so3_dim_of_lmax",
+    "init_trunc_normal_fan_in_out",
+    "map_degree_idx",
+    "project_D_to_m",
+    "project_Dt_from_m",
+    "quaternion_multiply",
+    "quaternion_nlerp",
+    "quaternion_normalize",
+    "quaternion_to_rotation_matrix",
+    "quaternion_z_rotation",
+    "resolve_s2_grid_resolution",
+    "resolve_so3_grid",
+    "resolve_swiglu_hidden_width",
+    "safe_norm",
+    "segment_envelope_gated_softmax",
+    "so3_packed_index",
+]

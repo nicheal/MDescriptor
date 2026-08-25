@@ -95,6 +95,9 @@ struct MtpOptions {
     // When set, use the official MLIP-2/MLMTPR alpha-index basis from this
     // text .mtp potential instead of the generic compact basis below.
     std::string potential_path;
+    // Content identity supplied by the model resolver.  The native model
+    // cache must not identify mutable files by path alone.
+    std::string model_digest;
     double min_dist = 0.0;
     double max_dist = 5.0;
     int radial_basis_size = 4;

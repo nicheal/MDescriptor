@@ -107,6 +107,7 @@ class NeighborListKernel:
             ("dx", "dy", "dz", "distance"),
             {"backend": "mdescriptor-cpp", "descriptor": self.name},
             samples=pair_samples(records, offsets, batch.offsets),
+            _atom_row_offsets=batch.offsets.copy(),
         )
 
     def pairs(self, value: StructureBatch | Sequence[Any] | Any) -> list[np.ndarray]:
@@ -141,6 +142,7 @@ class SphericalExpansionKernel(_AtomKernel):
                 tuple(f"{self.name}:{i}" for i in range(values.shape[1])),
                 {"backend": "mdescriptor-cpp", "descriptor": self.name, "species": species},
                 samples=pair_samples(identifiers[:, :5], offsets, batch.offsets),
+                _atom_row_offsets=batch.offsets.copy(),
             )
         values = _cpp.compute_spherical_expansion(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self._kind, getattr(self, "k_cutoff", 2.5), getattr(self, "exponent", 1), getattr(self, "radial_radius", self.cutoff), self.num_threads, control)
         values = np.asarray(values, dtype=np.float64)

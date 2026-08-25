@@ -27,6 +27,7 @@ class NepKernel:
     def __init__(
         self,
         model_path: str | Path | None = None,
+        model_digest: str | None = None,
         dtype: str = "float64",
         sparse: bool = False,
         num_threads: int | None = None,
@@ -46,6 +47,8 @@ class NepKernel:
 
         options = _cpp.NepOptions()
         options.model_path = self.model_path
+        if model_digest is not None:
+            options.model_digest = str(model_digest)
         options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
         self._native = _cpp.NepCalculator(options)
         self.species = tuple(int(value) for value in self._native.species)

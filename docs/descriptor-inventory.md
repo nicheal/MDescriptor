@@ -33,8 +33,8 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 | MTP | `standalone` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
 | C00PSMLFF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | NEP | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
-| DPA4 | `model_backed` | `REQUIRED` | `torch` | `atom` | charge_spin, cuda, model, sparse, spin | `model` |
-| DPA4C | `model_backed` | `REQUIRED` | `torch` | `atom` | charge_spin, cuda, model, sparse, spin | `model` |
+| DPA4 | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, sparse, spin | `—` |
+| DPA4C | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, sparse, spin | `—` |
 
 The canonical algorithm imports are:
 
@@ -51,8 +51,8 @@ factory.  Algorithm classes are deliberately not re-exported from the root.
 - `mdescriptor._native` is the private pybind11 extension name.
 - Python adapters own input packing, lifecycle, typed options and result
   normalization.
-- DPA4/DPA4C use the bundled official checkpoint loader and keep their
-  inference core isolated for a later dedicated DPA refactor.
+- DPA4/DPA4C use the bundled pure-NumPy checkpoint loader and inference core;
+  official ``.pt`` files are parsed without importing Torch.
 - NEP, DPA4 and DPA4C model files are resolved locally and verified by
   streaming SHA-256 before loading.
 
@@ -71,10 +71,10 @@ construction when the optional dependency is unavailable.
 
 ## Optional dependencies
 
-The base import does not import Torch or read model files.  Install
-`.[model]` for Torch-backed descriptors, `.[ase]` for ASE input conversion,
-and `.[sparse]` for SciPy CSR output.  Official `.pt` loads always use
-`weights_only=True`; network downloads are not implemented.
+The base import and DPA4/DPA4C computation do not import Torch.  Install
+`.[ase]` for ASE input conversion and `.[sparse]` for SciPy CSR output.
+Official `.pt` loads use the package's restricted NumPy checkpoint reader;
+network downloads are not implemented.
 
 ## Native source map
 

@@ -688,14 +688,17 @@ MtpCalculator::MtpCalculator(MtpOptions options) : options_(std::move(options)) 
     if (!options_.potential_path.empty()) {
         static std::mutex cache_mutex;
         static std::unordered_map<std::string, std::weak_ptr<OfficialMtpModel>> cache;
+        const std::string cache_key = options_.model_digest.empty()
+            ? options_.potential_path
+            : options_.model_digest;
         std::lock_guard<std::mutex> cache_lock(cache_mutex);
-        if (const auto found = cache.find(options_.potential_path); found != cache.end()) {
+        if (const auto found = cache.find(cache_key); found != cache.end()) {
             official_model_ = found->second.lock();
         }
         if (!official_model_) {
             official_model_ = std::make_shared<OfficialMtpModel>();
             official_model_->load(options_.potential_path);
-            cache[options_.potential_path] = official_model_;
+            cache[cache_key] = official_model_;
         }
     } else {
         (void)mtp_feature_count(options_);

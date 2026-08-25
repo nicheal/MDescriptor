@@ -44,6 +44,7 @@ def test_atom_and_pair_samples_use_local_indices_and_are_contiguous():
         ("x",),
         {"descriptor": "pair", "backend": "test"},
         samples=samples,
+        _atom_row_offsets=np.asarray([0, 2, 3]),
     )
     np.testing.assert_array_equal(pair.samples, [[0, 0, 1, 2, 0, -1], [1, 0, 0, 0, 0, 0]])
     assert pair.samples.dtype == np.int64
@@ -72,4 +73,15 @@ def test_result_rejects_bad_labels_samples_and_live_metadata():
             np.asarray([[0, 2, 0, 0, 0]], dtype=np.int64),
             np.asarray([0, 1]),
             np.asarray([0, 2]),
+        )
+    with pytest.raises(ValueError, match="local atom"):
+        DescriptorResult(
+            np.zeros((1, 1)),
+            "pair",
+            ("a",),
+            np.asarray([0, 1]),
+            ("x",),
+            {},
+            samples=np.asarray([[0, 99, 0, 0, 0, 0]], dtype=np.int64),
+            _atom_row_offsets=np.asarray([0, 2]),
         )
