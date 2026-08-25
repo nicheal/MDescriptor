@@ -299,6 +299,11 @@ def test_valle_oganov_near_linear_angles_match_reference():
 
     dataset = Path(__file__).parents[1] / "benchmarks" / "soap_diverse_dataset_300.xyz"
     systems = [read(dataset, index=index) for index in (8, 11)]
+    for system in systems:
+        # The checked-in XYZ fixture intentionally stays portable plain XYZ;
+        # make the periodic boundary contract explicit for this comparison.
+        system.set_cell(np.diag([20.0, 20.0, 20.0]))
+        system.set_pbc(True)
     species = [1, 6, 8, 14, 16, 17]
     parameters = {"function": "angle", "n": 90, "sigma": 2.0, "r_cut": 6.0}
     reference = DscribeValleOganov(species=species, **parameters).create(systems, n_jobs=1)

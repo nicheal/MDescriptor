@@ -233,7 +233,12 @@ class SoapKernel:
                     options.radial_weights = weights.tolist()
                     options.radial_values = values.ravel().tolist()
                 options.weighting_has_function = "function" in self.weighting
-                options.weighting_function = {"poly": 1, "pow": 2, "exp": 3}.get(self.weighting.get("function"), 0)
+                weighting_function = self.weighting.get("function")
+                options.weighting_function = (
+                    {"poly": 1, "pow": 2, "exp": 3}.get(weighting_function, 0)
+                    if isinstance(weighting_function, str)
+                    else 0
+                )
                 options.weighting_has_w0 = "w0" in self.weighting
                 options.weighting_r0 = float(self.weighting.get("r0", 1.0))
                 options.weighting_c = float(self.weighting.get("c", 1.0))

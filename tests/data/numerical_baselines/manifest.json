@@ -5429,7 +5429,7 @@
         "baseline-1"
       ],
       "tolerance": {
-        "atol": 1e-06,
+        "atol": 1e-05,
         "rtol": 2e-05
       },
       "values": "dpa4.npz"
@@ -5821,7 +5821,7 @@
         "baseline-1"
       ],
       "tolerance": {
-        "atol": 1e-06,
+        "atol": 1e-05,
         "rtol": 2e-05
       },
       "values": "dpa4c.npz"

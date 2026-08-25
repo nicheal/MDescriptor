@@ -47,6 +47,7 @@ include = [
     "/tests/**",
     "/docs/**",
     "/scripts/**",
+    "/benchmarks/**",
     "/README.md",
     "/LICENSE",
     "/pyproject.toml",
@@ -62,9 +63,9 @@ exclude = [
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-musllinux_* *-win32 *-*linux_i686"
-test-requires = ["pytest>=8", "ase>=3.22"]
+test-requires = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
 test-sources = ["tests", "scripts"]
-test-command = "python -m pytest --import-mode=importlib tests && python scripts/verify_wheel.py"
+test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -100,3 +101,9 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+exclude = "^src/mdescriptor/descriptors/model_backed/_vendor/"
+
+[[tool.mypy.overrides]]
+module = ["mdescriptor.descriptors.model_backed._vendor.*"]
+follow_imports = "skip"
+ignore_errors = true

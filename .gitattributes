@@ -1,0 +1,4 @@
+*.pt binary
+*.npz binary
+*.txt -text
+*.xyz text eol=lf

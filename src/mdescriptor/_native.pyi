@@ -5,6 +5,10 @@ small stub next to the source-tree fallback lets the core package be checked
 without importing or building the extension first.
 """
 
+from typing import Any
+
+def __getattr__(name: str) -> Any: ...
+
 class CancelledError(Exception):
     """Exception raised by a native kernel when cooperative cancellation wins."""
 

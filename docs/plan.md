@@ -48,7 +48,7 @@ MDescriptor 剩余重构收口计划
    - 增加 registry 驱动的受控 benchmark：CPU、单线程、固定输入、2 次预热、5 次测量，输出版本化 JSON 和 median/p95；release 上传报告，但不设置跨机器耗时门禁。
    - 私有 C++ 类名及现有明确职责的内部 module 保持不动；只增加模型共享所需 loader/binding，不触碰 numerical kernel。
 4. 测试、CI 与完成标准
-- 数值结构字段精确比较；standalone/NEP 使用 rtol=1e-9, atol=1e-11，DPA 使用 rtol=2e-5, atol=1e-6。所有适用的平移、旋转、排列不变性或等变性继续作为独立门禁。
+- 数值结构字段精确比较；standalone/NEP 使用 rtol=1e-9, atol=1e-11，DPA 使用 rtol=2e-5, atol=1e-5（float32 checkpoint 的跨平台绝对舍入容限）。所有适用的平移、旋转、排列不变性或等变性继续作为独立门禁。
 - reference CI 在 Linux CPython 3.12 固定安装 dscribe==2.1.2 与 ase==3.26.0，硬性比较其可对应的 SOAP、ACSF、矩阵、MBTR/LMBTR 和 Valle–Oganov 实现；reference/model suite 不得通过 importorskip 静默成功。
 - 模型测试覆盖解析优先级、损坏缓存、hash、受限 checkpoint unpickler/global allowlist、checkpoint schema/tensor shape/dtype/type map、两个活跃 session 共享 LoadedModel 但不共享 runtime、关闭隔离、弱缓存回收及失败后重试；DPA 测试不得导入 Torch。
 - 所有 CPython 3.10–3.14 正式 wheel 在仓库外执行基础 import、契约、standalone baseline、NEP 计算和资产 hash 检查。Linux、Windows x86_64、macOS arm64 的 CPython 3.12 额外执行纯 NumPy DPA4/DPA4C 计算；publish 必须依赖这些验证任务。

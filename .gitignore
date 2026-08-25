@@ -4,6 +4,7 @@ dist/
 .venv/
 *.egg-info/
 benchmarks/*
+!benchmarks/soap_diverse_dataset_300.xyz
 mdescriptor/*.so
 mdescriptor/*.pyd
 src/mdescriptor/*.so
