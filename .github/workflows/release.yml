@@ -121,7 +121,7 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           pattern: wheels-*
-          path: /tmp/mdescriptor-wheelhouse
+          path: wheelhouse
           merge-multiple: true
       - name: Install model verification dependencies
         run: |
