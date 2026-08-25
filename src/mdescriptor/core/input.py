@@ -12,7 +12,13 @@ import numpy as np
 
 @dataclass(frozen=True)
 class StructureBatch:
-    """A contiguous snapshot of fully periodic structures."""
+    """A contiguous snapshot of periodic or isolated structures.
+
+    Fully periodic structures carry a nonsingular cell and ``pbc=(1, 1, 1)``.
+    Isolated structures use ``pbc=(0, 0, 0)`` and may carry ASE's zero cell.
+    Mixed periodicity is intentionally rejected until the native kernels have
+    an explicit partial-periodicity contract.
+    """
 
     numbers: np.ndarray
     positions: np.ndarray
@@ -51,11 +57,15 @@ class StructureBatch:
             raise ValueError("offsets must be monotonic")
         if not np.isfinite(positions).all() or not np.isfinite(cells).all():
             raise ValueError("positions and cells must be finite")
-        if np.any(pbc != 1):
-            raise ValueError("only fully periodic structures (pbc=(1, 1, 1)) are supported")
-        for matrix in cells:
-            if abs(float(np.linalg.det(matrix))) < 1e-14:
-                raise ValueError("cells must be nonsingular")
+        if np.any((pbc != 0) & (pbc != 1)):
+            raise ValueError("pbc must contain only 0 or 1")
+        for index, matrix in enumerate(cells):
+            flags = pbc[index]
+            if bool(np.all(flags == 1)):
+                if abs(float(np.linalg.det(matrix))) < 1e-14:
+                    raise ValueError("periodic cells must be nonsingular")
+            elif not bool(np.all(flags == 0)):
+                raise ValueError("mixed periodicity is not supported; use all-zero or all-one pbc")
         if spins is not None and (spins.ndim != 2 or spins.shape != (len(numbers), 3)):
             raise ValueError("spins must have shape (total_atoms, 3)")
         if charge_spin is not None and (charge_spin.ndim != 2 or charge_spin.shape != (len(ids), 2)):

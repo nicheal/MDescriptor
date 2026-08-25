@@ -1,0 +1,46 @@
+{
+  "labels": [
+    "acsf:G2:z=6,eta=0.2,Rs=0"
+  ],
+  "level": "atom",
+  "metadata": {
+    "backend": "mdescriptor-cpp",
+    "descriptor": "ACSF",
+    "details": {
+      "g2_params": [
+        [
+          0.2,
+          0.0
+        ]
+      ],
+      "g3_params": [],
+      "g4_params": [],
+      "g5_params": [],
+      "r_cut": 6.0,
+      "species": [
+        6
+      ]
+    },
+    "execution": {
+      "device": "cpu",
+      "num_threads": null
+    },
+    "feature_count": 2,
+    "level": "atom",
+    "normalized_columns": [
+      1
+    ],
+    "output": {
+      "dtype": "float64",
+      "sparse": false
+    },
+    "raw_dtype": "float64",
+    "runner": "mdescriptor",
+    "schema_version": 1
+  },
+  "raw_kind": "array",
+  "shape": [
+    28337,
+    1
+  ]
+}

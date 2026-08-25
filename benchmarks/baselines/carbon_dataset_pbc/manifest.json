@@ -1,0 +1,42 @@
+{
+  "dataset_id": "carbon_dataset_pbc",
+  "schema_version": 1,
+  "snapshots": [
+    {
+      "created_at": "2026-08-25T12:03:39.766790+00:00",
+      "manifest": "20260825-dpa4-materialization/manifest.json",
+      "snapshot": "20260825-dpa4-materialization",
+      "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+    },
+    {
+      "created_at": "2026-08-25T13:02:37.077966+00:00",
+      "manifest": "20260825-pbc-fast/manifest.json",
+      "snapshot": "20260825-pbc-fast",
+      "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+    },
+    {
+      "created_at": "2026-08-25T13:02:47.014328+00:00",
+      "manifest": "20260825-dpa4c-materialization/manifest.json",
+      "snapshot": "20260825-dpa4c-materialization",
+      "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+    },
+    {
+      "created_at": "2026-08-25T14:00:15.407230+00:00",
+      "manifest": "20260825-c00ps-reference/manifest.json",
+      "snapshot": "20260825-c00ps-reference",
+      "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+    },
+    {
+      "created_at": "2026-08-25T14:56:07.652884+00:00",
+      "manifest": "20260825-c00ps-v66-aligned/manifest.json",
+      "snapshot": "20260825-c00ps-v66-aligned",
+      "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+    },
+    {
+      "created_at": "2026-08-25T15:07:12.468944+00:00",
+      "manifest": "20260825-c00ps-v66-aligned-clm/manifest.json",
+      "snapshot": "20260825-c00ps-v66-aligned-clm",
+      "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+    }
+  ]
+}

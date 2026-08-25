@@ -190,14 +190,14 @@ def _frame_inputs(
     evaluator: DescriptorEvaluator,
     coordinates: np.ndarray,
     atype: np.ndarray,
-    cell: np.ndarray,
+    cell: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Build the archive's dense graph inputs, growing neighbor capacity safely."""
 
     selection = int(evaluator.sel)
     frame_coordinates = np.asarray(coordinates, dtype=np.float64)[None, ...]
     frame_atype = np.asarray(atype, dtype=np.int64)[None, ...]
-    frame_cell = np.asarray(cell, dtype=np.float64)[None, ...]
+    frame_cell = None if cell is None else np.asarray(cell, dtype=np.float64)[None, ...]
     while True:
         coord_ext, atype_ext, mapping, nlist = evaluator._build_nlist(
             frame_coordinates,
@@ -215,7 +215,7 @@ def _frame_descriptor(
     evaluator: DescriptorEvaluator,
     coordinates: np.ndarray,
     atype: np.ndarray,
-    cell: np.ndarray,
+    cell: np.ndarray | None,
     *,
     spin: np.ndarray | None,
     charge_spin: np.ndarray | None,
@@ -295,7 +295,7 @@ def compute_batch(
                 evaluator,
                 batch.positions[begin:end],
                 atype,
-                batch.cells[frame],
+                batch.cells[frame] if np.all(batch.pbc[frame] == 1) else None,
                 spin=spin,
                 charge_spin=charge_spin,
             )

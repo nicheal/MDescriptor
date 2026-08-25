@@ -1,0 +1,1 @@
+{"case_id": "mdescriptor_c00psmlff", "dtype": "float64", "phase_seconds": {"import": 0.007710190009674989, "input": 0.37318420100200456, "kernel": 58.95517788801226, "model": 0.0032850999996298924, "total": 59.339361929000006}, "shape": [28337, 142], "status": "ok"}

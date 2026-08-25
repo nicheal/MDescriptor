@@ -1,0 +1,1 @@
+{"case_id": "featomic_soap_power_spectrum", "dtype": "float64", "phase_seconds": {"import": 2.056377185988822, "input": 0.20959382600267418, "kernel": 1.4245658029976767, "model": 0.004514244006713852, "total": 3.6950565759907477}, "shape": [28337, 27], "status": "ok"}

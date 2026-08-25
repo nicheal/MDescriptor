@@ -808,6 +808,7 @@ PYBIND11_MODULE(_native, module) {
         .def_readwrite("n_radial", &C00PSMlffOptions::n_radial)
         .def_readwrite("l_max", &C00PSMlffOptions::l_max)
         .def_readwrite("cutoff_function", &C00PSMlffOptions::cutoff_function)
+        .def_readwrite("radial_sigma", &C00PSMlffOptions::radial_sigma)
         .def_readwrite("include_radial", &C00PSMlffOptions::include_radial)
         .def_readwrite("include_angular", &C00PSMlffOptions::include_angular)
         .def_readwrite("normalize_radial", &C00PSMlffOptions::normalize_radial)

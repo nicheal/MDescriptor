@@ -80,8 +80,6 @@ target-version = "py310"
 line-length = 100
 src = ["src", "tests", "scripts"]
 extend-exclude = [
-    "src/mdescriptor/descriptors/model_backed/dpa4/_vendor",
-    "src/mdescriptor/descriptors/model_backed/dpa4c/_vendor",
     "src/mdescriptor/descriptors/model_backed/_vendor/dpa4desc",
 ]
 

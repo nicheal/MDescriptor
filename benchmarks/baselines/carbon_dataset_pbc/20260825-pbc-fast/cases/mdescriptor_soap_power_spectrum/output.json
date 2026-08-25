@@ -1,0 +1,59 @@
+{
+  "labels": [
+    "SoapPowerSpectrum:0",
+    "SoapPowerSpectrum:1",
+    "SoapPowerSpectrum:2",
+    "SoapPowerSpectrum:3",
+    "SoapPowerSpectrum:4",
+    "SoapPowerSpectrum:5",
+    "SoapPowerSpectrum:6",
+    "SoapPowerSpectrum:7",
+    "SoapPowerSpectrum:8",
+    "SoapPowerSpectrum:9",
+    "SoapPowerSpectrum:10",
+    "SoapPowerSpectrum:11",
+    "SoapPowerSpectrum:12",
+    "SoapPowerSpectrum:13",
+    "SoapPowerSpectrum:14",
+    "SoapPowerSpectrum:15",
+    "SoapPowerSpectrum:16",
+    "SoapPowerSpectrum:17",
+    "SoapPowerSpectrum:18",
+    "SoapPowerSpectrum:19",
+    "SoapPowerSpectrum:20",
+    "SoapPowerSpectrum:21",
+    "SoapPowerSpectrum:22",
+    "SoapPowerSpectrum:23",
+    "SoapPowerSpectrum:24",
+    "SoapPowerSpectrum:25",
+    "SoapPowerSpectrum:26"
+  ],
+  "level": "atom",
+  "metadata": {
+    "backend": "mdescriptor-cpp",
+    "descriptor": "SoapPowerSpectrum",
+    "details": {
+      "species": [
+        6
+      ]
+    },
+    "execution": {
+      "device": "cpu",
+      "num_threads": null
+    },
+    "feature_count": 27,
+    "level": "atom",
+    "output": {
+      "dtype": "float64",
+      "sparse": false
+    },
+    "raw_dtype": "float64",
+    "runner": "mdescriptor",
+    "schema_version": 1
+  },
+  "raw_kind": "array",
+  "shape": [
+    28337,
+    27
+  ]
+}

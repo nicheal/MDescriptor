@@ -1,0 +1,1 @@
+{"case_id": "mdescriptor_acsf", "dtype": "float64", "phase_seconds": {"import": 0.007207312999526039, "input": 0.3583563129941467, "kernel": 0.2318793479935266, "model": 0.002549853001255542, "total": 0.5999993150035152}, "shape": [28337, 1], "status": "ok"}

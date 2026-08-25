@@ -1,0 +1,1 @@
+{"case_id": "deepmd_kit_dpa4c", "dtype": "float64", "phase_seconds": {"import": 0.33045542999752797, "input": 0.17392643599305302, "kernel": 49.80398460700235, "model": 1.0788183869881323, "total": 51.38719155700528}, "shape": [28337, 219], "status": "ok"}

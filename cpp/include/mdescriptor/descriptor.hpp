@@ -84,6 +84,10 @@ struct C00PSMlffOptions {
     int n_radial = 8;
     int l_max = 4;
     int cutoff_function = 0; // 0: BP, 1: MO, 2: RJ, 3: WMC
+    // Gaussian width sigma_atom in the VASP MLFF theory (Angstrom).  A
+    // positive value enables the Gaussian atomic distribution; zero keeps
+    // the unsmoothed delta-distribution limit.
+    double radial_sigma = 0.5;
     bool include_radial = true;
     bool include_angular = true;
     bool normalize_radial = false;
@@ -143,6 +147,7 @@ private:
     std::atomic<bool> closed_{false};
     mutable std::vector<std::vector<double>> zeros_;
     mutable std::vector<std::vector<double>> norms_;
+    mutable std::vector<std::vector<double>> radial_values_;
     mutable std::vector<std::int32_t> radial_counts_;
     mutable bool basis_ready_ = false;
 };

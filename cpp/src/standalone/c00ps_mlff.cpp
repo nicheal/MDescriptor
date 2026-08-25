@@ -1,8 +1,10 @@
 #include "mdescriptor/descriptor.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "descriptor_common.hpp"
+#include "local_spherical_common.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -19,6 +21,11 @@ using detail::run_parallel_structures;
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
 constexpr double kSqrtFourPi = 3.544907701811032054596334966682290365;
+// VASP 6.6.0 constructs the radial basis on NR equally spaced points and
+// normalizes it with the corresponding right-endpoint sum.  The same grid is
+// used here for the one-time basis setup.
+constexpr int kVaspRadialGridPoints = 10000;
+constexpr int kRadialQuadraturePoints = 240;
 
 double spherical_bessel(int l, double x) {
     const double ax = std::abs(x);
@@ -121,6 +128,39 @@ void gauss_legendre(int count, std::vector<double>& nodes, std::vector<double>& 
     }
 }
 
+double double_factorial_odd(int l) {
+    double value = 1.0;
+    for (int factor = 1; factor <= l; ++factor) {
+        value *= static_cast<double>(2 * factor + 1);
+    }
+    return value;
+}
+
+// VASP's IL0 returns i_l(x) multiplied by exp(-W*s^2-W*r^2), evaluated in a
+// form that remains finite for the Gaussian broadening integral.
+double scaled_modified_spherical_bessel(int l, double x, double w, double sample, double radius) {
+    const double gaussian = std::exp(-w * (sample * sample + radius * radius));
+    if (x * x <= 1e-8) {
+        return gaussian * std::pow(x, l) / double_factorial_odd(l);
+    }
+    const double plus = std::exp(-w * (sample - radius) * (sample - radius));
+    const double minus = std::exp(-w * (sample + radius) * (sample + radius));
+    double previous = 0.5 * (plus - minus) / x;
+    if (l == 0) {
+        return previous;
+    }
+    double current = (0.5 * x * (plus + minus) - 0.5 * (plus - minus)) / (x * x);
+    if (l == 1) {
+        return current;
+    }
+    for (int degree = 2; degree <= l; ++degree) {
+        const double next = previous - (2.0 * degree - 1.0) / x * current;
+        previous = current;
+        current = next;
+    }
+    return current;
+}
+
 double legendre(int l, double x) {
     x = std::max(-1.0, std::min(1.0, x));
     if (l == 0) {
@@ -185,6 +225,9 @@ void validate_options(const C00PSMlffOptions& options) {
         || options.n_radial <= 0 || options.l_max < 0) {
         throw std::invalid_argument("invalid C00PS-MLFF radial or angular parameters");
     }
+    if (!std::isfinite(options.radial_sigma) || options.radial_sigma < 0.0) {
+        throw std::invalid_argument("C00PS-MLFF radial_sigma must be finite and non-negative");
+    }
     if (options.cutoff_function < 0 || options.cutoff_function > 3) {
         throw std::invalid_argument("invalid C00PS-MLFF cutoff function");
     }
@@ -207,6 +250,7 @@ void prepare_basis(
     const C00PSMlffOptions& options,
     std::vector<std::vector<double>>& zeros,
     std::vector<std::vector<double>>& norms,
+    std::vector<std::vector<double>>& radial_values,
     std::vector<std::int32_t>& radial_counts
 ) {
     if (!zeros.empty()) {
@@ -214,9 +258,8 @@ void prepare_basis(
     }
     zeros.resize(static_cast<std::size_t>(options.l_max + 1));
     norms.resize(static_cast<std::size_t>(options.l_max + 1));
-    std::vector<double> nodes;
-    std::vector<double> weights;
-    gauss_legendre(240, nodes, weights);
+    radial_values.clear();
+    radial_values.resize(static_cast<std::size_t>(options.l_max + 1));
     for (int l = 0; l <= options.l_max; ++l) {
         zeros[static_cast<std::size_t>(l)] = bessel_zeros(l, options.n_radial);
     }
@@ -237,12 +280,65 @@ void prepare_basis(
         for (int n = 0; n < radial_counts[static_cast<std::size_t>(l)]; ++n) {
             const double root = zeros[static_cast<std::size_t>(l)][static_cast<std::size_t>(n)];
             double norm2 = 0.0;
-            for (std::size_t q = 0; q < nodes.size(); ++q) {
-                const double radius = 0.5 * options.r_cut * (nodes[q] + 1.0);
+            const double dr = options.r_cut / static_cast<double>(kVaspRadialGridPoints);
+            for (int point = 1; point <= kVaspRadialGridPoints; ++point) {
+                const double radius = static_cast<double>(point) * dr;
                 const double basis = spherical_bessel(l, root * radius / options.r_cut);
-                norm2 += 0.5 * options.r_cut * weights[q] * radius * radius * basis * basis;
+                norm2 += radius * radius * basis * basis * dr;
             }
             l_norms[static_cast<std::size_t>(n)] = std::sqrt(norm2);
+        }
+    }
+
+    if (options.radial_sigma <= 0.0) {
+        return;
+    }
+
+    // RAD_FUNC in VASP first convolves every normalized spherical Bessel
+    // function with the Gaussian atom distribution and then tabulates the
+    // result on the same radial mesh.  The integrand vanishes at both mesh
+    // endpoints for the Bessel basis, so high-order Gauss integration matches
+    // VASP's right-endpoint grid sum to the precision needed here while
+    // avoiding an O(NR^2) setup.
+    std::vector<double> nodes;
+    std::vector<double> weights;
+    gauss_legendre(kRadialQuadraturePoints, nodes, weights);
+    const double width_parameter = 0.5 / (options.radial_sigma * options.radial_sigma);
+    const double prefactor = 4.0 * kPi * std::pow(width_parameter / kPi, 1.5);
+    const double quadrature_scale = 0.5 * options.r_cut;
+    const std::size_t table_width = static_cast<std::size_t>(kVaspRadialGridPoints + 1);
+    for (int l = 0; l <= options.l_max; ++l) {
+        const std::int32_t count = radial_counts[static_cast<std::size_t>(l)];
+        auto& table = radial_values[static_cast<std::size_t>(l)];
+        table.assign(static_cast<std::size_t>(count) * table_width, 0.0);
+        std::vector<std::vector<double>> basis_values(
+            static_cast<std::size_t>(count),
+            std::vector<double>(nodes.size(), 0.0));
+        for (int n = 0; n < count; ++n) {
+            const double root = zeros[static_cast<std::size_t>(l)][static_cast<std::size_t>(n)];
+            const double norm = norms[static_cast<std::size_t>(l)][static_cast<std::size_t>(n)];
+            for (std::size_t q = 0; q < nodes.size(); ++q) {
+                const double radius = quadrature_scale * (nodes[q] + 1.0);
+                basis_values[static_cast<std::size_t>(n)][q]
+                    = spherical_bessel(l, root * radius / options.r_cut) / norm;
+            }
+        }
+        for (int point = 0; point <= kVaspRadialGridPoints; ++point) {
+            const double sample = options.r_cut * static_cast<double>(point)
+                / static_cast<double>(kVaspRadialGridPoints);
+            const double cutoff = cutoff_value(options.cutoff_function, sample, options.r_cut);
+            for (int n = 0; n < count; ++n) {
+                double integral = 0.0;
+                for (std::size_t q = 0; q < nodes.size(); ++q) {
+                    const double radius = quadrature_scale * (nodes[q] + 1.0);
+                    const double x = 2.0 * width_parameter * sample * radius;
+                    integral += weights[q] * basis_values[static_cast<std::size_t>(n)][q]
+                        * scaled_modified_spherical_bessel(l, x, width_parameter, sample, radius)
+                        * radius * radius;
+                }
+                table[static_cast<std::size_t>(n) * table_width + static_cast<std::size_t>(point)]
+                    = cutoff * prefactor * quadrature_scale * integral;
+            }
         }
     }
 }
@@ -251,10 +347,32 @@ double radial_value(
     const C00PSMlffOptions& options,
     const std::vector<std::vector<double>>& zeros,
     const std::vector<std::vector<double>>& norms,
+    const std::vector<std::vector<double>>& radial_values,
     int l,
     int n,
     double distance
 ) {
+    if (options.radial_sigma > 0.0) {
+        const std::size_t table_width = static_cast<std::size_t>(kVaspRadialGridPoints + 1);
+        const auto& table = radial_values[static_cast<std::size_t>(l)];
+        const double coordinate = std::max(0.0, std::min(1.0, distance / options.r_cut))
+            * static_cast<double>(kVaspRadialGridPoints);
+        const int left = std::min(kVaspRadialGridPoints - 1, static_cast<int>(coordinate));
+        const double fraction = coordinate - static_cast<double>(left);
+        const auto value = [&](int point) {
+            const int bounded = std::max(0, std::min(kVaspRadialGridPoints, point));
+            return table[static_cast<std::size_t>(n) * table_width + static_cast<std::size_t>(bounded)];
+        };
+        // Four-point cubic interpolation keeps the tabulated path smooth and
+        // mirrors the cubic spline evaluation used by VASP's SPLVAL_ML_NEW.
+        const double p0 = value(left - 1);
+        const double p1 = value(left);
+        const double p2 = value(left + 1);
+        const double p3 = value(left + 2);
+        return p1 + 0.5 * fraction * (
+            p2 - p0 + fraction * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3
+                + fraction * (3.0 * (p1 - p2) + p3 - p0)));
+    }
     const double basis = spherical_bessel(
         l,
         zeros[static_cast<std::size_t>(l)][static_cast<std::size_t>(n)] * distance / options.r_cut);
@@ -268,8 +386,9 @@ std::int64_t c00ps_mlff_feature_count(const C00PSMlffOptions& options) {
     validate_options(options);
     std::vector<std::vector<double>> zeros;
     std::vector<std::vector<double>> norms;
+    std::vector<std::vector<double>> radial_values;
     std::vector<std::int32_t> radial_counts;
-    prepare_basis(options, zeros, norms, radial_counts);
+    prepare_basis(options, zeros, norms, radial_values, radial_counts);
     const std::int64_t radial = options.include_radial
         ? static_cast<std::int64_t>(options.species.size()) * radial_counts[0]
         : 0;
@@ -286,7 +405,7 @@ std::int64_t c00ps_mlff_feature_count(const C00PSMlffOptions& options) {
  C00PSMlffCalculator::C00PSMlffCalculator(C00PSMlffOptions options)
     : options_(std::move(options)) {
     validate_options(options_);
-    prepare_basis(options_, zeros_, norms_, radial_counts_);
+    prepare_basis(options_, zeros_, norms_, radial_values_, radial_counts_);
     basis_ready_ = true;
 }
 
@@ -338,7 +457,7 @@ void C00PSMlffCalculator::compute(
         control->reset(batch.structures);
     }
     if (!basis_ready_) {
-        prepare_basis(options_, zeros_, norms_, radial_counts_);
+        prepare_basis(options_, zeros_, norms_, radial_values_, radial_counts_);
         basis_ready_ = true;
     }
 
@@ -346,12 +465,10 @@ void C00PSMlffCalculator::compute(
     std::fill(output, output + batch.atoms * features, 0.0);
     const auto mapping = detail::species_map(options_.species);
     const std::int64_t radial_channels = static_cast<std::int64_t>(options_.species.size()) * radial_counts_[0];
-    std::int64_t max_channels = radial_channels;
     std::int64_t angular_features = 0;
     if (options_.include_angular) {
         for (const std::int32_t count : radial_counts_) {
             const std::int64_t channels = static_cast<std::int64_t>(options_.species.size()) * count;
-            max_channels = std::max(max_channels, channels);
             angular_features += channels * (channels + 1) / 2;
         }
     }
@@ -394,23 +511,56 @@ void C00PSMlffCalculator::compute(
 
             double* row = output + center * features;
             const std::size_t neighbor_count = distances.size();
-            std::vector<double> coefficients(
-                static_cast<std::size_t>(options_.l_max + 1)
-                    * neighbor_count * static_cast<std::size_t>(std::max<std::int64_t>(1, max_channels)),
-                0.0);
+            const int coefficient_l_max = options_.include_angular ? options_.l_max : 0;
+            std::vector<std::size_t> coefficient_offsets(
+                static_cast<std::size_t>(coefficient_l_max + 1), 0);
+            std::vector<std::size_t> radial_offsets(
+                static_cast<std::size_t>(coefficient_l_max + 1), 0);
+            std::size_t coefficient_size = 0;
+            std::size_t radial_value_size = 0;
+            for (int l = 0; l <= coefficient_l_max; ++l) {
+                const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
+                const std::size_t channels = options_.species.size()
+                    * static_cast<std::size_t>(radial_count);
+                coefficient_offsets[static_cast<std::size_t>(l)] = coefficient_size;
+                coefficient_size += channels * static_cast<std::size_t>(2 * l + 1);
+                radial_offsets[static_cast<std::size_t>(l)] = radial_value_size;
+                radial_value_size += neighbor_count * static_cast<std::size_t>(radial_count);
+            }
+            std::vector<double> coefficients(coefficient_size, 0.0);
+            std::vector<double> neighbor_radial_values(radial_value_size, 0.0);
             std::vector<double> radial_c00(static_cast<std::size_t>(radial_channels), 0.0);
+            std::vector<double> harmonics;
+            std::vector<double> harmonic_legendre;
             for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
-                const int l_count = options_.include_angular ? options_.l_max + 1 : 1;
-                for (int l = 0; l < l_count; ++l) {
+                if (options_.include_angular) {
+                    const Vec3 vector = vectors[neighbor];
+                    const std::array<double, 3> displacement{vector.x, vector.y, vector.z};
+                    detail::real_spherical_harmonics_into(
+                        displacement, options_.l_max, harmonics, harmonic_legendre);
+                }
+                for (int l = 0; l <= coefficient_l_max; ++l) {
                     const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
-                    const std::size_t base = static_cast<std::size_t>(types[neighbor] * radial_count);
-                    double* coefficient = coefficients.data()
-                        + (static_cast<std::size_t>(l) * neighbor_count + neighbor)
-                            * static_cast<std::size_t>(std::max<std::int64_t>(1, max_channels));
+                    const std::size_t base = static_cast<std::size_t>(types[neighbor])
+                        * static_cast<std::size_t>(radial_count);
+                    const std::size_t harmonic_width = static_cast<std::size_t>(2 * l + 1);
                     for (int n = 0; n < radial_count; ++n) {
                         const double value = radial_value(
-                            options_, zeros_, norms_, l, n, distances[neighbor]);
-                        coefficient[base + static_cast<std::size_t>(n)] = value;
+                            options_, zeros_, norms_, radial_values_, l, n, distances[neighbor]);
+                        neighbor_radial_values[
+                            radial_offsets[static_cast<std::size_t>(l)]
+                            + neighbor * static_cast<std::size_t>(radial_count)
+                            + static_cast<std::size_t>(n)] = value;
+                        if (options_.include_angular) {
+                            const std::size_t channel = base + static_cast<std::size_t>(n);
+                            double* coefficient = coefficients.data()
+                                + coefficient_offsets[static_cast<std::size_t>(l)]
+                                + channel * harmonic_width;
+                            for (std::size_t m = 0; m < harmonic_width; ++m) {
+                                coefficient[m] += value * harmonics[
+                                    static_cast<std::size_t>(l * l) + m];
+                            }
+                        }
                         if (l == 0) {
                             radial_c00[base + static_cast<std::size_t>(n)] += value / kSqrtFourPi;
                         }
@@ -435,34 +585,68 @@ void C00PSMlffCalculator::compute(
             if (options_.include_angular) {
                 const std::size_t angular_offset = options_.include_radial
                     ? static_cast<std::size_t>(radial_channels) : 0;
+                std::vector<std::size_t> self_power_offsets(
+                    static_cast<std::size_t>(options_.l_max + 1), 0);
+                std::vector<double> self_power(static_cast<std::size_t>(angular_features), 0.0);
+                std::size_t self_power_size = 0;
+                for (int l = 0; l <= options_.l_max; ++l) {
+                    const std::int64_t channels = static_cast<std::int64_t>(options_.species.size())
+                        * radial_counts_[static_cast<std::size_t>(l)];
+                    self_power_offsets[static_cast<std::size_t>(l)] = self_power_size;
+                    self_power_size += static_cast<std::size_t>(channels * (channels + 1) / 2);
+                }
+                if (options_.exclude_self_interaction) {
+                    for (int l = 0; l <= options_.l_max; ++l) {
+                        const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
+                        const std::int64_t channels = static_cast<std::int64_t>(options_.species.size())
+                            * radial_count;
+                        const double addition = (2.0 * l + 1.0) / (4.0 * kPi);
+                        for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
+                            const std::int64_t first_base = types[neighbor] * radial_count;
+                            const double* values = neighbor_radial_values.data()
+                                + radial_offsets[static_cast<std::size_t>(l)]
+                                + neighbor * static_cast<std::size_t>(radial_count);
+                            for (int first = 0; first < radial_count; ++first) {
+                                const std::int64_t first_channel = first_base + first;
+                                for (int second = first; second < radial_count; ++second) {
+                                    const std::int64_t second_channel = first_base + second;
+                                    const std::size_t pair_index = static_cast<std::size_t>(
+                                        first_channel * channels
+                                        - first_channel * (first_channel - 1) / 2
+                                        + second_channel - first_channel);
+                                    self_power[self_power_offsets[static_cast<std::size_t>(l)] + pair_index]
+                                        += addition * values[first] * values[second];
+                                }
+                            }
+                        }
+                    }
+                }
                 std::size_t angular_index = 0;
                 for (int l = 0; l <= options_.l_max; ++l) {
                     const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
                     const std::int64_t channels = static_cast<std::int64_t>(options_.species.size()) * radial_count;
-                    const double addition = (2.0 * l + 1.0) / (4.0 * kPi);
                     const double prefactor = std::sqrt(8.0 * kPi * kPi / (2.0 * l + 1.0));
+                    const std::size_t harmonic_width = static_cast<std::size_t>(2 * l + 1);
                     for (std::int64_t first = 0; first < channels; ++first) {
                         for (std::int64_t second = first; second < channels; ++second) {
                             double total = 0.0;
-                            for (std::size_t left = 0; left < neighbor_count; ++left) {
-                                const double* left_coeff = coefficients.data()
-                                    + (static_cast<std::size_t>(l) * neighbor_count + left)
-                                        * static_cast<std::size_t>(std::max<std::int64_t>(1, max_channels));
-                                for (std::size_t right = 0; right < neighbor_count; ++right) {
-                                    if (options_.exclude_self_interaction && left == right) {
-                                        continue;
-                                    }
-                                    const double* right_coeff = coefficients.data()
-                                        + (static_cast<std::size_t>(l) * neighbor_count + right)
-                                            * static_cast<std::size_t>(std::max<std::int64_t>(1, max_channels));
-                                    const double denominator = distances[left] * distances[right];
-                                    double cosine = detail::dot(vectors[left], vectors[right]) / denominator;
-                                    cosine = std::max(-1.0, std::min(1.0, cosine));
-                                    total += left_coeff[first] * right_coeff[second]
-                                        * addition * legendre(l, cosine);
-                                }
+                            const double* first_coeff = coefficients.data()
+                                + coefficient_offsets[static_cast<std::size_t>(l)]
+                                + static_cast<std::size_t>(first) * harmonic_width;
+                            const double* second_coeff = coefficients.data()
+                                + coefficient_offsets[static_cast<std::size_t>(l)]
+                                + static_cast<std::size_t>(second) * harmonic_width;
+                            for (std::size_t m = 0; m < harmonic_width; ++m) {
+                                total += first_coeff[m] * second_coeff[m];
                             }
-                            row[angular_offset + angular_index++] = prefactor * total;
+                            const std::size_t pair_index = static_cast<std::size_t>(
+                                first * channels - first * (first - 1) / 2 + second - first);
+                            if (options_.exclude_self_interaction) {
+                                total -= self_power[
+                                    self_power_offsets[static_cast<std::size_t>(l)] + pair_index];
+                            }
+                            const double radial_pair_weight = first == second ? 1.0 : std::sqrt(2.0);
+                            row[angular_offset + angular_index++] = radial_pair_weight * prefactor * total;
                         }
                     }
                 }

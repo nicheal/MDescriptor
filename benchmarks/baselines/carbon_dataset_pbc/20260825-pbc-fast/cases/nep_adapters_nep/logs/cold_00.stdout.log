@@ -1,0 +1,1 @@
+{"case_id": "nep_adapters_nep", "dtype": "float32", "phase_seconds": {"import": 0.019019470986677334, "input": 0.3772177479986567, "kernel": 0.531497739997576, "model": 0.28103469900088385, "total": 1.2087763360032113}, "shape": [28337, 35], "status": "ok"}

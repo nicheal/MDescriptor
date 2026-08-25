@@ -39,10 +39,19 @@ inline void validate_batch(const StructureBatchView& batch) {
             || batch.offsets[structure + 1] > batch.atoms) {
             throw std::invalid_argument("offsets must be monotonic");
         }
+        bool periodic = true;
+        bool isolated = true;
         for (int axis = 0; axis < 3; ++axis) {
-            if (batch.pbc[structure * 3 + axis] != 1) {
-                throw std::invalid_argument("only fully periodic structures are supported");
+            const std::int32_t flag = batch.pbc[structure * 3 + axis];
+            if (flag != 0 && flag != 1) {
+                throw std::invalid_argument("pbc must contain only 0 or 1");
             }
+            periodic = periodic && flag == 1;
+            isolated = isolated && flag == 0;
+        }
+        if (!periodic && !isolated) {
+            throw std::invalid_argument(
+                "mixed periodicity is not supported; use all-zero or all-one pbc");
         }
         const double* cell = batch.cells + structure * 9;
         for (int index = 0; index < 9; ++index) {
@@ -54,7 +63,7 @@ inline void validate_batch(const StructureBatchView& batch) {
             cell[0] * (cell[4] * cell[8] - cell[5] * cell[7])
             - cell[1] * (cell[3] * cell[8] - cell[5] * cell[6])
             + cell[2] * (cell[3] * cell[7] - cell[4] * cell[6]);
-        if (!std::isfinite(determinant) || std::abs(determinant) < 1e-14) {
+        if (periodic && (!std::isfinite(determinant) || std::abs(determinant) < 1e-14)) {
             throw std::invalid_argument("cells must be nonsingular");
         }
     }

@@ -1,0 +1,40 @@
+{
+  "comparisons": [
+    {
+      "group": "dpa4_exact",
+      "kind": "exact",
+      "left": {
+        "case": "mdescriptor_dpa4",
+        "normalized": "20260825-dpa4-materialization/cases/mdescriptor_dpa4/normalized.npz",
+        "snapshot": "20260825-dpa4-materialization"
+      },
+      "metrics": {
+        "allclose": true,
+        "atol": 2e-05,
+        "cosine_similarity": 0.9999999999983119,
+        "mae": 1.1652771749639642e-06,
+        "max_abs": 1.6450881958007812e-05,
+        "rmse": 1.5021793370543398e-06,
+        "rtol": 2e-05,
+        "status": "ok"
+      },
+      "model": {
+        "name": "DPA4-Air-OMat24-v20260704",
+        "sha256": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23"
+      },
+      "notes": [
+        "The two outputs were generated in separate append-only snapshots because full MDescriptor DPA4 CPU materialization is slow.",
+        "Both snapshots use the same dataset SHA256 and model SHA256."
+      ],
+      "right": {
+        "case": "deepmd_kit_dpa4",
+        "normalized": "20260825-pbc-fast/cases/deepmd_kit_dpa4/normalized.npz",
+        "snapshot": "20260825-pbc-fast"
+      },
+      "status": "pass"
+    }
+  ],
+  "dataset_id": "carbon_dataset_pbc",
+  "schema_version": 1,
+  "source_sha256": "c4cd6aed5e7f66b684357ae00143007d1e5e0b07ad5c861adcbf2ce9c5cfab69"
+}

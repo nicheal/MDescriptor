@@ -152,13 +152,31 @@ LocalGraph build_structure_graph(
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
     const std::int64_t atom_count = end - begin;
+    const bool periodic = batch.pbc[structure * 3 + 0] == 1
+        && batch.pbc[structure * 3 + 1] == 1
+        && batch.pbc[structure * 3 + 2] == 1;
+    const bool isolated = batch.pbc[structure * 3 + 0] == 0
+        && batch.pbc[structure * 3 + 1] == 0
+        && batch.pbc[structure * 3 + 2] == 0;
+    if (!periodic && !isolated) {
+        throw std::invalid_argument(
+            "mixed periodicity is not supported; use all-zero or all-one pbc");
+    }
     const Mat3 cell = load_cell(batch, structure);
-    const Mat3 inv = inverse(cell);
-    const double bounds[3] = {
-        std::floor(cutoff * std::sqrt(inv.a[0][0] * inv.a[0][0] + inv.a[1][0] * inv.a[1][0] + inv.a[2][0] * inv.a[2][0]) + 1.0),
-        std::floor(cutoff * std::sqrt(inv.a[0][1] * inv.a[0][1] + inv.a[1][1] * inv.a[1][1] + inv.a[2][1] * inv.a[2][1]) + 1.0),
-        std::floor(cutoff * std::sqrt(inv.a[0][2] * inv.a[0][2] + inv.a[1][2] * inv.a[1][2] + inv.a[2][2] * inv.a[2][2]) + 1.0),
-    };
+    Mat3 inv;
+    double bounds[3] = {0.0, 0.0, 0.0};
+    if (periodic) {
+        inv = inverse(cell);
+        bounds[0] = std::floor(cutoff * std::sqrt(
+            inv.a[0][0] * inv.a[0][0] + inv.a[1][0] * inv.a[1][0]
+            + inv.a[2][0] * inv.a[2][0]) + 1.0);
+        bounds[1] = std::floor(cutoff * std::sqrt(
+            inv.a[0][1] * inv.a[0][1] + inv.a[1][1] * inv.a[1][1]
+            + inv.a[2][1] * inv.a[2][1]) + 1.0);
+        bounds[2] = std::floor(cutoff * std::sqrt(
+            inv.a[0][2] * inv.a[0][2] + inv.a[1][2] * inv.a[1][2]
+            + inv.a[2][2] * inv.a[2][2]) + 1.0);
+    }
 
     std::vector<ExtendedAtom> extended;
     auto append_cell = [&](int n0, int n1, int n2) {
@@ -183,20 +201,32 @@ LocalGraph build_structure_graph(
             });
         }
     };
-    if (use_scaled_periodic_images) {
+    if (!periodic) {
+        for (std::int64_t atom = begin; atom < end; ++atom) {
+            extended.push_back({static_cast<std::int32_t>(atom), {0, 0, 0}, position(batch, atom)});
+        }
+    } else if (use_scaled_periodic_images) {
         append_cell(0, 0, 0);
-    }
-    for (int n0 = -static_cast<int>(bounds[0]); n0 <= static_cast<int>(bounds[0]); ++n0) {
-        for (int n1 = -static_cast<int>(bounds[1]); n1 <= static_cast<int>(bounds[1]); ++n1) {
-            for (int n2 = -static_cast<int>(bounds[2]); n2 <= static_cast<int>(bounds[2]); ++n2) {
-                if (use_scaled_periodic_images && n0 == 0 && n1 == 0 && n2 == 0) {
-                    continue;
+        for (int n0 = -static_cast<int>(bounds[0]); n0 <= static_cast<int>(bounds[0]); ++n0) {
+            for (int n1 = -static_cast<int>(bounds[1]); n1 <= static_cast<int>(bounds[1]); ++n1) {
+                for (int n2 = -static_cast<int>(bounds[2]); n2 <= static_cast<int>(bounds[2]); ++n2) {
+                    if (n0 == 0 && n1 == 0 && n2 == 0) {
+                        continue;
+                    }
+                    append_cell(n0, n1, n2);
                 }
-                append_cell(n0, n1, n2);
+            }
+        }
+    } else {
+        for (int n0 = -static_cast<int>(bounds[0]); n0 <= static_cast<int>(bounds[0]); ++n0) {
+            for (int n1 = -static_cast<int>(bounds[1]); n1 <= static_cast<int>(bounds[1]); ++n1) {
+                for (int n2 = -static_cast<int>(bounds[2]); n2 <= static_cast<int>(bounds[2]); ++n2) {
+                    append_cell(n0, n1, n2);
+                }
             }
         }
     }
-    if (use_scaled_periodic_images) {
+    if (periodic && use_scaled_periodic_images) {
         std::vector<ExtendedAtom> filtered;
         filtered.reserve(extended.size());
         for (const ExtendedAtom& candidate : extended) {

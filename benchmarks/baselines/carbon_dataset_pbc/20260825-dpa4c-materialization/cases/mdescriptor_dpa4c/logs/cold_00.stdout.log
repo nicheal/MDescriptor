@@ -1,0 +1,1 @@
+{"case_id": "mdescriptor_dpa4c", "dtype": "float64", "phase_seconds": {"import": 0.006990803012740798, "input": 0.36817991100542713, "kernel": 81.47973751500831, "model": 0.08963501699327026, "total": 81.94454750001023}, "shape": [28337, 219], "status": "ok"}

@@ -31,6 +31,7 @@ class C00PSMlffKernel:
         n_max: int | None = None,
         l_max: int = 4,
         cutoff_function: str = "bp",
+        radial_sigma: float = 0.5,
         include_radial: bool = True,
         include_angular: bool = True,
         normalize_radial: bool = False,
@@ -48,6 +49,7 @@ class C00PSMlffKernel:
         self.n_radial = int(n_radial if n_radial is not None else (n_max if n_max is not None else 8))
         self.l_max = int(l_max)
         self.cutoff = str(cutoff_function).lower()
+        self.radial_sigma = float(radial_sigma)
         self.include_radial = bool(include_radial)
         self.include_angular = bool(include_angular)
         self.normalize_radial = bool(normalize_radial)
@@ -63,6 +65,8 @@ class C00PSMlffKernel:
             raise ValueError("C00PSMLFF requires r_cut > 0, n_radial > 0, and l_max >= 0")
         if self.cutoff not in _CUTOFF_FUNCTIONS:
             raise ValueError("cutoff_function must be 'bp', 'mo', 'rj', or 'wmc'")
+        if self.radial_sigma < 0.0:
+            raise ValueError("radial_sigma must be non-negative")
         if self.radial_weight < 0.0 or self.angular_weight < 0.0:
             raise ValueError("radial_weight and angular_weight must be non-negative")
         if self.dtype not in {"float32", "float64"}:
@@ -79,6 +83,7 @@ class C00PSMlffKernel:
         options.n_radial = self.n_radial
         options.l_max = self.l_max
         options.cutoff_function = _CUTOFF_FUNCTIONS[self.cutoff]
+        options.radial_sigma = self.radial_sigma
         options.include_radial = self.include_radial
         options.include_angular = self.include_angular
         options.normalize_radial = self.normalize_radial
@@ -148,6 +153,7 @@ class C00PSMlffKernel:
             "n_radial": self.n_radial,
             "l_max": self.l_max,
             "cutoff_function": self.cutoff,
+            "radial_sigma": self.radial_sigma,
             "exclude_self_interaction": self.exclude_self_interaction,
             "radial_weight": self.radial_weight,
             "angular_weight": self.angular_weight,

@@ -4815,6 +4815,7 @@
             "sparse": false
           },
           "r_cut": 3.5,
+          "radial_sigma": 0.5,
           "radial_weight": 1.0,
           "species": [
             1,

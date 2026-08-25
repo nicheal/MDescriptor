@@ -47,7 +47,7 @@ _PUBLIC_OPTION_NAMES: dict[str, frozenset[str]] = {
     }),
     "C00PSMLFF": frozenset({
         "species", "r_cut", "cutoff", "n_radial", "n_max", "l_max",
-        "cutoff_function", "include_radial", "include_angular", "normalize_radial",
+        "cutoff_function", "radial_sigma", "include_radial", "include_angular", "normalize_radial",
         "normalize_angular", "super_vector", "radial_weight", "angular_weight",
         "exclude_self_interaction",
     }),

@@ -21,9 +21,7 @@ from .control import ComputeControl
 from .errors import (
     DescriptorConfigError,
     DescriptorInputError,
-    MDescriptorError,
     ModelLoadError,
-    NativeCancelledError,
 )
 from .input import StructureBatch
 from .options import DescriptorConfiguration
@@ -180,35 +178,4 @@ class ModelBackedAdapter(DescriptorAdapter):
         return super()._compute_batch(batch, control=control)
 
 
-class ModelInferenceAdapter(ModelBackedAdapter):
-    """Model wrapper using spin/charge fields carried by ``StructureBatch``."""
-
-    def _compute_batch(
-        self,
-        batch: StructureBatch,
-        *,
-        control: ComputeControl | None = None,
-    ) -> DescriptorResult:
-        self._ensure_open()
-        self._ensure_model_session()
-        try:
-            result = self._kernel.compute(batch, control)
-        except NativeCancelledError:
-            raise
-        except MDescriptorError:
-            raise
-        except ValueError as exc:
-            raise DescriptorInputError(str(exc)) from exc
-        except RuntimeError as exc:
-            raise ModelLoadError(f"failed to compute {self.name}") from exc
-        except Exception as exc:
-            raise ModelLoadError(f"failed to compute {self.name}") from exc
-        adapted = self._adapt_result(result)
-        if not isinstance(adapted, DescriptorResult):  # pragma: no cover - defensive
-            raise MDescriptorError(
-                f"{self.name} returned {type(adapted).__name__}, expected DescriptorResult"
-            )
-        return adapted
-
-
-__all__ = ["ModelBackedAdapter", "ModelInferenceAdapter"]
+__all__ = ["ModelBackedAdapter"]

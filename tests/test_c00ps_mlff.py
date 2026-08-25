@@ -65,6 +65,59 @@ def test_c00ps_mlff_radial_or_angular_only_modes():
     assert angular.values.shape == (3, 8 * 9 // 2 + 6 * 7 // 2)
 
 
+def test_c00ps_mlff_uses_vasp_gaussian_radial_basis():
+    batch = StructureBatch.from_ase([
+        Atoms(
+            "H2",
+            positions=[[5.0, 5.0, 5.0], [6.0, 5.0, 5.0]],
+            cell=np.diag([10.0, 10.0, 10.0]),
+            pbc=True,
+        )
+    ])
+    result = C00PSMLFF(
+        species=[1],
+        r_cut=3.0,
+        n_radial=2,
+        l_max=0,
+        radial_sigma=0.5,
+        include_angular=False,
+        normalize_radial=False,
+    ).compute(batch)
+
+    # VASP 6.6.0's default ML_SION=0.5 gives WION=2 in RAD_FUNC.
+    np.testing.assert_allclose(
+        result.values[0],
+        [0.13044015615446913, 0.086458272123694155],
+        rtol=0.0,
+        atol=2e-11,
+    )
+
+
+def test_c00ps_mlff_uses_vasp_off_diagonal_power_spectrum_weight():
+    batch = StructureBatch.from_ase([
+        Atoms(
+            "H2",
+            positions=[[5.0, 5.0, 5.0], [6.0, 5.0, 5.0]],
+            cell=np.diag([10.0, 10.0, 10.0]),
+            pbc=True,
+        )
+    ])
+    result = C00PSMLFF(
+        species=[1],
+        r_cut=3.0,
+        n_radial=2,
+        l_max=0,
+        include_radial=False,
+        normalize_angular=False,
+        exclude_self_interaction=False,
+    ).compute(batch)
+
+    diagonal_left, off_diagonal, diagonal_right = result.values[0]
+    assert off_diagonal / np.sqrt(diagonal_left * diagonal_right) == pytest.approx(
+        np.sqrt(2.0), rel=1e-12, abs=1e-12
+    )
+
+
 def test_c00ps_mlff_angular_descriptor_excludes_neighbor_self_terms():
     batch = StructureBatch.from_ase([
         Atoms(

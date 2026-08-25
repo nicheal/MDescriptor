@@ -1,0 +1,1 @@
+{"case_id": "mdescriptor_soap_power_spectrum", "dtype": "float64", "phase_seconds": {"import": 0.007860326993977651, "input": 0.3465538009913871, "kernel": 1.4398929239978315, "model": 0.003372052000486292, "total": 1.7976825139921857}, "shape": [28337, 27], "status": "ok"}
