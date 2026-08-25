@@ -77,7 +77,7 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           pattern: wheels-*
-          path: /tmp/mdescriptor-wheelhouse
+          path: wheelhouse
           merge-multiple: true
       - name: Install wheel dependencies
         run: python -m pip install --upgrade pip numpy array-api-compat packaging ase scipy
@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: |
           target="$(mktemp -d)"
-          wheel="$(find /tmp/mdescriptor-wheelhouse -type f -name '*-${{ matrix.wheel-tag }}-${{ matrix.wheel-tag }}-*manylinux*x86_64.whl' | head -n 1)"
+          wheel="$(find wheelhouse -type f -name '*-${{ matrix.wheel-tag }}-${{ matrix.wheel-tag }}-*manylinux*x86_64.whl' | head -n 1)"
           test -n "$wheel"
           python -m pip install --no-deps --target "$target" "$wheel"
           cd /tmp
@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           target="$(mktemp -d)"
-          wheel="$(find /tmp/mdescriptor-wheelhouse -type f -name '${{ matrix.wheel_pattern }}' | head -n 1)"
+          wheel="$(find wheelhouse -type f -name '${{ matrix.wheel_pattern }}' | head -n 1)"
           test -n "$wheel"
           python -m pip install --no-deps --target "$target" "$wheel"
           cd /tmp
