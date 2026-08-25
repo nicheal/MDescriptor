@@ -8,38 +8,13 @@
 #include <string>
 #include <vector>
 
+#include "mdescriptor/detail/batch.hpp"
+#include "mdescriptor/detail/control.hpp"
+#include "mdescriptor/detail/species.hpp"
+
 namespace mdescriptor {
 
-struct StructureBatchView {
-    const std::int32_t* numbers = nullptr;
-    const double* positions = nullptr;
-    const double* cells = nullptr;
-    const std::int32_t* pbc = nullptr;
-    const std::int64_t* offsets = nullptr;
-    std::int64_t structures = 0;
-    std::int64_t atoms = 0;
-};
-
-class CancelledError : public std::runtime_error {
-public:
-    CancelledError() : std::runtime_error("descriptor computation cancelled") {}
-};
-
-class ComputeControl {
-public:
-    void reset(std::int64_t total);
-    void cancel() noexcept;
-    bool cancelled() const noexcept;
-    std::int64_t completed() const noexcept;
-    std::int64_t total() const noexcept;
-
-    void mark_completed() noexcept;
-
-private:
-    std::atomic<bool> cancelled_{false};
-    std::atomic<std::int64_t> completed_{0};
-    std::atomic<std::int64_t> total_{0};
-};
+using detail::StructureBatchView;
 
 struct SoapOptions {
     std::vector<std::int32_t> species;

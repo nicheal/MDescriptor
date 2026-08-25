@@ -1,7 +1,7 @@
 import numpy as np
 
-from mdescriptor._legacy.core import _build_neighbor_graph
-from mdescriptor._legacy.extra import _periodic_neighbors
+from mdescriptor.descriptors._kernels.core import _build_neighbor_graph
+from mdescriptor.descriptors._kernels.extra import _periodic_neighbors
 from tests._public import StructureBatch
 
 

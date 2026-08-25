@@ -15,9 +15,9 @@ The public namespace is intentionally small:
 src/mdescriptor/             installable package
 src/mdescriptor/core/         Descriptor, StructureBatch, DescriptorResult
 src/mdescriptor/descriptors/
-  standalone/                 no model required
-  model_backed/               NEP, DPA4, DPA4C
-src/mdescriptor/models/       resolver and packaged model resources
+  standalone/                 no model required (matrices/, many_body/, local/, rotational/)
+  model_backed/               graph seam plus NEP, DPA4, DPA4C
+src/mdescriptor/models/assets/ packaged, hash-verified model resources
 ```
 
 `standalone` descriptors never require a model file. `model_backed` descriptors
@@ -32,7 +32,7 @@ path). There are no network downloads or implicit model discovery.
 
 The base package requires Python 3.10+, NumPy and `array-api-compat`. ASE is
 optional and is only needed for `StructureBatch.from_ase` or direct ASE input.
-Sparse output is provided by the optional `sparse` extra.
+Sparse output is provided as SciPy CSR by the optional `sparse` extra.
 
 基础包需要 Python 3.10+、NumPy 和 `array-api-compat`。ASE 只在使用
 `StructureBatch.from_ase` 或直接传入 ASE 对象时需要；稀疏输出由可选的
@@ -53,8 +53,8 @@ python -m pip install ".[model]"
 
 The model extra currently pins `torch>=2.10,<2.14`. DPA4 and DPA4C accept
 official `.pt` checkpoints; loading uses `weights_only=True` and never falls
-back to unsafe pickle loading. CPU is supported; CUDA is selected with the
-descriptor `device` option when the installed Torch wheel provides it.
+back to unsafe pickle loading. CPU is supported; CUDA is selected with
+`ExecutionOptions(device="cuda")` when the installed Torch wheel provides it.
 
 ## Input contract / 输入契约
 
@@ -103,8 +103,9 @@ Instances are synchronous and not promised to be thread-safe.
 会抛出 `ClosedDescriptorError`。实例是同步的，不承诺线程安全。
 
 `DescriptorResult` contains `values`, `level` (`atom`, `structure`, or `pair`),
-`structure_ids`, row offsets, stable `labels`, JSON-safe `metadata`, optional
-`samples`, and `feature_count`. The standard shapes are `(N, F)`, `(S, F)`,
+`structure_ids`, row offsets, stable `labels`, JSON-safe `metadata`, per-row
+`samples`, and `feature_count`. The descriptor itself also retains the latest
+JSON-safe `metadata` and its `configuration` after `close()`. The standard shapes are `(N, F)`, `(S, F)`,
 and `(P, F)` for atom, structure and pair outputs respectively.
 
 ## Registry / 注册表
@@ -114,13 +115,13 @@ lazy and no decorator or filesystem scan is used.
 
 ```python
 import mdescriptor
+from mdescriptor.descriptors import SOAP
 
 print(mdescriptor.list_descriptors())
-soap = mdescriptor.create_descriptor(
-    "SOAP", species=[1, 8], r_cut=4.5, n_max=2, l_max=2
-)
+soap = SOAP(species=[1, 8], r_cut=4.5, n_max=2, l_max=2)
+rebuilt = mdescriptor.create_descriptor(soap.configuration)
 
-child = mdescriptor.BUILTIN_REGISTRY.child()
+child = mdescriptor.DescriptorRegistry(parent=mdescriptor.builtin_registry)
 child.register(my_spec)
 ```
 
@@ -135,9 +136,14 @@ not re-exported from the root.
 shared model-resource seam. Resolution is explicit, local and checksum-aware:
 
 ```python
+from pathlib import Path
 from mdescriptor.descriptors import DPA4
+from mdescriptor import ExecutionOptions
 
-dpa4 = DPA4(model="/path/to/official-checkpoint.pt", device="cpu")
+dpa4 = DPA4(
+    model=Path("/path/to/official-checkpoint.pt"),
+    execution=ExecutionOptions(device="cpu"),
+)
 result = dpa4.compute(batch)
 ```
 

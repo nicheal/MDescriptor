@@ -1,8 +1,15 @@
 """MTP descriptor public name."""
 
-from ..._legacy.mtp import MtpCalculator
-from ...core.legacy_adapter import adapter_class
+from ...core.adapter import adapter_class
+from ...core.model_adapter import ModelBackedAdapter
+from .._kernels.mtp import MtpKernel
 
-MTP = adapter_class("MTP", MtpCalculator, __name__)
+MTP = adapter_class(
+    "MTP",
+    MtpKernel,
+    __name__,
+    base=ModelBackedAdapter,
+    requires_species=True,
+)
 
 __all__ = ["MTP"]

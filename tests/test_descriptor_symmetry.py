@@ -10,8 +10,7 @@ still reporting a single permutation-symmetry result for each descriptor.
 import numpy as np
 from ase import Atoms
 
-from tests._public import DESCRIPTOR_CATALOG, StructureBatch
-
+from tests._public import AssetPolicy, StructureBatch, builtin_registry
 
 _SYMMETRY_RTOL = 1e-5
 _SYMMETRY_ATOL = 1e-7
@@ -104,7 +103,7 @@ def _calculator(name: str, calculator_class: type):
             max_radial=2, max_angular=2,
         )
     if name == "EAD":
-        return calculator_class({"L": 2, "eta": [0.05, 0.1], "Rs": [0.0, 0.5]}, Rc=3.0)
+        return calculator_class(parameters={"L": 2, "eta": [0.05, 0.1], "Rs": [0.0, 0.5]}, Rc=3.0)
     if name == "SO3":
         return calculator_class(nmax=2, lmax=2, rcut=3.0)
     if name == "SO4":
@@ -139,21 +138,10 @@ def _structure_rows(result, structure: int, permutation: np.ndarray | None = Non
         return rows
 
     # Pair outputs can be emitted in a different traversal order after a
-    # translation or atom permutation.  Sort on the physical pair identity.
-    pair_records = result.metadata.get("pair_records")
-    if pair_records is None:
-        keys = rows[:, :5].copy()
-    else:
-        keys = np.asarray(pair_records)[start:stop].copy()
-    # Pair identifiers are global atom indices in a batch.  Each test system
-    # is one three-atom water molecule, so normalize them before comparison.
-    keys[:, :2] -= 3 * structure
+    # translation or atom permutation.  Sort on the canonical sample identity.
+    keys = np.asarray(result.samples)[start:stop, 1:].copy()
     if permutation is not None:
         keys[:, :2] = permutation[keys[:, :2].astype(np.int64)]
-        if pair_records is None:
-            rows[:, :2] = keys[:, :2]
-    elif pair_records is None:
-        rows[:, :2] = keys[:, :2]
     order = np.lexsort(tuple(keys[:, column] for column in reversed(range(keys.shape[1]))))
     return rows[order]
 
@@ -192,7 +180,7 @@ def _print_report(report: list[dict[str, object]]) -> None:
         )
 
 
-def test_all_catalog_descriptors_on_water_symmetry_report():
+def test_all_standalone_descriptors_on_water_symmetry_report():
     systems, permutation = _water_systems()
     batch = StructureBatch.from_ase(systems)
     report = []
@@ -201,7 +189,12 @@ def test_all_catalog_descriptors_on_water_symmetry_report():
     expected_non_rotational = {
         "NeighborList", "SphericalExpansion", "SphericalExpansionByPair", "LodeSphericalExpansion"
     }
-    for name, calculator_class in DESCRIPTOR_CATALOG.items():
+    descriptors = tuple(
+        (spec.name, spec.load_class())
+        for spec in builtin_registry
+        if spec.asset_policy in {AssetPolicy.NONE, AssetPolicy.OPTIONAL}
+    )
+    for name, calculator_class in descriptors:
         calculator = _calculator(name, calculator_class)
         result = calculator.compute(batch)
         assert np.isfinite(np.asarray(result.values)).all(), name
@@ -225,9 +218,9 @@ def test_all_catalog_descriptors_on_water_symmetry_report():
         )
 
     _print_report(report)
-    assert {row["name"] for row in report} | {item.split(":", 1)[0] for item in skipped} == set(
-        DESCRIPTOR_CATALOG
-    )
+    assert {row["name"] for row in report} | {item.split(":", 1)[0] for item in skipped} == {
+        name for name, _ in descriptors
+    }
     assert all(row["translation_ok"] for row in report)
     assert all(row["permutation_ok"] for row in report)
     assert {

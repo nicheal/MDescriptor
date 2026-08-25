@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from tests._public import ACSF, SOAP, StructureBatch
+from tests._public import ACSF, SOAP, OutputOptions, StructureBatch
 
 
 def _system():
@@ -14,9 +14,9 @@ def _system():
     )
 
 
+@pytest.mark.reference
 def test_acsf_g1_to_g5_matches_reference():
-    pytest.importorskip("dscribe")
-    from dscribe.descriptors import ACSF
+    from dscribe.descriptors import ACSF as DscribeACSF
 
     system = _system()
     parameters = {
@@ -28,8 +28,9 @@ def test_acsf_g1_to_g5_matches_reference():
         "species": [1, 8],
         "periodic": True,
     }
-    expected = ACSF(**parameters).create(system)
-    actual = ACSF(**parameters).compute(StructureBatch.from_ase(system)).values
+    expected = DscribeACSF(**parameters).create(system)
+    project_parameters = {key: value for key, value in parameters.items() if key != "periodic"}
+    actual = ACSF(**project_parameters).compute(StructureBatch.from_ase(system)).values
     np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-10)
     assert actual.shape == (3, 22)
 
@@ -64,9 +65,9 @@ def test_acsf_g1_to_g5_matches_reference():
         },
     ],
 )
+@pytest.mark.reference
 def test_soap_advanced_parameters_match_reference(parameters):
-    pytest.importorskip("dscribe")
-    from dscribe.descriptors import SOAP
+    from dscribe.descriptors import SOAP as DscribeSOAP
 
     system = _system()
     common = {
@@ -79,8 +80,9 @@ def test_soap_advanced_parameters_match_reference(parameters):
         "periodic": True,
         **parameters,
     }
-    expected = SOAP(**common).create(system)
-    result = SOAP(**common).compute(StructureBatch.from_ase(system))
+    expected = DscribeSOAP(**common).create(system)
+    project_common = {key: value for key, value in common.items() if key != "periodic"}
+    result = SOAP(**project_common).compute(StructureBatch.from_ase(system))
     np.testing.assert_allclose(result.values, expected, rtol=1e-8, atol=1e-9)
     assert result.values.shape[1] == len(result.labels)
 
@@ -88,24 +90,25 @@ def test_soap_advanced_parameters_match_reference(parameters):
 def test_descriptor_dtype_is_preserved():
     system = _system()
     batch = StructureBatch.from_ase(system)
-    acsf = ACSF(species=[1, 8], dtype="float32").compute(batch)
-    soap = SOAP(species=[1, 8], r_cut=3.5, n_max=2, l_max=1, dtype="float32").compute(batch)
+    acsf = ACSF(species=[1, 8], output=OutputOptions(dtype="float32")).compute(batch)
+    soap = SOAP(species=[1, 8], r_cut=3.5, n_max=2, l_max=1, output=OutputOptions(dtype="float32")).compute(batch)
     assert acsf.values.dtype == np.float32
     assert soap.values.dtype == np.float32
 
 
 def test_sparse_output_matches_dense_values():
-    pytest.importorskip("sparse")
+    from scipy.sparse import issparse
     system = _system()
     batch = StructureBatch.from_ase(system)
     for sparse_calculator, dense_calculator in (
-        (ACSF(species=[1, 8], sparse=True), ACSF(species=[1, 8])),
+        (ACSF(species=[1, 8], output=OutputOptions(sparse=True)), ACSF(species=[1, 8])),
         (
-            SOAP(species=[1, 8], r_cut=3.5, n_max=2, l_max=1, sparse=True),
+            SOAP(species=[1, 8], r_cut=3.5, n_max=2, l_max=1, output=OutputOptions(sparse=True)),
             SOAP(species=[1, 8], r_cut=3.5, n_max=2, l_max=1),
         ),
     ):
         result = sparse_calculator.compute(batch)
-        assert result.values.__class__.__name__ == "COO"
+        assert issparse(result.values)
+        assert result.values.__class__.__name__ == "csr_matrix"
         dense = dense_calculator.compute(batch).values
-        np.testing.assert_allclose(result.values.todense(), dense)
+        np.testing.assert_allclose(result.values.toarray(), dense)

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence, TypeAlias
+from typing import Any, TypeAlias
 
 import numpy as np
 
@@ -85,7 +86,7 @@ class StructureBatch:
         return len(self.numbers)
 
     @classmethod
-    def from_ase(cls, structures: Sequence[Any] | Any, ids: Sequence[str] | None = None) -> "StructureBatch":
+    def from_ase(cls, structures: Sequence[Any] | Any, ids: Sequence[str] | None = None) -> StructureBatch:
         try:
             from ase import Atoms
         except ImportError as exc:  # pragma: no cover
@@ -154,6 +155,16 @@ class StructureBatch:
 
 
 batch_from_ase = StructureBatch.from_ase
+
+
+def coerce_batch(value: StructureInput) -> StructureBatch:
+    """Return an existing batch unchanged or pack ASE structures once."""
+
+    if isinstance(value, StructureBatch):
+        return value
+    return StructureBatch.from_ase(value)
+
+
 StructureInput: TypeAlias = StructureBatch | Sequence[Any] | Any
 
-__all__ = ["StructureBatch", "StructureInput", "batch_from_ase"]
+__all__ = ["StructureBatch", "StructureInput", "batch_from_ase", "coerce_batch"]

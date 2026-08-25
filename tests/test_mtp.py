@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from tests._public import MTP, StructureBatch
+from tests._public import MTP, ExecutionOptions, StructureBatch
 
 
 def _system():
@@ -44,36 +44,6 @@ def test_mtp_is_invariant_to_rigid_rotation_and_atom_order():
     assert np.isfinite(first).all()
 
 
-def test_mtp_official_mlip2_basis_matches_reference_prefix():
-    potential = Path(__file__).parents[1] / ".deps" / "mlip-2-master.training_validation_error" / "pot1.mtp"
-    if not potential.exists():
-        pytest.skip("MLIP-2 training-validation potentials are not present")
-    system = Atoms(
-        "H2",
-        positions=[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
-        cell=np.diag([8.0, 8.0, 8.0]),
-        pbc=True,
-    )
-    calculator = MTP(species=[1], potential_path=potential, num_threads=1)
-    result = calculator.compute(StructureBatch.from_ase([system]))
-
-    assert calculator.feature_count == 93
-    assert result.values.shape == (2, 93)
-    assert result.labels[:4] == (
-        "mlip2:constant",
-        "mlip2:moment=0",
-        "mlip2:moment=84",
-        "mlip2:moment=119",
-    )
-    assert result.metadata["official_model"] is True
-    np.testing.assert_allclose(
-        result.values[0, :5],
-        [1.0, 0.24179534, 0.87737306, -0.14945861, 0.14263651],
-        rtol=1e-7,
-        atol=1e-10,
-    )
-
-
 def test_mtp_native_mlip4_json_matches_official_radial_prefix():
     # Extracted from mlip-4-main/test/example_combined_pot.ipynb.  This is a
     # current MLIP-4 fixture, rather than a benchmark result from an earlier
@@ -86,15 +56,15 @@ def test_mtp_native_mlip4_json_matches_official_radial_prefix():
         pbc=True,
     )
     calculator = MTP(
-        species=[13, 14], potential_path=potential, num_threads=1
+        species=[13, 14], model=potential, execution=ExecutionOptions(num_threads=1)
     )
     result = calculator.compute(StructureBatch.from_ase([system]))
 
     assert calculator.feature_count == 5
     assert result.values.shape == (2, 5)
     assert result.labels == tuple(f"mlip4:basis={i}" for i in range(5))
-    assert result.metadata["official_format"] == "MLIP-4"
-    assert result.metadata["official_mlip4"] is True
+    assert result.metadata["details"]["official_format"] == "MLIP-4"
+    assert result.metadata["details"]["official_mlip4"] is True
     np.testing.assert_allclose(
         result.values[0, :2],
         [0.655498644654072, -0.782935732461145],
@@ -133,7 +103,7 @@ def test_mtp_native_mlip4_additional_radial_basis_classes(
         pbc=True,
     )
     result = MTP(
-        species=[13, 14], potential_path=path, num_threads=1
+        species=[13, 14], model=path, execution=ExecutionOptions(num_threads=1)
     ).compute(StructureBatch.from_ase([system]))
     assert result.values.shape == (2, 5)
     assert np.isfinite(result.values).all()

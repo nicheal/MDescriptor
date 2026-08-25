@@ -4,11 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-pytest.importorskip("torch")
-
-from tests._public import DPA4C, StructureBatch
 from mdescriptor.models import DPA4C_MODEL
+from tests._public import DPA4C, StructureBatch
 
+pytestmark = pytest.mark.model
 
 ROOT = Path(__file__).parents[1]
 MODEL = DPA4C_MODEL
@@ -30,7 +29,7 @@ def _fixture() -> tuple[StructureBatch, np.ndarray]:
 
 def test_dpa4c_matches_official_golden_fixture():
     batch, expected = _fixture()
-    result = DPA4C(MODEL).compute(batch)
+    result = DPA4C(model=MODEL).compute(batch)
     assert result.values.shape == (6, 219)
     assert result.level == "atom"
     assert result.metadata["backend"] == "mdescriptor-torch"
@@ -40,7 +39,7 @@ def test_dpa4c_matches_official_golden_fixture():
 
 def test_dpa4c_is_rotation_and_atom_permutation_invariant():
     batch, _ = _fixture()
-    calculator = DPA4C(MODEL)
+    calculator = DPA4C(model=MODEL)
     baseline = calculator.compute(batch).values
 
     rotation = np.asarray([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
@@ -66,7 +65,7 @@ def test_dpa4c_is_rotation_and_atom_permutation_invariant():
 
 def test_dpa4c_maps_atomic_numbers_through_checkpoint_type_map():
     batch, _ = _fixture()
-    calculator = DPA4C(MODEL)
+    calculator = DPA4C(model=MODEL)
     with pytest.raises(ValueError, match="absent from the checkpoint type_map"):
         calculator.compute(
             StructureBatch(

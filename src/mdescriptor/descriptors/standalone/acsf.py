@@ -1,8 +1,8 @@
 """ACSF descriptor public name."""
 
-from ..._legacy.core import AcsfCalculator
-from ...core.legacy_adapter import adapter_class
+from ...core.adapter import adapter_class
+from .._kernels.core import AcsfKernel
 
-ACSF = adapter_class("ACSF", AcsfCalculator, __name__)
+ACSF = adapter_class("ACSF", AcsfKernel, __name__)
 
 __all__ = ["ACSF"]

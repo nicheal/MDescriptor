@@ -1,7 +1,10 @@
 import numpy as np
+import pytest
 from ase import Atoms
 
 from tests._public import NEP, StructureBatch
+
+pytestmark = pytest.mark.model
 
 
 def _minimal_model(path):
@@ -34,7 +37,7 @@ def test_nep_model_descriptor_is_native_and_scaled(tmp_path):
     _minimal_model(model_path)
     atoms = Atoms("C2", positions=[[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], cell=np.diag([10.0] * 3), pbc=True)
 
-    calculator = NEP(model_path)
+    calculator = NEP(model=model_path)
     result = calculator.compute(StructureBatch.from_ase([atoms]))
 
     # The NEP cosine cutoff at r=1, rc=3 is 0.5*cos(pi/3)+0.5=0.75.
@@ -42,4 +45,3 @@ def test_nep_model_descriptor_is_native_and_scaled(tmp_path):
     np.testing.assert_allclose(result.values, 0.75)
     assert result.metadata["backend"] == "mdescriptor-cpp"
     assert result.labels == ("nep:q1",)
-

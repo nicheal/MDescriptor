@@ -1,0 +1,5961 @@
+{
+  "cases": [
+    {
+      "configuration": {
+        "descriptor": "SOAP",
+        "parameters": {
+          "average": "inner",
+          "compression": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "l_max": 2,
+          "n_max": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "r_cut": 3.5,
+          "rbf": "gto",
+          "sigma": 1.0,
+          "species": [
+            1,
+            8
+          ],
+          "weighting": null
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SOAP",
+      "feature_count": 30,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "soap:z1=1,z2=1,l=0,n1=0,n2=0",
+        "soap:z1=1,z2=1,l=0,n1=0,n2=1",
+        "soap:z1=1,z2=1,l=0,n1=1,n2=1",
+        "soap:z1=1,z2=1,l=1,n1=0,n2=0",
+        "soap:z1=1,z2=1,l=1,n1=0,n2=1",
+        "soap:z1=1,z2=1,l=1,n1=1,n2=1",
+        "soap:z1=1,z2=1,l=2,n1=0,n2=0",
+        "soap:z1=1,z2=1,l=2,n1=0,n2=1",
+        "soap:z1=1,z2=1,l=2,n1=1,n2=1",
+        "soap:z1=1,z2=8,l=0,n1=0,n2=0",
+        "soap:z1=1,z2=8,l=0,n1=0,n2=1",
+        "soap:z1=1,z2=8,l=0,n1=1,n2=0",
+        "soap:z1=1,z2=8,l=0,n1=1,n2=1",
+        "soap:z1=1,z2=8,l=1,n1=0,n2=0",
+        "soap:z1=1,z2=8,l=1,n1=0,n2=1",
+        "soap:z1=1,z2=8,l=1,n1=1,n2=0",
+        "soap:z1=1,z2=8,l=1,n1=1,n2=1",
+        "soap:z1=1,z2=8,l=2,n1=0,n2=0",
+        "soap:z1=1,z2=8,l=2,n1=0,n2=1",
+        "soap:z1=1,z2=8,l=2,n1=1,n2=0",
+        "soap:z1=1,z2=8,l=2,n1=1,n2=1",
+        "soap:z1=8,z2=8,l=0,n1=0,n2=0",
+        "soap:z1=8,z2=8,l=0,n1=0,n2=1",
+        "soap:z1=8,z2=8,l=0,n1=1,n2=1",
+        "soap:z1=8,z2=8,l=1,n1=0,n2=0",
+        "soap:z1=8,z2=8,l=1,n1=0,n2=1",
+        "soap:z1=8,z2=8,l=1,n1=1,n2=1",
+        "soap:z1=8,z2=8,l=2,n1=0,n2=0",
+        "soap:z1=8,z2=8,l=2,n1=0,n2=1",
+        "soap:z1=8,z2=8,l=2,n1=1,n2=1"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "SOAP",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "soap.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SOAPTurbo",
+        "parameters": {
+          "alpha_max": [
+            2,
+            2
+          ],
+          "amplitude_scaling": 0.0,
+          "atom_sigma_r": 0.5,
+          "atom_sigma_r_scaling": 0.0,
+          "atom_sigma_t": 0.5,
+          "atom_sigma_t_scaling": 0.0,
+          "basis": "poly3",
+          "central_species": null,
+          "central_weight": 1.0,
+          "compress_mode": null,
+          "compression": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "l_max": 2,
+          "nf": 1.0,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "radial_enhancement": 0,
+          "rcut_hard": 3.5,
+          "rcut_soft": 3.0,
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SOAPTurbo",
+      "feature_count": 30,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "soapturbo:z1=1,n1=0,z2=1,n2=0,l=0",
+        "soapturbo:z1=1,n1=0,z2=1,n2=0,l=1",
+        "soapturbo:z1=1,n1=0,z2=1,n2=0,l=2",
+        "soapturbo:z1=1,n1=0,z2=1,n2=1,l=0",
+        "soapturbo:z1=1,n1=0,z2=1,n2=1,l=1",
+        "soapturbo:z1=1,n1=0,z2=1,n2=1,l=2",
+        "soapturbo:z1=1,n1=0,z2=8,n2=0,l=0",
+        "soapturbo:z1=1,n1=0,z2=8,n2=0,l=1",
+        "soapturbo:z1=1,n1=0,z2=8,n2=0,l=2",
+        "soapturbo:z1=1,n1=0,z2=8,n2=1,l=0",
+        "soapturbo:z1=1,n1=0,z2=8,n2=1,l=1",
+        "soapturbo:z1=1,n1=0,z2=8,n2=1,l=2",
+        "soapturbo:z1=1,n1=1,z2=1,n2=1,l=0",
+        "soapturbo:z1=1,n1=1,z2=1,n2=1,l=1",
+        "soapturbo:z1=1,n1=1,z2=1,n2=1,l=2",
+        "soapturbo:z1=1,n1=1,z2=8,n2=0,l=0",
+        "soapturbo:z1=1,n1=1,z2=8,n2=0,l=1",
+        "soapturbo:z1=1,n1=1,z2=8,n2=0,l=2",
+        "soapturbo:z1=1,n1=1,z2=8,n2=1,l=0",
+        "soapturbo:z1=1,n1=1,z2=8,n2=1,l=1",
+        "soapturbo:z1=1,n1=1,z2=8,n2=1,l=2",
+        "soapturbo:z1=8,n1=0,z2=8,n2=0,l=0",
+        "soapturbo:z1=8,n1=0,z2=8,n2=0,l=1",
+        "soapturbo:z1=8,n1=0,z2=8,n2=0,l=2",
+        "soapturbo:z1=8,n1=0,z2=8,n2=1,l=0",
+        "soapturbo:z1=8,n1=0,z2=8,n2=1,l=1",
+        "soapturbo:z1=8,n1=0,z2=8,n2=1,l=2",
+        "soapturbo:z1=8,n1=1,z2=8,n2=1,l=0",
+        "soapturbo:z1=8,n1=1,z2=8,n2=1,l=1",
+        "soapturbo:z1=8,n1=1,z2=8,n2=1,l=2"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SOAPTurbo",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "soapturbo.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "ACSF",
+        "parameters": {
+          "G2": null,
+          "G3": null,
+          "G4": null,
+          "G5": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "g2": null,
+          "g2_params": null,
+          "g3": null,
+          "g3_params": null,
+          "g4": null,
+          "g4_params": null,
+          "g5": null,
+          "g5_params": null,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "r_cut": 3.5,
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "ACSF",
+      "feature_count": 2,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "acsf:G1:z=1",
+        "acsf:G1:z=8"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "ACSF",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "acsf.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "CoulombMatrix",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "exponent": 2.4,
+          "n_atoms_max": 3,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "permutation": "sorted_l2"
+        },
+        "schema_version": 1
+      },
+      "descriptor": "CoulombMatrix",
+      "feature_count": 9,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "CoulombMatrix:0",
+        "CoulombMatrix:1",
+        "CoulombMatrix:2",
+        "CoulombMatrix:3",
+        "CoulombMatrix:4",
+        "CoulombMatrix:5",
+        "CoulombMatrix:6",
+        "CoulombMatrix:7",
+        "CoulombMatrix:8"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "CoulombMatrix",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "coulombmatrix.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SineMatrix",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "exponent": 2.4,
+          "n_atoms_max": 3,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "permutation": "sorted_l2"
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SineMatrix",
+      "feature_count": 9,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SineMatrix:0",
+        "SineMatrix:1",
+        "SineMatrix:2",
+        "SineMatrix:3",
+        "SineMatrix:4",
+        "SineMatrix:5",
+        "SineMatrix:6",
+        "SineMatrix:7",
+        "SineMatrix:8"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "SineMatrix",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "sinematrix.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "EwaldSumMatrix",
+        "parameters": {
+          "a": null,
+          "accuracy": 1e-05,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "g_cut": null,
+          "n_atoms_max": 3,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "permutation": "sorted_l2",
+          "r_cut": null,
+          "w": 1.0
+        },
+        "schema_version": 1
+      },
+      "descriptor": "EwaldSumMatrix",
+      "feature_count": 9,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "EwaldSumMatrix:0",
+        "EwaldSumMatrix:1",
+        "EwaldSumMatrix:2",
+        "EwaldSumMatrix:3",
+        "EwaldSumMatrix:4",
+        "EwaldSumMatrix:5",
+        "EwaldSumMatrix:6",
+        "EwaldSumMatrix:7",
+        "EwaldSumMatrix:8"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "EwaldSumMatrix",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "ewaldsummatrix.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "MBTR",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "geometry": {
+            "function": "distance"
+          },
+          "grid": {
+            "max": 4.0,
+            "min": 0.0,
+            "n": 20,
+            "sigma": 0.1
+          },
+          "normalization": "none",
+          "normalize_gaussians": true,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "periodic": true,
+          "species": [
+            1,
+            8
+          ],
+          "weighting": {
+            "function": "exp",
+            "scale": 0.3,
+            "threshold": 0.001
+          }
+        },
+        "schema_version": 1
+      },
+      "descriptor": "MBTR",
+      "feature_count": 60,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "MBTR:0",
+        "MBTR:1",
+        "MBTR:2",
+        "MBTR:3",
+        "MBTR:4",
+        "MBTR:5",
+        "MBTR:6",
+        "MBTR:7",
+        "MBTR:8",
+        "MBTR:9",
+        "MBTR:10",
+        "MBTR:11",
+        "MBTR:12",
+        "MBTR:13",
+        "MBTR:14",
+        "MBTR:15",
+        "MBTR:16",
+        "MBTR:17",
+        "MBTR:18",
+        "MBTR:19",
+        "MBTR:20",
+        "MBTR:21",
+        "MBTR:22",
+        "MBTR:23",
+        "MBTR:24",
+        "MBTR:25",
+        "MBTR:26",
+        "MBTR:27",
+        "MBTR:28",
+        "MBTR:29",
+        "MBTR:30",
+        "MBTR:31",
+        "MBTR:32",
+        "MBTR:33",
+        "MBTR:34",
+        "MBTR:35",
+        "MBTR:36",
+        "MBTR:37",
+        "MBTR:38",
+        "MBTR:39",
+        "MBTR:40",
+        "MBTR:41",
+        "MBTR:42",
+        "MBTR:43",
+        "MBTR:44",
+        "MBTR:45",
+        "MBTR:46",
+        "MBTR:47",
+        "MBTR:48",
+        "MBTR:49",
+        "MBTR:50",
+        "MBTR:51",
+        "MBTR:52",
+        "MBTR:53",
+        "MBTR:54",
+        "MBTR:55",
+        "MBTR:56",
+        "MBTR:57",
+        "MBTR:58",
+        "MBTR:59"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "MBTR",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "mbtr.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "LMBTR",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "geometry": {
+            "function": "distance"
+          },
+          "grid": {
+            "max": 4.0,
+            "min": 0.0,
+            "n": 20,
+            "sigma": 0.1
+          },
+          "normalization": "none",
+          "normalize_gaussians": true,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "periodic": true,
+          "species": [
+            1,
+            8
+          ],
+          "weighting": {
+            "function": "exp",
+            "scale": 0.3,
+            "threshold": 0.001
+          }
+        },
+        "schema_version": 1
+      },
+      "descriptor": "LMBTR",
+      "feature_count": 60,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "LMBTR:0",
+        "LMBTR:1",
+        "LMBTR:2",
+        "LMBTR:3",
+        "LMBTR:4",
+        "LMBTR:5",
+        "LMBTR:6",
+        "LMBTR:7",
+        "LMBTR:8",
+        "LMBTR:9",
+        "LMBTR:10",
+        "LMBTR:11",
+        "LMBTR:12",
+        "LMBTR:13",
+        "LMBTR:14",
+        "LMBTR:15",
+        "LMBTR:16",
+        "LMBTR:17",
+        "LMBTR:18",
+        "LMBTR:19",
+        "LMBTR:20",
+        "LMBTR:21",
+        "LMBTR:22",
+        "LMBTR:23",
+        "LMBTR:24",
+        "LMBTR:25",
+        "LMBTR:26",
+        "LMBTR:27",
+        "LMBTR:28",
+        "LMBTR:29",
+        "LMBTR:30",
+        "LMBTR:31",
+        "LMBTR:32",
+        "LMBTR:33",
+        "LMBTR:34",
+        "LMBTR:35",
+        "LMBTR:36",
+        "LMBTR:37",
+        "LMBTR:38",
+        "LMBTR:39",
+        "LMBTR:40",
+        "LMBTR:41",
+        "LMBTR:42",
+        "LMBTR:43",
+        "LMBTR:44",
+        "LMBTR:45",
+        "LMBTR:46",
+        "LMBTR:47",
+        "LMBTR:48",
+        "LMBTR:49",
+        "LMBTR:50",
+        "LMBTR:51",
+        "LMBTR:52",
+        "LMBTR:53",
+        "LMBTR:54",
+        "LMBTR:55",
+        "LMBTR:56",
+        "LMBTR:57",
+        "LMBTR:58",
+        "LMBTR:59"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "LMBTR",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "lmbtr.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "ValleOganov",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "function": "distance",
+          "geometry": null,
+          "grid": null,
+          "n": 20,
+          "normalization": null,
+          "normalize_gaussians": true,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "periodic": true,
+          "r_cut": 3.5,
+          "sigma": 0.1,
+          "species": [
+            1,
+            8
+          ],
+          "weighting": null
+        },
+        "schema_version": 1
+      },
+      "descriptor": "ValleOganov",
+      "feature_count": 60,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "ValleOganov:0",
+        "ValleOganov:1",
+        "ValleOganov:2",
+        "ValleOganov:3",
+        "ValleOganov:4",
+        "ValleOganov:5",
+        "ValleOganov:6",
+        "ValleOganov:7",
+        "ValleOganov:8",
+        "ValleOganov:9",
+        "ValleOganov:10",
+        "ValleOganov:11",
+        "ValleOganov:12",
+        "ValleOganov:13",
+        "ValleOganov:14",
+        "ValleOganov:15",
+        "ValleOganov:16",
+        "ValleOganov:17",
+        "ValleOganov:18",
+        "ValleOganov:19",
+        "ValleOganov:20",
+        "ValleOganov:21",
+        "ValleOganov:22",
+        "ValleOganov:23",
+        "ValleOganov:24",
+        "ValleOganov:25",
+        "ValleOganov:26",
+        "ValleOganov:27",
+        "ValleOganov:28",
+        "ValleOganov:29",
+        "ValleOganov:30",
+        "ValleOganov:31",
+        "ValleOganov:32",
+        "ValleOganov:33",
+        "ValleOganov:34",
+        "ValleOganov:35",
+        "ValleOganov:36",
+        "ValleOganov:37",
+        "ValleOganov:38",
+        "ValleOganov:39",
+        "ValleOganov:40",
+        "ValleOganov:41",
+        "ValleOganov:42",
+        "ValleOganov:43",
+        "ValleOganov:44",
+        "ValleOganov:45",
+        "ValleOganov:46",
+        "ValleOganov:47",
+        "ValleOganov:48",
+        "ValleOganov:49",
+        "ValleOganov:50",
+        "ValleOganov:51",
+        "ValleOganov:52",
+        "ValleOganov:53",
+        "ValleOganov:54",
+        "ValleOganov:55",
+        "ValleOganov:56",
+        "ValleOganov:57",
+        "ValleOganov:58",
+        "ValleOganov:59"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "ValleOganov",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "valleoganov.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "AtomicComposition",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "per_system": true,
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "AtomicComposition",
+      "feature_count": 2,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "AtomicComposition:0",
+        "AtomicComposition:1"
+      ],
+      "level": "structure",
+      "model": null,
+      "name": "AtomicComposition",
+      "row_offsets": null,
+      "samples": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "atomiccomposition.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "NeighborList",
+        "parameters": {
+          "cutoff": 3.5,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "full_neighbor_list": true,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "self_pairs": false
+        },
+        "schema_version": 1
+      },
+      "descriptor": "NeighborList",
+      "feature_count": 4,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "dx",
+        "dy",
+        "dz",
+        "distance"
+      ],
+      "level": "pair",
+      "model": null,
+      "name": "NeighborList",
+      "row_offsets": [
+        0,
+        6,
+        12
+      ],
+      "samples": [
+        [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          2,
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "neighborlist.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SortedDistances",
+        "parameters": {
+          "cutoff": 3.5,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "max_neighbors": 4,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "separate_neighbor_types": true,
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SortedDistances",
+      "feature_count": 8,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SortedDistances:0",
+        "SortedDistances:1",
+        "SortedDistances:2",
+        "SortedDistances:3",
+        "SortedDistances:4",
+        "SortedDistances:5",
+        "SortedDistances:6",
+        "SortedDistances:7"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SortedDistances",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "sorteddistances.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SphericalExpansion",
+        "parameters": {
+          "cutoff": 3.5,
+          "density_width": 0.6,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "max_angular": 2,
+          "max_radial": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SphericalExpansion",
+      "feature_count": 108,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SphericalExpansion:0",
+        "SphericalExpansion:1",
+        "SphericalExpansion:2",
+        "SphericalExpansion:3",
+        "SphericalExpansion:4",
+        "SphericalExpansion:5",
+        "SphericalExpansion:6",
+        "SphericalExpansion:7",
+        "SphericalExpansion:8",
+        "SphericalExpansion:9",
+        "SphericalExpansion:10",
+        "SphericalExpansion:11",
+        "SphericalExpansion:12",
+        "SphericalExpansion:13",
+        "SphericalExpansion:14",
+        "SphericalExpansion:15",
+        "SphericalExpansion:16",
+        "SphericalExpansion:17",
+        "SphericalExpansion:18",
+        "SphericalExpansion:19",
+        "SphericalExpansion:20",
+        "SphericalExpansion:21",
+        "SphericalExpansion:22",
+        "SphericalExpansion:23",
+        "SphericalExpansion:24",
+        "SphericalExpansion:25",
+        "SphericalExpansion:26",
+        "SphericalExpansion:27",
+        "SphericalExpansion:28",
+        "SphericalExpansion:29",
+        "SphericalExpansion:30",
+        "SphericalExpansion:31",
+        "SphericalExpansion:32",
+        "SphericalExpansion:33",
+        "SphericalExpansion:34",
+        "SphericalExpansion:35",
+        "SphericalExpansion:36",
+        "SphericalExpansion:37",
+        "SphericalExpansion:38",
+        "SphericalExpansion:39",
+        "SphericalExpansion:40",
+        "SphericalExpansion:41",
+        "SphericalExpansion:42",
+        "SphericalExpansion:43",
+        "SphericalExpansion:44",
+        "SphericalExpansion:45",
+        "SphericalExpansion:46",
+        "SphericalExpansion:47",
+        "SphericalExpansion:48",
+        "SphericalExpansion:49",
+        "SphericalExpansion:50",
+        "SphericalExpansion:51",
+        "SphericalExpansion:52",
+        "SphericalExpansion:53",
+        "SphericalExpansion:54",
+        "SphericalExpansion:55",
+        "SphericalExpansion:56",
+        "SphericalExpansion:57",
+        "SphericalExpansion:58",
+        "SphericalExpansion:59",
+        "SphericalExpansion:60",
+        "SphericalExpansion:61",
+        "SphericalExpansion:62",
+        "SphericalExpansion:63",
+        "SphericalExpansion:64",
+        "SphericalExpansion:65",
+        "SphericalExpansion:66",
+        "SphericalExpansion:67",
+        "SphericalExpansion:68",
+        "SphericalExpansion:69",
+        "SphericalExpansion:70",
+        "SphericalExpansion:71",
+        "SphericalExpansion:72",
+        "SphericalExpansion:73",
+        "SphericalExpansion:74",
+        "SphericalExpansion:75",
+        "SphericalExpansion:76",
+        "SphericalExpansion:77",
+        "SphericalExpansion:78",
+        "SphericalExpansion:79",
+        "SphericalExpansion:80",
+        "SphericalExpansion:81",
+        "SphericalExpansion:82",
+        "SphericalExpansion:83",
+        "SphericalExpansion:84",
+        "SphericalExpansion:85",
+        "SphericalExpansion:86",
+        "SphericalExpansion:87",
+        "SphericalExpansion:88",
+        "SphericalExpansion:89",
+        "SphericalExpansion:90",
+        "SphericalExpansion:91",
+        "SphericalExpansion:92",
+        "SphericalExpansion:93",
+        "SphericalExpansion:94",
+        "SphericalExpansion:95",
+        "SphericalExpansion:96",
+        "SphericalExpansion:97",
+        "SphericalExpansion:98",
+        "SphericalExpansion:99",
+        "SphericalExpansion:100",
+        "SphericalExpansion:101",
+        "SphericalExpansion:102",
+        "SphericalExpansion:103",
+        "SphericalExpansion:104",
+        "SphericalExpansion:105",
+        "SphericalExpansion:106",
+        "SphericalExpansion:107"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SphericalExpansion",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "sphericalexpansion.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SphericalExpansionByPair",
+        "parameters": {
+          "cutoff": 3.5,
+          "density_width": 0.6,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "max_angular": 2,
+          "max_radial": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SphericalExpansionByPair",
+      "feature_count": 27,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SphericalExpansionByPair:0",
+        "SphericalExpansionByPair:1",
+        "SphericalExpansionByPair:2",
+        "SphericalExpansionByPair:3",
+        "SphericalExpansionByPair:4",
+        "SphericalExpansionByPair:5",
+        "SphericalExpansionByPair:6",
+        "SphericalExpansionByPair:7",
+        "SphericalExpansionByPair:8",
+        "SphericalExpansionByPair:9",
+        "SphericalExpansionByPair:10",
+        "SphericalExpansionByPair:11",
+        "SphericalExpansionByPair:12",
+        "SphericalExpansionByPair:13",
+        "SphericalExpansionByPair:14",
+        "SphericalExpansionByPair:15",
+        "SphericalExpansionByPair:16",
+        "SphericalExpansionByPair:17",
+        "SphericalExpansionByPair:18",
+        "SphericalExpansionByPair:19",
+        "SphericalExpansionByPair:20",
+        "SphericalExpansionByPair:21",
+        "SphericalExpansionByPair:22",
+        "SphericalExpansionByPair:23",
+        "SphericalExpansionByPair:24",
+        "SphericalExpansionByPair:25",
+        "SphericalExpansionByPair:26"
+      ],
+      "level": "pair",
+      "model": null,
+      "name": "SphericalExpansionByPair",
+      "row_offsets": [
+        0,
+        9,
+        18
+      ],
+      "samples": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          2,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          2,
+          2,
+          0,
+          0,
+          0
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "sphericalexpansionbypair.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SoapRadialSpectrum",
+        "parameters": {
+          "cutoff": 3.5,
+          "density_width": 0.6,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "max_angular": 2,
+          "max_radial": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SoapRadialSpectrum",
+      "feature_count": 12,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SoapRadialSpectrum:0",
+        "SoapRadialSpectrum:1",
+        "SoapRadialSpectrum:2",
+        "SoapRadialSpectrum:3",
+        "SoapRadialSpectrum:4",
+        "SoapRadialSpectrum:5",
+        "SoapRadialSpectrum:6",
+        "SoapRadialSpectrum:7",
+        "SoapRadialSpectrum:8",
+        "SoapRadialSpectrum:9",
+        "SoapRadialSpectrum:10",
+        "SoapRadialSpectrum:11"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SoapRadialSpectrum",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "soapradialspectrum.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SoapPowerSpectrum",
+        "parameters": {
+          "cutoff": 3.5,
+          "density_width": 0.6,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "max_angular": 2,
+          "max_radial": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SoapPowerSpectrum",
+      "feature_count": 162,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SoapPowerSpectrum:0",
+        "SoapPowerSpectrum:1",
+        "SoapPowerSpectrum:2",
+        "SoapPowerSpectrum:3",
+        "SoapPowerSpectrum:4",
+        "SoapPowerSpectrum:5",
+        "SoapPowerSpectrum:6",
+        "SoapPowerSpectrum:7",
+        "SoapPowerSpectrum:8",
+        "SoapPowerSpectrum:9",
+        "SoapPowerSpectrum:10",
+        "SoapPowerSpectrum:11",
+        "SoapPowerSpectrum:12",
+        "SoapPowerSpectrum:13",
+        "SoapPowerSpectrum:14",
+        "SoapPowerSpectrum:15",
+        "SoapPowerSpectrum:16",
+        "SoapPowerSpectrum:17",
+        "SoapPowerSpectrum:18",
+        "SoapPowerSpectrum:19",
+        "SoapPowerSpectrum:20",
+        "SoapPowerSpectrum:21",
+        "SoapPowerSpectrum:22",
+        "SoapPowerSpectrum:23",
+        "SoapPowerSpectrum:24",
+        "SoapPowerSpectrum:25",
+        "SoapPowerSpectrum:26",
+        "SoapPowerSpectrum:27",
+        "SoapPowerSpectrum:28",
+        "SoapPowerSpectrum:29",
+        "SoapPowerSpectrum:30",
+        "SoapPowerSpectrum:31",
+        "SoapPowerSpectrum:32",
+        "SoapPowerSpectrum:33",
+        "SoapPowerSpectrum:34",
+        "SoapPowerSpectrum:35",
+        "SoapPowerSpectrum:36",
+        "SoapPowerSpectrum:37",
+        "SoapPowerSpectrum:38",
+        "SoapPowerSpectrum:39",
+        "SoapPowerSpectrum:40",
+        "SoapPowerSpectrum:41",
+        "SoapPowerSpectrum:42",
+        "SoapPowerSpectrum:43",
+        "SoapPowerSpectrum:44",
+        "SoapPowerSpectrum:45",
+        "SoapPowerSpectrum:46",
+        "SoapPowerSpectrum:47",
+        "SoapPowerSpectrum:48",
+        "SoapPowerSpectrum:49",
+        "SoapPowerSpectrum:50",
+        "SoapPowerSpectrum:51",
+        "SoapPowerSpectrum:52",
+        "SoapPowerSpectrum:53",
+        "SoapPowerSpectrum:54",
+        "SoapPowerSpectrum:55",
+        "SoapPowerSpectrum:56",
+        "SoapPowerSpectrum:57",
+        "SoapPowerSpectrum:58",
+        "SoapPowerSpectrum:59",
+        "SoapPowerSpectrum:60",
+        "SoapPowerSpectrum:61",
+        "SoapPowerSpectrum:62",
+        "SoapPowerSpectrum:63",
+        "SoapPowerSpectrum:64",
+        "SoapPowerSpectrum:65",
+        "SoapPowerSpectrum:66",
+        "SoapPowerSpectrum:67",
+        "SoapPowerSpectrum:68",
+        "SoapPowerSpectrum:69",
+        "SoapPowerSpectrum:70",
+        "SoapPowerSpectrum:71",
+        "SoapPowerSpectrum:72",
+        "SoapPowerSpectrum:73",
+        "SoapPowerSpectrum:74",
+        "SoapPowerSpectrum:75",
+        "SoapPowerSpectrum:76",
+        "SoapPowerSpectrum:77",
+        "SoapPowerSpectrum:78",
+        "SoapPowerSpectrum:79",
+        "SoapPowerSpectrum:80",
+        "SoapPowerSpectrum:81",
+        "SoapPowerSpectrum:82",
+        "SoapPowerSpectrum:83",
+        "SoapPowerSpectrum:84",
+        "SoapPowerSpectrum:85",
+        "SoapPowerSpectrum:86",
+        "SoapPowerSpectrum:87",
+        "SoapPowerSpectrum:88",
+        "SoapPowerSpectrum:89",
+        "SoapPowerSpectrum:90",
+        "SoapPowerSpectrum:91",
+        "SoapPowerSpectrum:92",
+        "SoapPowerSpectrum:93",
+        "SoapPowerSpectrum:94",
+        "SoapPowerSpectrum:95",
+        "SoapPowerSpectrum:96",
+        "SoapPowerSpectrum:97",
+        "SoapPowerSpectrum:98",
+        "SoapPowerSpectrum:99",
+        "SoapPowerSpectrum:100",
+        "SoapPowerSpectrum:101",
+        "SoapPowerSpectrum:102",
+        "SoapPowerSpectrum:103",
+        "SoapPowerSpectrum:104",
+        "SoapPowerSpectrum:105",
+        "SoapPowerSpectrum:106",
+        "SoapPowerSpectrum:107",
+        "SoapPowerSpectrum:108",
+        "SoapPowerSpectrum:109",
+        "SoapPowerSpectrum:110",
+        "SoapPowerSpectrum:111",
+        "SoapPowerSpectrum:112",
+        "SoapPowerSpectrum:113",
+        "SoapPowerSpectrum:114",
+        "SoapPowerSpectrum:115",
+        "SoapPowerSpectrum:116",
+        "SoapPowerSpectrum:117",
+        "SoapPowerSpectrum:118",
+        "SoapPowerSpectrum:119",
+        "SoapPowerSpectrum:120",
+        "SoapPowerSpectrum:121",
+        "SoapPowerSpectrum:122",
+        "SoapPowerSpectrum:123",
+        "SoapPowerSpectrum:124",
+        "SoapPowerSpectrum:125",
+        "SoapPowerSpectrum:126",
+        "SoapPowerSpectrum:127",
+        "SoapPowerSpectrum:128",
+        "SoapPowerSpectrum:129",
+        "SoapPowerSpectrum:130",
+        "SoapPowerSpectrum:131",
+        "SoapPowerSpectrum:132",
+        "SoapPowerSpectrum:133",
+        "SoapPowerSpectrum:134",
+        "SoapPowerSpectrum:135",
+        "SoapPowerSpectrum:136",
+        "SoapPowerSpectrum:137",
+        "SoapPowerSpectrum:138",
+        "SoapPowerSpectrum:139",
+        "SoapPowerSpectrum:140",
+        "SoapPowerSpectrum:141",
+        "SoapPowerSpectrum:142",
+        "SoapPowerSpectrum:143",
+        "SoapPowerSpectrum:144",
+        "SoapPowerSpectrum:145",
+        "SoapPowerSpectrum:146",
+        "SoapPowerSpectrum:147",
+        "SoapPowerSpectrum:148",
+        "SoapPowerSpectrum:149",
+        "SoapPowerSpectrum:150",
+        "SoapPowerSpectrum:151",
+        "SoapPowerSpectrum:152",
+        "SoapPowerSpectrum:153",
+        "SoapPowerSpectrum:154",
+        "SoapPowerSpectrum:155",
+        "SoapPowerSpectrum:156",
+        "SoapPowerSpectrum:157",
+        "SoapPowerSpectrum:158",
+        "SoapPowerSpectrum:159",
+        "SoapPowerSpectrum:160",
+        "SoapPowerSpectrum:161"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SoapPowerSpectrum",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "soappowerspectrum.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "LodeSphericalExpansion",
+        "parameters": {
+          "cutoff": 3.5,
+          "density_width": 0.6,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "exponent": 1,
+          "k_cutoff": 2.5,
+          "max_angular": 2,
+          "max_radial": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "radial_radius": null,
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "LodeSphericalExpansion",
+      "feature_count": 108,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "LodeSphericalExpansion:0",
+        "LodeSphericalExpansion:1",
+        "LodeSphericalExpansion:2",
+        "LodeSphericalExpansion:3",
+        "LodeSphericalExpansion:4",
+        "LodeSphericalExpansion:5",
+        "LodeSphericalExpansion:6",
+        "LodeSphericalExpansion:7",
+        "LodeSphericalExpansion:8",
+        "LodeSphericalExpansion:9",
+        "LodeSphericalExpansion:10",
+        "LodeSphericalExpansion:11",
+        "LodeSphericalExpansion:12",
+        "LodeSphericalExpansion:13",
+        "LodeSphericalExpansion:14",
+        "LodeSphericalExpansion:15",
+        "LodeSphericalExpansion:16",
+        "LodeSphericalExpansion:17",
+        "LodeSphericalExpansion:18",
+        "LodeSphericalExpansion:19",
+        "LodeSphericalExpansion:20",
+        "LodeSphericalExpansion:21",
+        "LodeSphericalExpansion:22",
+        "LodeSphericalExpansion:23",
+        "LodeSphericalExpansion:24",
+        "LodeSphericalExpansion:25",
+        "LodeSphericalExpansion:26",
+        "LodeSphericalExpansion:27",
+        "LodeSphericalExpansion:28",
+        "LodeSphericalExpansion:29",
+        "LodeSphericalExpansion:30",
+        "LodeSphericalExpansion:31",
+        "LodeSphericalExpansion:32",
+        "LodeSphericalExpansion:33",
+        "LodeSphericalExpansion:34",
+        "LodeSphericalExpansion:35",
+        "LodeSphericalExpansion:36",
+        "LodeSphericalExpansion:37",
+        "LodeSphericalExpansion:38",
+        "LodeSphericalExpansion:39",
+        "LodeSphericalExpansion:40",
+        "LodeSphericalExpansion:41",
+        "LodeSphericalExpansion:42",
+        "LodeSphericalExpansion:43",
+        "LodeSphericalExpansion:44",
+        "LodeSphericalExpansion:45",
+        "LodeSphericalExpansion:46",
+        "LodeSphericalExpansion:47",
+        "LodeSphericalExpansion:48",
+        "LodeSphericalExpansion:49",
+        "LodeSphericalExpansion:50",
+        "LodeSphericalExpansion:51",
+        "LodeSphericalExpansion:52",
+        "LodeSphericalExpansion:53",
+        "LodeSphericalExpansion:54",
+        "LodeSphericalExpansion:55",
+        "LodeSphericalExpansion:56",
+        "LodeSphericalExpansion:57",
+        "LodeSphericalExpansion:58",
+        "LodeSphericalExpansion:59",
+        "LodeSphericalExpansion:60",
+        "LodeSphericalExpansion:61",
+        "LodeSphericalExpansion:62",
+        "LodeSphericalExpansion:63",
+        "LodeSphericalExpansion:64",
+        "LodeSphericalExpansion:65",
+        "LodeSphericalExpansion:66",
+        "LodeSphericalExpansion:67",
+        "LodeSphericalExpansion:68",
+        "LodeSphericalExpansion:69",
+        "LodeSphericalExpansion:70",
+        "LodeSphericalExpansion:71",
+        "LodeSphericalExpansion:72",
+        "LodeSphericalExpansion:73",
+        "LodeSphericalExpansion:74",
+        "LodeSphericalExpansion:75",
+        "LodeSphericalExpansion:76",
+        "LodeSphericalExpansion:77",
+        "LodeSphericalExpansion:78",
+        "LodeSphericalExpansion:79",
+        "LodeSphericalExpansion:80",
+        "LodeSphericalExpansion:81",
+        "LodeSphericalExpansion:82",
+        "LodeSphericalExpansion:83",
+        "LodeSphericalExpansion:84",
+        "LodeSphericalExpansion:85",
+        "LodeSphericalExpansion:86",
+        "LodeSphericalExpansion:87",
+        "LodeSphericalExpansion:88",
+        "LodeSphericalExpansion:89",
+        "LodeSphericalExpansion:90",
+        "LodeSphericalExpansion:91",
+        "LodeSphericalExpansion:92",
+        "LodeSphericalExpansion:93",
+        "LodeSphericalExpansion:94",
+        "LodeSphericalExpansion:95",
+        "LodeSphericalExpansion:96",
+        "LodeSphericalExpansion:97",
+        "LodeSphericalExpansion:98",
+        "LodeSphericalExpansion:99",
+        "LodeSphericalExpansion:100",
+        "LodeSphericalExpansion:101",
+        "LodeSphericalExpansion:102",
+        "LodeSphericalExpansion:103",
+        "LodeSphericalExpansion:104",
+        "LodeSphericalExpansion:105",
+        "LodeSphericalExpansion:106",
+        "LodeSphericalExpansion:107"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "LodeSphericalExpansion",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "lodesphericalexpansion.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "EAD",
+        "parameters": {
+          "Rc": 3.5,
+          "cutoff": "cosine",
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "parameters": {
+            "L": 2,
+            "Rs": [
+              0.0,
+              0.5
+            ],
+            "eta": [
+              0.05,
+              0.1
+            ]
+          }
+        },
+        "schema_version": 1
+      },
+      "descriptor": "EAD",
+      "feature_count": 12,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "EAD:0",
+        "EAD:1",
+        "EAD:2",
+        "EAD:3",
+        "EAD:4",
+        "EAD:5",
+        "EAD:6",
+        "EAD:7",
+        "EAD:8",
+        "EAD:9",
+        "EAD:10",
+        "EAD:11"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "EAD",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "ead.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SO3",
+        "parameters": {
+          "alpha": 2.0,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "lmax": 2,
+          "nmax": 2,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "rcut": 3.5,
+          "weight_on": false
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SO3",
+      "feature_count": 9,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SO3:0",
+        "SO3:1",
+        "SO3:2",
+        "SO3:3",
+        "SO3:4",
+        "SO3:5",
+        "SO3:6",
+        "SO3:7",
+        "SO3:8"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SO3",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "so3.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SO4",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "lmax": 2,
+          "normalize_U": true,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "rcut": 3.5
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SO4",
+      "feature_count": 14,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SO4:0",
+        "SO4:1",
+        "SO4:2",
+        "SO4:3",
+        "SO4:4",
+        "SO4:5",
+        "SO4:6",
+        "SO4:7",
+        "SO4:8",
+        "SO4:9",
+        "SO4:10",
+        "SO4:11",
+        "SO4:12",
+        "SO4:13"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SO4",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "so4.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "SNAP",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "lmax": 2,
+          "normalize_U": false,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "rcut": 3.5,
+          "weights": {
+            "O": 1.0
+          }
+        },
+        "schema_version": 1
+      },
+      "descriptor": "SNAP",
+      "feature_count": 14,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "SNAP:0",
+        "SNAP:1",
+        "SNAP:2",
+        "SNAP:3",
+        "SNAP:4",
+        "SNAP:5",
+        "SNAP:6",
+        "SNAP:7",
+        "SNAP:8",
+        "SNAP:9",
+        "SNAP:10",
+        "SNAP:11",
+        "SNAP:12",
+        "SNAP:13"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "SNAP",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "snap.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "LBispectrum",
+        "parameters": {
+          "diagonal": 3,
+          "element_profile": null,
+          "element_radii": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "normalize_U": false,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "rcut": 3.5,
+          "rcutfac": 1.0,
+          "rfac0": 0.99363,
+          "rmin0": 0.0,
+          "twojmax": 3,
+          "weights": null
+        },
+        "schema_version": 1
+      },
+      "descriptor": "LBispectrum",
+      "feature_count": 8,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "LBispectrum:0",
+        "LBispectrum:1",
+        "LBispectrum:2",
+        "LBispectrum:3",
+        "LBispectrum:4",
+        "LBispectrum:5",
+        "LBispectrum:6",
+        "LBispectrum:7"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "LBispectrum",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "lbispectrum.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "MTP",
+        "parameters": {
+          "cutoff": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "l_max": null,
+          "level": null,
+          "max_dist": 3.5,
+          "max_level": null,
+          "max_rank": 2,
+          "min_dist": 0.1,
+          "model": null,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "r_cut": null,
+          "radial_basis_size": 2,
+          "radial_basis_type": "RBChebyshev",
+          "radial_funcs_count": 1,
+          "species": [
+            1,
+            8
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "MTP",
+      "feature_count": 38,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "mtp:trace=z1,rf=0,n=0,rank=0",
+        "mtp:trace=z1,rf=0,n=0,rank=2",
+        "mtp:trace=z1,rf=0,n=1,rank=0",
+        "mtp:trace=z1,rf=0,n=1,rank=2",
+        "mtp:trace=z8,rf=0,n=0,rank=0",
+        "mtp:trace=z8,rf=0,n=0,rank=2",
+        "mtp:trace=z8,rf=0,n=1,rank=0",
+        "mtp:trace=z8,rf=0,n=1,rank=2",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=0,z2=1,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=0,z2=1,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=0,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=0,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=1,z2=1,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=1,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=0,z1=1,rf1=0,n1=1,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=0,z1=8,rf1=0,n1=0,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=0,z1=8,rf1=0,n1=0,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=0,z1=8,rf1=0,n1=1,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=0,z2=1,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=0,z2=1,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=0,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=0,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=1,z2=1,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=1,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=1,z1=1,rf1=0,n1=1,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=1,z1=8,rf1=0,n1=0,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=1,z1=8,rf1=0,n1=0,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=1,z1=8,rf1=0,n1=1,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=0,z2=1,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=0,z2=1,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=0,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=0,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=1,z2=1,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=1,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=2,z1=1,rf1=0,n1=1,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=2,z1=8,rf1=0,n1=0,z2=8,rf2=0,n2=0",
+        "mtp:contraction=dot,rank=2,z1=8,rf1=0,n1=0,z2=8,rf2=0,n2=1",
+        "mtp:contraction=dot,rank=2,z1=8,rf1=0,n1=1,z2=8,rf2=0,n2=1"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "MTP",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "mtp.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "C00PSMLFF",
+        "parameters": {
+          "angular_weight": 1.0,
+          "cutoff": null,
+          "cutoff_function": "bp",
+          "exclude_self_interaction": true,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "include_angular": true,
+          "include_radial": true,
+          "l_max": 2,
+          "n_max": null,
+          "n_radial": 2,
+          "normalize_angular": false,
+          "normalize_radial": false,
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "r_cut": 3.5,
+          "radial_weight": 1.0,
+          "species": [
+            1,
+            8
+          ],
+          "super_vector": false
+        },
+        "schema_version": 1
+      },
+      "descriptor": "C00PSMLFF",
+      "feature_count": 20,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "c00ps_mlff:c00,z=1,n=0",
+        "c00ps_mlff:c00,z=1,n=1",
+        "c00ps_mlff:c00,z=8,n=0",
+        "c00ps_mlff:c00,z=8,n=1",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=1,n2=0,l=0",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=1,n2=1,l=0",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=8,n2=0,l=0",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=8,n2=1,l=0",
+        "c00ps_mlff:ps,z1=1,n1=1,z2=1,n2=1,l=0",
+        "c00ps_mlff:ps,z1=1,n1=1,z2=8,n2=0,l=0",
+        "c00ps_mlff:ps,z1=1,n1=1,z2=8,n2=1,l=0",
+        "c00ps_mlff:ps,z1=8,n1=0,z2=8,n2=0,l=0",
+        "c00ps_mlff:ps,z1=8,n1=0,z2=8,n2=1,l=0",
+        "c00ps_mlff:ps,z1=8,n1=1,z2=8,n2=1,l=0",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=1,n2=0,l=1",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=8,n2=0,l=1",
+        "c00ps_mlff:ps,z1=8,n1=0,z2=8,n2=0,l=1",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=1,n2=0,l=2",
+        "c00ps_mlff:ps,z1=1,n1=0,z2=8,n2=0,l=2",
+        "c00ps_mlff:ps,z1=8,n1=0,z2=8,n2=0,l=2"
+      ],
+      "level": "atom",
+      "model": null,
+      "name": "C00PSMLFF",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "c00psmlff.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "NEP",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "model": {
+            "__type__": "ModelResource",
+            "expected_sha256": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+            "identifier": "nep89_20250409",
+            "name": "nep89_20250409.txt"
+          },
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          }
+        },
+        "schema_version": 1
+      },
+      "descriptor": "NEP",
+      "feature_count": 35,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "nep:q1",
+        "nep:q2",
+        "nep:q3",
+        "nep:q4",
+        "nep:q5",
+        "nep:q6",
+        "nep:q7",
+        "nep:q8",
+        "nep:q9",
+        "nep:q10",
+        "nep:q11",
+        "nep:q12",
+        "nep:q13",
+        "nep:q14",
+        "nep:q15",
+        "nep:q16",
+        "nep:q17",
+        "nep:q18",
+        "nep:q19",
+        "nep:q20",
+        "nep:q21",
+        "nep:q22",
+        "nep:q23",
+        "nep:q24",
+        "nep:q25",
+        "nep:q26",
+        "nep:q27",
+        "nep:q28",
+        "nep:q29",
+        "nep:q30",
+        "nep:q31",
+        "nep:q32",
+        "nep:q33",
+        "nep:q34",
+        "nep:q35"
+      ],
+      "level": "atom",
+      "model": {
+        "digest": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+        "path": "${PROJECT_ROOT}/src/mdescriptor/models/assets/nep89_20250409.txt",
+        "source": "package"
+      },
+      "name": "NEP",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "nep.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "DPA4",
+        "parameters": {
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "model": {
+            "__type__": "ModelResource",
+            "expected_sha256": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23",
+            "identifier": "DPA4-Air-OMat24-v20260704",
+            "name": "DPA4-Air-OMat24-v20260704.pt"
+          },
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          }
+        },
+        "schema_version": 1
+      },
+      "descriptor": "DPA4",
+      "feature_count": 64,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "dpa4:scalar,channel=0",
+        "dpa4:scalar,channel=1",
+        "dpa4:scalar,channel=2",
+        "dpa4:scalar,channel=3",
+        "dpa4:scalar,channel=4",
+        "dpa4:scalar,channel=5",
+        "dpa4:scalar,channel=6",
+        "dpa4:scalar,channel=7",
+        "dpa4:scalar,channel=8",
+        "dpa4:scalar,channel=9",
+        "dpa4:scalar,channel=10",
+        "dpa4:scalar,channel=11",
+        "dpa4:scalar,channel=12",
+        "dpa4:scalar,channel=13",
+        "dpa4:scalar,channel=14",
+        "dpa4:scalar,channel=15",
+        "dpa4:scalar,channel=16",
+        "dpa4:scalar,channel=17",
+        "dpa4:scalar,channel=18",
+        "dpa4:scalar,channel=19",
+        "dpa4:scalar,channel=20",
+        "dpa4:scalar,channel=21",
+        "dpa4:scalar,channel=22",
+        "dpa4:scalar,channel=23",
+        "dpa4:scalar,channel=24",
+        "dpa4:scalar,channel=25",
+        "dpa4:scalar,channel=26",
+        "dpa4:scalar,channel=27",
+        "dpa4:scalar,channel=28",
+        "dpa4:scalar,channel=29",
+        "dpa4:scalar,channel=30",
+        "dpa4:scalar,channel=31",
+        "dpa4:scalar,channel=32",
+        "dpa4:scalar,channel=33",
+        "dpa4:scalar,channel=34",
+        "dpa4:scalar,channel=35",
+        "dpa4:scalar,channel=36",
+        "dpa4:scalar,channel=37",
+        "dpa4:scalar,channel=38",
+        "dpa4:scalar,channel=39",
+        "dpa4:scalar,channel=40",
+        "dpa4:scalar,channel=41",
+        "dpa4:scalar,channel=42",
+        "dpa4:scalar,channel=43",
+        "dpa4:scalar,channel=44",
+        "dpa4:scalar,channel=45",
+        "dpa4:scalar,channel=46",
+        "dpa4:scalar,channel=47",
+        "dpa4:scalar,channel=48",
+        "dpa4:scalar,channel=49",
+        "dpa4:scalar,channel=50",
+        "dpa4:scalar,channel=51",
+        "dpa4:scalar,channel=52",
+        "dpa4:scalar,channel=53",
+        "dpa4:scalar,channel=54",
+        "dpa4:scalar,channel=55",
+        "dpa4:scalar,channel=56",
+        "dpa4:scalar,channel=57",
+        "dpa4:scalar,channel=58",
+        "dpa4:scalar,channel=59",
+        "dpa4:scalar,channel=60",
+        "dpa4:scalar,channel=61",
+        "dpa4:scalar,channel=62",
+        "dpa4:scalar,channel=63"
+      ],
+      "level": "atom",
+      "model": {
+        "digest": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23",
+        "path": "${PROJECT_ROOT}/src/mdescriptor/models/assets/DPA4-Air-OMat24-v20260704.pt",
+        "source": "package"
+      },
+      "name": "DPA4",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 2e-05
+      },
+      "values": "dpa4.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "DPA4C",
+        "parameters": {
+          "calibrate": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "model": {
+            "__type__": "ModelResource",
+            "expected_sha256": "ff596ce704c9b4bc7149fbb0a0f12df611924cccb045917e8abb95b6a6cd4ad8",
+            "identifier": "DPA4C-Air-OMat24-v20260819",
+            "name": "DPA4C-Air-OMat24-v20260819.pt"
+          },
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "use_amp": null
+        },
+        "schema_version": 1
+      },
+      "descriptor": "DPA4C",
+      "feature_count": 219,
+      "input": {
+        "cells": [
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ],
+          [
+            [
+              12.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              12.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              12.0
+            ]
+          ]
+        ],
+        "ids": [
+          "baseline-0",
+          "baseline-1"
+        ],
+        "numbers": [
+          8,
+          1,
+          1,
+          8,
+          1,
+          1
+        ],
+        "offsets": [
+          0,
+          3,
+          6
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            4.0,
+            4.0,
+            4.0
+          ],
+          [
+            4.76,
+            4.58,
+            4.0
+          ],
+          [
+            3.24,
+            4.58,
+            4.0
+          ],
+          [
+            7.0,
+            7.0,
+            7.0
+          ],
+          [
+            7.76,
+            7.58,
+            7.0
+          ],
+          [
+            6.24,
+            7.58,
+            7.0
+          ]
+        ]
+      },
+      "labels": [
+        "dpa4c:scalar,channel=0",
+        "dpa4c:scalar,channel=1",
+        "dpa4c:scalar,channel=2",
+        "dpa4c:scalar,channel=3",
+        "dpa4c:scalar,channel=4",
+        "dpa4c:scalar,channel=5",
+        "dpa4c:scalar,channel=6",
+        "dpa4c:scalar,channel=7",
+        "dpa4c:scalar,channel=8",
+        "dpa4c:scalar,channel=9",
+        "dpa4c:scalar,channel=10",
+        "dpa4c:scalar,channel=11",
+        "dpa4c:scalar,channel=12",
+        "dpa4c:scalar,channel=13",
+        "dpa4c:scalar,channel=14",
+        "dpa4c:scalar,channel=15",
+        "dpa4c:scalar,channel=16",
+        "dpa4c:scalar,channel=17",
+        "dpa4c:scalar,channel=18",
+        "dpa4c:scalar,channel=19",
+        "dpa4c:scalar,channel=20",
+        "dpa4c:scalar,channel=21",
+        "dpa4c:scalar,channel=22",
+        "dpa4c:scalar,channel=23",
+        "dpa4c:scalar,channel=24",
+        "dpa4c:scalar,channel=25",
+        "dpa4c:scalar,channel=26",
+        "dpa4c:scalar,channel=27",
+        "dpa4c:scalar,channel=28",
+        "dpa4c:scalar,channel=29",
+        "dpa4c:scalar,channel=30",
+        "dpa4c:scalar,channel=31",
+        "dpa4c:scalar,channel=32",
+        "dpa4c:scalar,channel=33",
+        "dpa4c:scalar,channel=34",
+        "dpa4c:scalar,channel=35",
+        "dpa4c:scalar,channel=36",
+        "dpa4c:scalar,channel=37",
+        "dpa4c:scalar,channel=38",
+        "dpa4c:scalar,channel=39",
+        "dpa4c:scalar,channel=40",
+        "dpa4c:scalar,channel=41",
+        "dpa4c:scalar,channel=42",
+        "dpa4c:scalar,channel=43",
+        "dpa4c:scalar,channel=44",
+        "dpa4c:scalar,channel=45",
+        "dpa4c:scalar,channel=46",
+        "dpa4c:scalar,channel=47",
+        "dpa4c:scalar,channel=48",
+        "dpa4c:scalar,channel=49",
+        "dpa4c:scalar,channel=50",
+        "dpa4c:scalar,channel=51",
+        "dpa4c:scalar,channel=52",
+        "dpa4c:scalar,channel=53",
+        "dpa4c:scalar,channel=54",
+        "dpa4c:scalar,channel=55",
+        "dpa4c:scalar,channel=56",
+        "dpa4c:scalar,channel=57",
+        "dpa4c:scalar,channel=58",
+        "dpa4c:scalar,channel=59",
+        "dpa4c:scalar,channel=60",
+        "dpa4c:scalar,channel=61",
+        "dpa4c:scalar,channel=62",
+        "dpa4c:scalar,channel=63",
+        "dpa4c:gram,degree=1,row=0,column=0",
+        "dpa4c:gram,degree=1,row=0,column=1",
+        "dpa4c:gram,degree=1,row=0,column=2",
+        "dpa4c:gram,degree=1,row=0,column=3",
+        "dpa4c:gram,degree=1,row=0,column=4",
+        "dpa4c:gram,degree=1,row=0,column=5",
+        "dpa4c:gram,degree=1,row=0,column=6",
+        "dpa4c:gram,degree=1,row=0,column=7",
+        "dpa4c:gram,degree=1,row=1,column=1",
+        "dpa4c:gram,degree=1,row=1,column=2",
+        "dpa4c:gram,degree=1,row=1,column=3",
+        "dpa4c:gram,degree=1,row=1,column=4",
+        "dpa4c:gram,degree=1,row=1,column=5",
+        "dpa4c:gram,degree=1,row=1,column=6",
+        "dpa4c:gram,degree=1,row=1,column=7",
+        "dpa4c:gram,degree=1,row=2,column=2",
+        "dpa4c:gram,degree=1,row=2,column=3",
+        "dpa4c:gram,degree=1,row=2,column=4",
+        "dpa4c:gram,degree=1,row=2,column=5",
+        "dpa4c:gram,degree=1,row=2,column=6",
+        "dpa4c:gram,degree=1,row=2,column=7",
+        "dpa4c:gram,degree=1,row=3,column=3",
+        "dpa4c:gram,degree=1,row=3,column=4",
+        "dpa4c:gram,degree=1,row=3,column=5",
+        "dpa4c:gram,degree=1,row=3,column=6",
+        "dpa4c:gram,degree=1,row=3,column=7",
+        "dpa4c:gram,degree=1,row=4,column=4",
+        "dpa4c:gram,degree=1,row=4,column=5",
+        "dpa4c:gram,degree=1,row=4,column=6",
+        "dpa4c:gram,degree=1,row=4,column=7",
+        "dpa4c:gram,degree=1,row=5,column=5",
+        "dpa4c:gram,degree=1,row=5,column=6",
+        "dpa4c:gram,degree=1,row=5,column=7",
+        "dpa4c:gram,degree=1,row=6,column=6",
+        "dpa4c:gram,degree=1,row=6,column=7",
+        "dpa4c:gram,degree=1,row=7,column=7",
+        "dpa4c:gram,degree=2,row=0,column=0",
+        "dpa4c:gram,degree=2,row=0,column=1",
+        "dpa4c:gram,degree=2,row=0,column=2",
+        "dpa4c:gram,degree=2,row=0,column=3",
+        "dpa4c:gram,degree=2,row=1,column=1",
+        "dpa4c:gram,degree=2,row=1,column=2",
+        "dpa4c:gram,degree=2,row=1,column=3",
+        "dpa4c:gram,degree=2,row=2,column=2",
+        "dpa4c:gram,degree=2,row=2,column=3",
+        "dpa4c:gram,degree=2,row=3,column=3",
+        "dpa4c:gram,degree=3,row=0,column=0",
+        "dpa4c:bispectrum,index=0",
+        "dpa4c:bispectrum,index=1",
+        "dpa4c:bispectrum,index=2",
+        "dpa4c:bispectrum,index=3",
+        "dpa4c:bispectrum,index=4",
+        "dpa4c:bispectrum,index=5",
+        "dpa4c:bispectrum,index=6",
+        "dpa4c:bispectrum,index=7",
+        "dpa4c:bispectrum,index=8",
+        "dpa4c:bispectrum,index=9",
+        "dpa4c:bispectrum,index=10",
+        "dpa4c:bispectrum,index=11",
+        "dpa4c:bispectrum,index=12",
+        "dpa4c:bispectrum,index=13",
+        "dpa4c:bispectrum,index=14",
+        "dpa4c:bispectrum,index=15",
+        "dpa4c:bispectrum,index=16",
+        "dpa4c:bispectrum,index=17",
+        "dpa4c:bispectrum,index=18",
+        "dpa4c:bispectrum,index=19",
+        "dpa4c:bispectrum,index=20",
+        "dpa4c:bispectrum,index=21",
+        "dpa4c:bispectrum,index=22",
+        "dpa4c:bispectrum,index=23",
+        "dpa4c:bispectrum,index=24",
+        "dpa4c:bispectrum,index=25",
+        "dpa4c:bispectrum,index=26",
+        "dpa4c:bispectrum,index=27",
+        "dpa4c:bispectrum,index=28",
+        "dpa4c:bispectrum,index=29",
+        "dpa4c:bispectrum,index=30",
+        "dpa4c:bispectrum,index=31",
+        "dpa4c:bispectrum,index=32",
+        "dpa4c:bispectrum,index=33",
+        "dpa4c:quartic,index=0",
+        "dpa4c:quartic,index=1",
+        "dpa4c:quartic,index=2",
+        "dpa4c:quartic,index=3",
+        "dpa4c:quartic,index=4",
+        "dpa4c:quartic,index=5",
+        "dpa4c:quartic,index=6",
+        "dpa4c:quartic,index=7",
+        "dpa4c:divisor=scalar",
+        "dpa4c:divisor=angular",
+        "dpa4c:type_embedding,index=0",
+        "dpa4c:type_embedding,index=1",
+        "dpa4c:type_embedding,index=2",
+        "dpa4c:type_embedding,index=3",
+        "dpa4c:type_embedding,index=4",
+        "dpa4c:type_embedding,index=5",
+        "dpa4c:type_embedding,index=6",
+        "dpa4c:type_embedding,index=7",
+        "dpa4c:type_embedding,index=8",
+        "dpa4c:type_embedding,index=9",
+        "dpa4c:type_embedding,index=10",
+        "dpa4c:type_embedding,index=11",
+        "dpa4c:type_embedding,index=12",
+        "dpa4c:type_embedding,index=13",
+        "dpa4c:type_embedding,index=14",
+        "dpa4c:type_embedding,index=15",
+        "dpa4c:type_embedding,index=16",
+        "dpa4c:type_embedding,index=17",
+        "dpa4c:type_embedding,index=18",
+        "dpa4c:type_embedding,index=19",
+        "dpa4c:type_embedding,index=20",
+        "dpa4c:type_embedding,index=21",
+        "dpa4c:type_embedding,index=22",
+        "dpa4c:type_embedding,index=23",
+        "dpa4c:type_embedding,index=24",
+        "dpa4c:type_embedding,index=25",
+        "dpa4c:type_embedding,index=26",
+        "dpa4c:type_embedding,index=27",
+        "dpa4c:type_embedding,index=28",
+        "dpa4c:type_embedding,index=29",
+        "dpa4c:type_embedding,index=30",
+        "dpa4c:type_embedding,index=31",
+        "dpa4c:type_embedding,index=32",
+        "dpa4c:type_embedding,index=33",
+        "dpa4c:type_embedding,index=34",
+        "dpa4c:type_embedding,index=35",
+        "dpa4c:type_embedding,index=36",
+        "dpa4c:type_embedding,index=37",
+        "dpa4c:type_embedding,index=38",
+        "dpa4c:type_embedding,index=39",
+        "dpa4c:type_embedding,index=40",
+        "dpa4c:type_embedding,index=41",
+        "dpa4c:type_embedding,index=42",
+        "dpa4c:type_embedding,index=43",
+        "dpa4c:type_embedding,index=44",
+        "dpa4c:type_embedding,index=45",
+        "dpa4c:type_embedding,index=46",
+        "dpa4c:type_embedding,index=47",
+        "dpa4c:type_embedding,index=48",
+        "dpa4c:type_embedding,index=49",
+        "dpa4c:type_embedding,index=50",
+        "dpa4c:type_embedding,index=51",
+        "dpa4c:type_embedding,index=52",
+        "dpa4c:type_embedding,index=53",
+        "dpa4c:type_embedding,index=54",
+        "dpa4c:type_embedding,index=55",
+        "dpa4c:type_embedding,index=56",
+        "dpa4c:type_embedding,index=57",
+        "dpa4c:type_embedding,index=58",
+        "dpa4c:type_embedding,index=59",
+        "dpa4c:type_embedding,index=60",
+        "dpa4c:type_embedding,index=61",
+        "dpa4c:type_embedding,index=62",
+        "dpa4c:type_embedding,index=63"
+      ],
+      "level": "atom",
+      "model": {
+        "digest": "ff596ce704c9b4bc7149fbb0a0f12df611924cccb045917e8abb95b6a6cd4ad8",
+        "path": "${PROJECT_ROOT}/src/mdescriptor/models/assets/DPA4C-Air-OMat24-v20260819.pt",
+        "source": "package"
+      },
+      "name": "DPA4C",
+      "row_offsets": [
+        0,
+        3,
+        6
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "structure_ids": [
+        "baseline-0",
+        "baseline-1"
+      ],
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 2e-05
+      },
+      "values": "dpa4c.npz"
+    },
+    {
+      "configuration": {
+        "descriptor": "MTP",
+        "parameters": {
+          "cutoff": null,
+          "execution": {
+            "device": "cpu",
+            "num_threads": null
+          },
+          "l_max": null,
+          "level": null,
+          "max_dist": null,
+          "max_level": null,
+          "max_rank": null,
+          "min_dist": 0.0,
+          "model": {
+            "__type__": "ModelResource",
+            "path": "${PROJECT_ROOT}/tests/data/mlip4_test_mtp.json"
+          },
+          "output": {
+            "dtype": "float64",
+            "sparse": false
+          },
+          "r_cut": null,
+          "radial_basis_size": 4,
+          "radial_basis_type": "RBChebyshev",
+          "radial_funcs_count": 1,
+          "species": [
+            13,
+            14
+          ]
+        },
+        "schema_version": 1
+      },
+      "descriptor": "MTP",
+      "feature_count": 5,
+      "input": {
+        "cells": [
+          [
+            [
+              10.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              10.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              10.0
+            ]
+          ]
+        ],
+        "ids": [
+          "mlip4"
+        ],
+        "numbers": [
+          13,
+          14
+        ],
+        "offsets": [
+          0,
+          2
+        ],
+        "pbc": [
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      "labels": [
+        "mlip4:basis=0",
+        "mlip4:basis=1",
+        "mlip4:basis=2",
+        "mlip4:basis=3",
+        "mlip4:basis=4"
+      ],
+      "level": "atom",
+      "model": {
+        "digest": "6684f03035c407bc17244d57b3b55e8d89c4d4d55201d64d89a02ec1eb93d59c",
+        "path": "${PROJECT_ROOT}/tests/data/mlip4_test_mtp.json",
+        "source": "explicit"
+      },
+      "name": "MTP-MLIP4",
+      "row_offsets": [
+        0,
+        2
+      ],
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "structure_ids": [
+        "mlip4"
+      ],
+      "tolerance": {
+        "atol": 1e-11,
+        "rtol": 1e-09
+      },
+      "values": "mtp_mlip4.npz"
+    }
+  ],
+  "reference_wheel": {
+    "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
+    "sha256": "5e2d09ac13f633a8fc7edb5d2143ad76b0c0bbd1fc7f63bed4963ebb6189dfd2"
+  },
+  "schema_version": 1,
+  "source_commit": "60dccbb"
+}

@@ -1,7 +1,37 @@
-"""Descriptors that require an external or bundled model asset."""
+"""Lazy model-backed descriptor namespace derived from the registry."""
 
-from .dpa4 import DPA4
-from .dpa4c import DPA4C
-from .nep import NEP
+from __future__ import annotations
 
-__all__ = ["DPA4", "DPA4C", "NEP"]
+from importlib import import_module
+
+from ...registry import builtin_registry
+
+
+def _names() -> tuple[str, ...]:
+    return tuple(
+        spec.name
+        for spec in builtin_registry
+        if spec.import_path.split(":", 1)[0].startswith(
+            "mdescriptor.descriptors.model_backed"
+        )
+    )
+
+
+__all__ = _names()
+
+
+def __getattr__(name: str):
+    try:
+        spec = builtin_registry.get(name)
+    except KeyError as exc:
+        raise AttributeError(name) from exc
+    module_name, separator, attribute = spec.import_path.partition(":")
+    if not separator or not module_name.startswith("mdescriptor.descriptors.model_backed"):
+        raise AttributeError(name)
+    value = getattr(import_module(module_name), attribute)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_names()))

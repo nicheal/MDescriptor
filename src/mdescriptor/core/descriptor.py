@@ -3,24 +3,40 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from collections.abc import Mapping
+from copy import deepcopy
+from typing import Any, ClassVar
 
-from .errors import ClosedDescriptorError, DescriptorInputError
-from .input import StructureBatch, StructureInput
+from .control import ComputeControl
+from .errors import (
+    CancelledError,
+    ClosedDescriptorError,
+    DescriptorInputError,
+    MDescriptorError,
+    NativeCancelledError,
+)
+from .input import StructureBatch, StructureInput, coerce_batch
+from .options import CONFIGURATION_SCHEMA_VERSION, DescriptorConfiguration
 from .result import DescriptorResult
 
 
 class Descriptor(ABC):
     """Small template that centralizes lifecycle and input handling.
 
-    Concrete descriptors implement only ``_compute_batch``.  Legacy adapters
-    can be wrapped incrementally without duplicating the public checks.
+    Concrete descriptors implement only ``_compute_batch``.  Adapters cannot
+    bypass the shared input, lifecycle, cancellation, and result checks.
     """
 
-    name: str
+    name: ClassVar[str]
 
     def __init__(self) -> None:
         self._closed = False
+        self._configuration = DescriptorConfiguration(
+            CONFIGURATION_SCHEMA_VERSION,
+            self.name,
+            {},
+        )
+        self._metadata_snapshot: dict[str, Any] = {}
 
     @property
     def closed(self) -> bool:
@@ -30,24 +46,70 @@ class Descriptor(ABC):
     def feature_count(self) -> int | None:
         return None
 
-    def compute(self, value: StructureInput, control: Any = None) -> DescriptorResult:
+    @property
+    def configuration(self) -> DescriptorConfiguration:
+        """Immutable construction snapshot retained after ``close()``."""
+
+        return self._configuration
+
+    @property
+    def metadata(self) -> Mapping[str, Any]:
+        """JSON-safe descriptor metadata retained after ``close()``.
+
+        A descriptor result carries the same metadata, but keeping the latest
+        snapshot on the descriptor makes diagnostics available after its
+        native/model runtime has been released.
+        """
+
+        return deepcopy(self._metadata_snapshot)
+
+    def compute(
+        self,
+        value: StructureInput,
+        *,
+        control: ComputeControl | None = None,
+    ) -> DescriptorResult:
+        """Compute one batch through the single public execution boundary.
+
+        Implementations only provide ``_compute_batch``.  Keeping conversion,
+        lifecycle, cancellation, and result validation here prevents each
+        descriptor family from quietly growing a different contract.
+        """
+
         self._ensure_open()
+        if _is_cancelled(control):
+            raise CancelledError("descriptor computation was cancelled")
         try:
             batch = self._as_batch(value)
         except DescriptorInputError:
             raise
-        except (TypeError, ValueError) as exc:
+        except (ImportError, TypeError, ValueError) as exc:
             raise DescriptorInputError(str(exc)) from exc
-        return self._compute_batch(batch, control=control)
+        try:
+            result = self._compute_batch(batch, control=control)
+        except NativeCancelledError as exc:
+            raise CancelledError("descriptor computation was cancelled") from exc
+        if _is_cancelled(control):
+            raise CancelledError("descriptor computation was cancelled")
+        if not isinstance(result, DescriptorResult):
+            raise MDescriptorError(
+                f"{self.name} returned {type(result).__name__}, expected DescriptorResult"
+            )
+        return result
 
     @abstractmethod
-    def _compute_batch(self, batch: StructureBatch, *, control: Any = None) -> DescriptorResult:
+    def _compute_batch(
+        self,
+        batch: StructureBatch,
+        *,
+        control: ComputeControl | None = None,
+    ) -> DescriptorResult:
         raise NotImplementedError
 
     def close(self) -> None:
         self._closed = True
 
-    def __enter__(self) -> "Descriptor":
+    def __enter__(self) -> Descriptor:
         self._ensure_open()
         return self
 
@@ -63,6 +125,13 @@ class Descriptor(ABC):
 
     @staticmethod
     def _as_batch(value: StructureInput) -> StructureBatch:
-        if isinstance(value, StructureBatch):
-            return value
-        return StructureBatch.from_ase(value)
+        return coerce_batch(value)
+
+
+def _is_cancelled(control: Any) -> bool:
+    if control is None:
+        return False
+    checker = getattr(control, "cancelled", None)
+    if checker is None:
+        return False
+    return bool(checker() if callable(checker) else checker)

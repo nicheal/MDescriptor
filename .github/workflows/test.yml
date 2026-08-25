@@ -34,11 +34,21 @@ jobs:
 
       - name: Run tests
         working-directory: /tmp
-        run: python -m pytest --import-mode=importlib "$GITHUB_WORKSPACE/tests"
+        run: python -m pytest --import-mode=importlib -m "not model and not reference" "$GITHUB_WORKSPACE/tests"
 
   model:
-    name: Model contract (Python 3.12)
+    name: Model contract (Torch ${{ matrix.torch-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.12"
+            torch-version: "2.10"
+            torch-upper: "2.11"
+          - python-version: "3.12"
+            torch-version: "2.13"
+            torch-upper: "2.14"
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -48,12 +58,46 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install model test dependencies
-        run: python -m pip install --upgrade pip && python -m pip install ".[test,model]"
+        run: python -m pip install --upgrade pip && python -m pip install ".[test]" "torch>=${{ matrix.torch-version }},<${{ matrix.torch-upper }}"
 
       - name: Run model-backed contract tests
         working-directory: /tmp
-        run: python -m pytest --import-mode=importlib "$GITHUB_WORKSPACE/tests" -k "dpa4 or nep"
+        run: python -m pytest --import-mode=importlib -m model "$GITHUB_WORKSPACE/tests"
+
+  reference:
+    name: DScribe numerical reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install reference dependencies
+        run: python -m pip install --upgrade pip && python -m pip install ".[reference]"
+      - name: Run pinned reference suite
+        working-directory: /tmp
+        run: python -m pytest --import-mode=importlib -m reference --strict-markers "$GITHUB_WORKSPACE/tests"
+
+  quality:
+    name: Ruff and mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip && python -m pip install ".[dev]"
+      - run: ruff check src scripts
+      - run: mypy
+      - run: python scripts/check_descriptor_inventory.py --check

@@ -21,9 +21,11 @@ dependencies = [
 [project.optional-dependencies]
 ase = ["ase>=3.22"]
 model = ["torch>=2.10,<2.14"]
-sparse = ["sparse>=0.14"]
-test = ["pytest>=8", "ase>=3.22", "sparse>=0.14"]
-all = ["ase>=3.22", "sparse>=0.14", "torch>=2.10,<2.14"]
+sparse = ["scipy>=1.11"]
+test = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
+reference = ["pytest>=8", "ase>=3.22", "scipy>=1.11", "dscribe==2.1.2"]
+all = ["ase>=3.22", "scipy>=1.11", "torch>=2.10,<2.14"]
+dev = ["pytest>=8", "ase>=3.22", "scipy>=1.11", "ruff>=0.8", "mypy>=1.13"]
 
 [tool.scikit-build]
 minimum-version = "1.0"
@@ -44,6 +46,7 @@ include = [
     "/src/mdescriptor/**",
     "/tests/**",
     "/docs/**",
+    "/scripts/**",
     "/README.md",
     "/LICENSE",
     "/pyproject.toml",
@@ -60,8 +63,39 @@ exclude = [
 build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-musllinux_* *-win32 *-*linux_i686"
 test-requires = ["pytest>=8", "ase>=3.22"]
-test-sources = ["tests"]
-test-command = "python -m pytest --import-mode=importlib tests"
+test-sources = ["tests", "scripts"]
+test-command = "python -m pytest --import-mode=importlib tests && python scripts/verify_wheel.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not model and not reference'"
+markers = [
+    "model: tests that require the optional Torch/model stack",
+    "reference: tests that require the pinned external numerical reference stack",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests", "scripts"]
+extend-exclude = [
+    "src/mdescriptor/descriptors/model_backed/dpa4/_vendor",
+    "src/mdescriptor/descriptors/model_backed/dpa4c/_vendor",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+# NumPy's current type stubs use syntax introduced in Python 3.12.  This is
+# the interpreter used for the quality gate; the package itself still supports
+# CPython 3.10 at runtime.
+python_version = "3.12"
+files = ["src/mdescriptor/core", "src/mdescriptor/registry", "src/mdescriptor/models"]
+check_untyped_defs = true
+disallow_any_generics = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+ignore_missing_imports = true

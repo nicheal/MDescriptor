@@ -2,11 +2,13 @@
 
 from mdescriptor import (
     AssetPolicy,
-    BUILTIN_REGISTRY,
     CancelledError,
     ComputeControl,
+    ExecutionOptions,
     ModelLoadError,
+    OutputOptions,
     StructureBatch,
+    builtin_registry,
 )
 from mdescriptor.descriptors import (
     ACSF,
@@ -14,63 +16,51 @@ from mdescriptor.descriptors import (
     DPA4,
     DPA4C,
     EAD,
-    LBispectrum,
+    LMBTR,
+    MBTR,
     MTP,
     NEP,
     SNAP,
-    SOAP,
-    SOAPTurbo,
     SO3,
     SO4,
+    SOAP,
     AtomicComposition,
     CoulombMatrix,
     EwaldSumMatrix,
-    LMBTR,
-    MBTR,
+    LBispectrum,
+    LodeSphericalExpansion,
     NeighborList,
     SineMatrix,
-    SortedDistances,
     SoapPowerSpectrum,
     SoapRadialSpectrum,
+    SOAPTurbo,
+    SortedDistances,
     SphericalExpansion,
     SphericalExpansionByPair,
-    LodeSphericalExpansion,
     ValleOganov,
 )
-
-
-DESCRIPTOR_CATALOG = {
-    spec.name: spec.load_class()
-    for spec in BUILTIN_REGISTRY
-    if spec.asset_policy is not AssetPolicy.REQUIRED
-}
-MODEL_DESCRIPTOR_CATALOG = {
-    spec.name: spec.load_class()
-    for spec in BUILTIN_REGISTRY
-    if spec.asset_policy is AssetPolicy.REQUIRED
-}
 
 __all__ = [
     "ACSF",
     "AssetPolicy",
     "AtomicComposition",
-    "BUILTIN_REGISTRY",
+    "builtin_registry",
     "C00PSMLFF",
     "CancelledError",
     "CoulombMatrix",
     "ComputeControl",
+    "ExecutionOptions",
     "DPA4",
     "DPA4C",
-    "DESCRIPTOR_CATALOG",
     "EAD",
     "EwaldSumMatrix",
     "LBispectrum",
     "LMBTR",
     "LodeSphericalExpansion",
     "MBTR",
-    "MODEL_DESCRIPTOR_CATALOG",
     "MTP",
     "ModelLoadError",
+    "OutputOptions",
     "NEP",
     "NeighborList",
     "SNAP",

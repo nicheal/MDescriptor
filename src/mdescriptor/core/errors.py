@@ -2,33 +2,37 @@
 
 from __future__ import annotations
 
+import importlib
 
-class DescriptorError(Exception):
+
+class MDescriptorError(Exception):
     """Base class for errors raised by the public descriptor API."""
 
 
-class DescriptorConfigError(ValueError, DescriptorError):
+class DescriptorConfigError(ValueError, MDescriptorError):
     """A descriptor option or capability declaration is invalid."""
 
 
-class DescriptorInputError(ValueError, DescriptorError):
+class DescriptorInputError(ValueError, MDescriptorError):
     """An input batch does not satisfy the descriptor input contract."""
 
 
-class ModelLoadError(RuntimeError, DescriptorError):
+class ModelLoadError(RuntimeError, MDescriptorError):
     """A model resource could not be resolved, validated, or loaded."""
 
 
-class ClosedDescriptorError(RuntimeError, DescriptorError):
+class ClosedDescriptorError(RuntimeError, MDescriptorError):
     """An operation was attempted after a descriptor was closed."""
 
 
-class CancelledError(RuntimeError, DescriptorError):
+class CancelledError(RuntimeError, MDescriptorError):
     """A cooperative descriptor computation was cancelled."""
 
 
+NativeCancelledError: type[Exception]
 try:  # Native kernels raise their own registered exception type.
-    from .._native import CancelledError as NativeCancelledError
-except ImportError:  # pragma: no cover - available after the native build
-    class NativeCancelledError(Exception):
-        """Fallback marker used before the optional native extension is built."""
+    _native_module = importlib.import_module("mdescriptor._native")
+except ImportError:  # pragma: no cover - before native build
+    NativeCancelledError = Exception
+else:
+    NativeCancelledError = getattr(_native_module, "CancelledError", Exception)

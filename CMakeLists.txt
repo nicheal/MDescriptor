@@ -10,33 +10,33 @@ endif()
 find_package(OpenMP)
 
 set(MDESCRIPTOR_CPP_SOURCES
-    cpp/src/compute_control.cpp
-    cpp/src/soap.cpp
-    cpp/src/soap_turbo.cpp
-    cpp/src/acsf.cpp
-    cpp/src/c00ps_mlff.cpp
-    cpp/src/coulomb_matrix.cpp
-    cpp/src/sine_matrix.cpp
-    cpp/src/ewald_sum_matrix.cpp
-    cpp/src/matrix_dispatch.cpp
-    cpp/src/mbtr.cpp
-    cpp/src/ead.cpp
-    cpp/src/mtp.cpp
-    cpp/src/mtp4.cpp
-    cpp/src/rotational_descriptors.cpp
-    cpp/src/neighbor.cpp
-    cpp/src/nep.cpp
-    cpp/src/atomic_composition.cpp
-    cpp/src/sorted_distances.cpp
-    cpp/src/neighbor_list.cpp
-    cpp/src/spherical_expansion.cpp
-    cpp/src/spherical_expansion_by_pair.cpp
-    cpp/src/bindings.cpp
+    cpp/src/common/control.cpp
+    cpp/src/common/neighbor.cpp
+    cpp/src/standalone/soap.cpp
+    cpp/src/standalone/soap_turbo.cpp
+    cpp/src/standalone/acsf.cpp
+    cpp/src/standalone/c00ps_mlff.cpp
+    cpp/src/standalone/coulomb_matrix.cpp
+    cpp/src/standalone/sine_matrix.cpp
+    cpp/src/standalone/ewald_sum_matrix.cpp
+    cpp/src/standalone/matrix_dispatch.cpp
+    cpp/src/standalone/mbtr.cpp
+    cpp/src/standalone/ead.cpp
+    cpp/src/standalone/mtp.cpp
+    cpp/src/standalone/mtp4.cpp
+    cpp/src/standalone/rotational_descriptors.cpp
+    cpp/src/common/nep.cpp
+    cpp/src/standalone/atomic_composition.cpp
+    cpp/src/standalone/sorted_distances.cpp
+    cpp/src/standalone/neighbor_list.cpp
+    cpp/src/standalone/spherical_expansion.cpp
+    cpp/src/standalone/spherical_expansion_by_pair.cpp
+    cpp/src/bindings/module.cpp
 )
 
 pybind11_add_module(_native ${MDESCRIPTOR_CPP_SOURCES})
 target_compile_features(_native PRIVATE cxx_std_17)
-target_include_directories(_native PRIVATE cpp/include)
+target_include_directories(_native PRIVATE cpp/include cpp/src cpp/src/common cpp/src/standalone)
 if(OpenMP_CXX_FOUND)
     if(MSVC AND CMAKE_VERSION VERSION_LESS 3.30)
         # /openmp:experimental subsumes /openmp and enables omp simd.

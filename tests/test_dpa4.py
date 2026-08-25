@@ -1,15 +1,12 @@
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
-
-from tests._public import DPA4, StructureBatch
-from tests._public import ModelLoadError
 from mdescriptor.models import DPA4_MODEL
+from tests._public import DPA4, ModelLoadError, StructureBatch
 
+pytestmark = pytest.mark.model
 
 MODEL = DPA4_MODEL
 
@@ -33,7 +30,7 @@ def _batch() -> StructureBatch:
 
 
 def test_official_checkpoint_and_batch_output():
-    calculator = DPA4(MODEL)
+    calculator = DPA4(model=MODEL)
 
     result = calculator.compute(_batch())
 
@@ -46,7 +43,7 @@ def test_official_checkpoint_and_batch_output():
 
 
 def test_geometry_rotation_and_atom_permutation_are_invariant():
-    calculator = DPA4(MODEL)
+    calculator = DPA4(model=MODEL)
     batch = _batch()
     reference = calculator.compute(batch).values
 
@@ -81,8 +78,10 @@ def test_geometry_rotation_and_atom_permutation_are_invariant():
 
 
 def test_dpa4_rejects_project_native_archive(tmp_path):
+    import torch
+
     path = tmp_path / "mdescriptor.pt"
     torch.save({"format": "mdescriptor.dpa4.v1", "config": {}, "state_dict": {}}, path)
 
     with pytest.raises(ModelLoadError, match="failed to load DPA4 model"):
-        DPA4(path)
+        DPA4(model=path)

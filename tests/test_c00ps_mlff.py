@@ -27,7 +27,7 @@ def test_c00ps_mlff_shape_labels_and_metadata():
     assert result.level == "atom"
     assert result.values.shape == (3, expected_features)
     assert result.metadata["descriptor"] == "C00PSMLFF"
-    assert result.metadata["source"] == "C00/PS radial-angular MLFF descriptor core"
+    assert result.metadata["details"]["source"] == "C00/PS radial-angular MLFF descriptor core"
     assert len(result.labels) == expected_features
     assert result.labels[0] == "c00ps_mlff:c00,z=1,n=0"
     assert np.isfinite(result.values).all()
@@ -114,5 +114,5 @@ def test_c00ps_mlff_honors_pre_cancelled_control():
             StructureBatch.from_ase([_system([
                 [5.0, 5.0, 5.0], [5.8, 5.0, 5.0], [5.0, 5.9, 5.0]
             ])]),
-            control,
+            control=control,
         )

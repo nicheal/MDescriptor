@@ -1,8 +1,8 @@
 """SOAP descriptor public name."""
 
-from ..._legacy.core import SoapCalculator
-from ...core.legacy_adapter import adapter_class
+from ...core.adapter import adapter_class
+from .._kernels.core import SoapKernel
 
-SOAP = adapter_class("SOAP", SoapCalculator, __name__)
+SOAP = adapter_class("SOAP", SoapKernel, __name__)
 
 __all__ = ["SOAP"]

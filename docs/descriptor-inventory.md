@@ -1,73 +1,91 @@
 # Descriptor inventory / 描述符清单
 
-The registry is the one source of truth for public descriptor identities. The
-implementation is grouped by whether a model asset is required:
+This page is generated from the immutable built-in registry.  It is a
+controlled artifact: run `python scripts/check_descriptor_inventory.py
+--write` when a registry spec changes, and keep the `--check` gate in CI.
 
-| Group | Public names | Asset policy |
-|---|---|---|
-| `standalone` | SOAP, SOAPTurbo, ACSF, CoulombMatrix, SineMatrix, EwaldSumMatrix, MBTR, LMBTR, ValleOganov, AtomicComposition, NeighborList, SortedDistances, SphericalExpansion, SphericalExpansionByPair, SoapRadialSpectrum, SoapPowerSpectrum, LodeSphericalExpansion, EAD, SO3, SO4, SNAP, LBispectrum, MTP, C00PSMLFF | `NONE` except MTP's optional potential |
-| `model_backed` | NEP | `REQUIRED` local text model |
-| `model_backed` | DPA4, DPA4C | `REQUIRED` official `.pt`; optional `[model]` runtime |
+<!-- registry-names: SOAP, SOAPTurbo, ACSF, CoulombMatrix, SineMatrix, EwaldSumMatrix, MBTR, LMBTR, ValleOganov, AtomicComposition, NeighborList, SortedDistances, SphericalExpansion, SphericalExpansionByPair, SoapRadialSpectrum, SoapPowerSpectrum, LodeSphericalExpansion, EAD, SO3, SO4, SNAP, LBispectrum, MTP, C00PSMLFF, NEP, DPA4, DPA4C -->
 
-The canonical imports are:
+| Name | Directory group | Asset policy | Backend | Level | Capabilities | Extra |
+|---|---|---|---|---|---|---|
+| SOAP | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| SOAPTurbo | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| ACSF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| CoulombMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
+| SineMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
+| EwaldSumMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
+| MBTR | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
+| LMBTR | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| ValleOganov | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
+| AtomicComposition | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
+| NeighborList | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, sparse | `—` |
+| SortedDistances | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| SphericalExpansion | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| SphericalExpansionByPair | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | `—` |
+| SoapRadialSpectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| SoapPowerSpectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| LodeSphericalExpansion | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| EAD | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| SO3 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| SO4 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| SNAP | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| LBispectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| MTP | `standalone` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
+| C00PSMLFF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| NEP | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
+| DPA4 | `model_backed` | `REQUIRED` | `torch` | `atom` | charge_spin, cuda, model, sparse, spin | `model` |
+| DPA4C | `model_backed` | `REQUIRED` | `torch` | `atom` | charge_spin, cuda, model, sparse, spin | `model` |
+
+The canonical algorithm imports are:
 
 ```python
 from mdescriptor.descriptors import SOAP, ACSF, MTP, NEP, DPA4, DPA4C
 ```
 
-The root package deliberately does not export algorithm aliases or historical
-catalog dictionaries. Use the immutable built-in registry instead:
-
-```python
-from mdescriptor import BUILTIN_REGISTRY, list_descriptors
-
-assert tuple(BUILTIN_REGISTRY.names()) == list_descriptors()
-```
+The root package exposes contracts, registry queries and the configuration
+factory.  Algorithm classes are deliberately not re-exported from the root.
 
 ## Backend boundaries
 
-- C++17/OpenMP kernels implement all standalone numerical formulas.
+- C++17/OpenMP kernels implement the standalone numerical formulas.
 - `mdescriptor._native` is the private pybind11 extension name.
-- Python adapters perform configuration, input packing and result metadata only.
-- DPA4/DPA4C are isolated Torch model adapters. Their neural-network cores are
-  intentionally black-box in this phase and will receive a dedicated refactor
-  later.
-- NEP resolves a local model text file before constructing its native model;
-  packaged NEP/DPA resources are checksum-verified before loading.
+- Python adapters own input packing, lifecycle, typed options and result
+  normalization.
+- DPA4/DPA4C use the bundled official checkpoint loader and keep their
+  inference core isolated for a later dedicated DPA refactor.
+- NEP, DPA4 and DPA4C model files are resolved locally and verified by
+  streaming SHA-256 before loading.
 
 ## Result contract
 
-Every public class returns `DescriptorResult` from `compute(...)`. It includes
-the output level, stable labels, structure IDs/offsets, JSON-safe metadata and
-`feature_count`. Lifecycle is uniform: `close()` is idempotent, `closed` is
-observable, and compute-after-close raises `ClosedDescriptorError`.
+Every public class returns `DescriptorResult` from `compute(...)`.  Values are
+two-dimensional and `samples` is a contiguous `int64` array with the fixed
+shape `[structure]`, `[structure, local_atom]`, or
+`[structure, local_atom_1, local_atom_2, shift_a, shift_b, shift_c]` according
+to the output level.  Metadata uses the versioned JSON-safe schema; descriptors
+retain configuration and metadata after `close()`.
 
-For atom- and pair-level results, `row_offsets` partitions rows by
-`structure_ids`; structure-level results contain one row per structure and no
-offsets. Use
-`OutputOptions`/`ExecutionOptions` for common representation and execution
-settings. The registry's `sparse` capability describes this common output
-conversion (and requires the optional `sparse` package). Unsupported execution
-settings fail with `DescriptorConfigError` instead of being silently forwarded
-to a backend.
+Common representation and execution settings are passed as
+`OutputOptions`/`ExecutionOptions`.  Sparse output is SciPy CSR and fails at
+construction when the optional dependency is unavailable.
 
 ## Optional dependencies
 
-The base import does not import Torch or any model module. Install
-`.[model]` for DPA4/DPA4C, `.[ase]` for ASE input conversion and `.[sparse]`
-for sparse output. Official `.pt` loads use `torch.load(..., weights_only=True)`;
-unsafe pickle fallback is not supported.
+The base import does not import Torch or read model files.  Install
+`.[model]` for Torch-backed descriptors, `.[ase]` for ASE input conversion,
+and `.[sparse]` for SciPy CSR output.  Official `.pt` loads always use
+`weights_only=True`; network downloads are not implemented.
 
 ## Native source map
 
 | Family | Source |
 |---|---|
-| SOAP / ACSF / SOAPTurbo | `cpp/src/soap.cpp`, `acsf.cpp`, `soap_turbo.cpp` |
-| matrices / MBTR | `cpp/src/*_matrix.cpp`, `matrix_dispatch.cpp`, `mbtr.cpp` |
-| local descriptors | `cpp/src/atomic_composition.cpp`, `neighbor_list.cpp`, `sorted_distances.cpp`, `spherical_expansion*.cpp` |
-| rotational / MTP / C00PS | `cpp/src/ead.cpp`, `rotational_descriptors.cpp`, `mtp*.cpp`, `c00ps_mlff.cpp` |
-| NEP | `cpp/src/nep.cpp` |
-| shared helpers | `cpp/include/mdescriptor/detail/`, `cpp/src/descriptor_common.hpp`, `extra_common.hpp`, `local_common.hpp` |
+| SOAP / ACSF / SOAPTurbo | `cpp/src/standalone/soap.cpp`, `acsf.cpp`, `soap_turbo.cpp` |
+| matrices / MBTR | `cpp/src/standalone/*_matrix.cpp`, `matrix_dispatch.cpp`, `mbtr.cpp` |
+| local descriptors | `cpp/src/standalone/atomic_composition.cpp`, `neighbor_list.cpp`, `sorted_distances.cpp`, `spherical_expansion*.cpp` |
+| rotational / MTP / C00PS | `cpp/src/standalone/ead.cpp`, `rotational_descriptors.cpp`, `mtp*.cpp`, `c00ps_mlff.cpp` |
+| NEP | `cpp/src/common/nep.cpp` |
+| shared helpers | `cpp/include/mdescriptor/detail/`, `cpp/src/common/` |
 
-Algorithm numerical behavior is frozen during this layout refactor. Changes to
-formulas require separate reference/golden updates.
+Algorithm numerical behavior is frozen during this layout refactor.  Formula
+changes require a separate reference/golden update.

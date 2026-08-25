@@ -1,9 +1,4 @@
-"""Batch-oriented periodic atomic descriptors.
-
-The root package intentionally exposes only the stable contracts and
-registry.  Algorithm implementations live under ``mdescriptor.descriptors``
-and are imported lazily by the registry.
-"""
+"""Stable MDescriptor contracts and explicit registry functions."""
 
 from .core import (
     CancelledError,
@@ -11,22 +6,22 @@ from .core import (
     ComputeControl,
     Descriptor,
     DescriptorConfigError,
-    DescriptorError,
     DescriptorInputError,
     DescriptorLevel,
     DescriptorResult,
     ExecutionOptions,
+    MDescriptorError,
     ModelLoadError,
     OutputOptions,
     StructureBatch,
     StructureInput,
-    batch_from_ase,
 )
 from .registry import (
     AssetPolicy,
-    BUILTIN_REGISTRY,
+    DescriptorConfiguration,
     DescriptorRegistry,
     DescriptorSpec,
+    builtin_registry,
     create_descriptor,
     get_descriptor,
     list_descriptors,
@@ -34,24 +29,24 @@ from .registry import (
 
 __all__ = [
     "AssetPolicy",
-    "BUILTIN_REGISTRY",
     "CancelledError",
     "ClosedDescriptorError",
     "ComputeControl",
     "Descriptor",
     "DescriptorConfigError",
-    "DescriptorError",
+    "DescriptorConfiguration",
     "DescriptorInputError",
     "DescriptorLevel",
     "DescriptorRegistry",
     "DescriptorResult",
     "DescriptorSpec",
     "ExecutionOptions",
+    "MDescriptorError",
     "ModelLoadError",
     "OutputOptions",
     "StructureBatch",
     "StructureInput",
-    "batch_from_ase",
+    "builtin_registry",
     "create_descriptor",
     "get_descriptor",
     "list_descriptors",

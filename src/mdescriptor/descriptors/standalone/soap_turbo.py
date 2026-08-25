@@ -1,8 +1,8 @@
 """SOAP-Turbo descriptor public name."""
 
-from ..._legacy.soap_turbo import SoapTurboCalculator
-from ...core.legacy_adapter import adapter_class
+from ...core.adapter import adapter_class
+from .._kernels.soap_turbo import SoapTurboKernel
 
-SOAPTurbo = adapter_class("SOAPTurbo", SoapTurboCalculator, __name__)
+SOAPTurbo = adapter_class("SOAPTurbo", SoapTurboKernel, __name__)
 
 __all__ = ["SOAPTurbo"]
