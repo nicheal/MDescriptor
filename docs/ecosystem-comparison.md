@@ -65,6 +65,15 @@ Featomic 官方说明其 `DensityCorrelations` 可以从 spherical expansion
 SNAP/LBispectrum 共享数学家族，但具体基函数、截断、归一化、特征顺序和
 输出容器仍需逐项对齐。
 
+### 矩阵描述符的 `sorted_l2` tie policy
+
+MDescriptor 的 `CoulombMatrix`、`SineMatrix` 和 `EwaldSumMatrix` 都对相差
+不超过固定 `4 ulp` 容差的行平方 L2 范数视为同一 tie bucket，并在 bucket
+内按原子输入索引升序排列。这个规则使同一输入顺序下的输出可复现，但不
+承诺复现 DScribe 在等范数情况下的具体原子顺序。
+需要跨实现进行严格逐元素比较时，应优先使用 `permutation="none"`；
+`eigenspectrum` 可用于忽略同时的行列排列差异。
+
 ## 官方来源
 
 - [DScribe 官方描述符列表](https://singroup.github.io/dscribe/)

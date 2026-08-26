@@ -1,9 +1,9 @@
 """C++-backed matrix and histogram descriptors.
 
-This module is deliberately a thin Python adapter. Descriptor kernels are
-computed by ``mdescriptor._native``; NumPy retains reference implementation-compatible
-sorting semantics and the public array contract, while ASE is used only by
-:class:`StructureBatch` input packing.
+This module is deliberately a thin Python adapter. Descriptor kernels and
+matrix permutations are computed by ``mdescriptor._native``; Python retains
+the public array contract, while ASE is used only by :class:`StructureBatch`
+input packing.
 """
 
 from __future__ import annotations
@@ -53,32 +53,6 @@ class _StructureKernel:
         return int(getattr(self, "_feature_count", 0))
 
 
-def _sort_matrix_values_like_reference(
-    values: np.ndarray,
-    batch: StructureBatch,
-    counts: np.ndarray,
-    n_atoms_max: int,
-    *,
-    sine_diagonal: bool = False,
-    exponent: float = 2.4,
-) -> np.ndarray:
-    """Apply DescriptorMatrix.sort to native matrices with NumPy semantics."""
-    for structure, count_value in enumerate(counts):
-        count = int(count_value)
-        matrix = values[structure].reshape(n_atoms_max, n_atoms_max)
-        physical = matrix[:count, :count]
-        if sine_diagonal:
-            start, stop = int(batch.offsets[structure]), int(batch.offsets[structure + 1])
-            diagonal = 0.5 * np.power(batch.numbers[start:stop].astype(np.float64), exponent)
-            np.fill_diagonal(physical, diagonal)
-        norms = np.linalg.norm(physical, axis=1)
-        order = np.argsort(-norms, kind="stable", axis=0)
-        sorted_matrix = physical[order][:, order].copy()
-        matrix.fill(0.0)
-        matrix[:count, :count] = sorted_matrix
-    return values
-
-
 class _MatrixKernel(_StructureKernel):
     kind = 0
 
@@ -99,8 +73,7 @@ class _MatrixKernel(_StructureKernel):
         if not len(counts):
             values = np.empty((0, columns), dtype=np.float64)
         else:
-            python_sorted_l2 = self.permutation == "sorted_l2" and self.kind != 2
-            native_permutation = "none" if python_sorted_l2 else self.permutation
+            native_permutation = self.permutation
             if self.kind == 2:
                 values = _cpp.compute_coulomb_matrix(
                     batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
@@ -115,12 +88,7 @@ class _MatrixKernel(_StructureKernel):
                     float(getattr(self, "g_cut", 0.0) or 0.0),
                     float(getattr(self, "a", 0.0) or 0.0), control,
                 )
-            if python_sorted_l2:
-                values = _sort_matrix_values_like_reference(
-                    np.asarray(values, dtype=np.float64), batch, counts, max_atoms,
-                    sine_diagonal=self.kind == 0, exponent=self.exponent,
-                )
-            elif self.kind == 0 and self.permutation == "none":
+            if self.kind == 0 and self.permutation == "none":
                 values = np.asarray(values, dtype=np.float64)
                 for structure, count_value in enumerate(counts):
                     count = int(count_value)

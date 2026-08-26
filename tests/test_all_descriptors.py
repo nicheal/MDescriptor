@@ -214,7 +214,7 @@ def test_matrix_eigenspectrum_is_native_and_padded():
     assert np.isfinite(result.values).all()
 
 
-def test_sine_sorted_l2_matches_reference_numpy_sort_contract():
+def test_sine_sorted_l2_matches_reference_order_for_non_ties():
     from tests._public import SineMatrix
 
     batch = _batch()
@@ -222,6 +222,8 @@ def test_sine_sorted_l2_matches_reference_numpy_sort_contract():
     sorted_values = SineMatrix(n_atoms_max=6, permutation="sorted_l2").compute(batch).values[0]
     count = len(batch.numbers)
     matrix = raw[:count, :count]
+    # This fixture has distinct row norms; the native tie policy is therefore
+    # equivalent to the reference descending-norm order here.
     order = np.argsort(-np.linalg.norm(matrix, axis=1), kind="stable")
     expected = np.zeros((6, 6))
     expected[:count, :count] = matrix[order][:, order]
@@ -248,7 +250,7 @@ def test_coulomb_eigenspectrum_keeps_batch_structure_stride():
         np.testing.assert_array_equal(spectrum[index, count:], 0.0)
 
 
-def test_coulomb_sorted_l2_matches_reference_tie_order():
+def test_coulomb_sorted_l2_uses_stable_input_tie_order():
     from ase import Atoms
 
     from tests._public import CoulombMatrix
@@ -262,7 +264,9 @@ def test_coulomb_sorted_l2_matches_reference_tie_order():
     batch = StructureBatch.from_ase([Atoms("C12", positions=positions, cell=np.diag([24.0] * 3), pbc=True)])
     raw = CoulombMatrix(n_atoms_max=12, permutation="none").compute(batch).values[0].reshape(12, 12)
     sorted_matrix = CoulombMatrix(n_atoms_max=12, permutation="sorted_l2").compute(batch).values[0].reshape(12, 12)
-    order = [6, 5, 4, 7, 8, 3, 9, 2, 1, 10, 0, 11]
+    # Equal row norms use the original atom index as the deterministic
+    # secondary key.  The input order therefore resolves each mirrored pair.
+    order = [5, 6, 4, 7, 3, 8, 2, 9, 1, 10, 0, 11]
     np.testing.assert_array_equal(sorted_matrix, raw[order][:, order])
 
 
