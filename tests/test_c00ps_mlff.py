@@ -118,7 +118,7 @@ def test_c00ps_mlff_uses_vasp_off_diagonal_power_spectrum_weight():
     )
 
 
-def test_c00ps_mlff_angular_descriptor_excludes_neighbor_self_terms():
+def test_c00ps_mlff_angular_descriptor_uses_vasp_self_terms():
     batch = StructureBatch.from_ase([
         Atoms(
             "HO",
@@ -134,8 +134,69 @@ def test_c00ps_mlff_angular_descriptor_excludes_neighbor_self_terms():
         l_max=2,
         include_radial=False,
     ).compute(batch)
+    without_self_interaction = C00PSMLFF(
+        species=[1, 8],
+        r_cut=3.0,
+        n_radial=2,
+        l_max=2,
+        include_radial=False,
+        exclude_self_interaction=False,
+    ).compute(batch)
 
-    np.testing.assert_allclose(result.values, 0.0, rtol=0.0, atol=1e-12)
+    # VASP LSIC only removes self terms for neighbours matching the centre
+    # species.  In a heteronuclear dimer neither centre has such a neighbour.
+    np.testing.assert_allclose(result.values, without_self_interaction.values, rtol=0.0, atol=1e-12)
+
+    homonuclear = StructureBatch.from_ase([
+        Atoms(
+            "H2",
+            positions=[[5.0, 5.0, 5.0], [6.0, 5.0, 5.0]],
+            cell=np.diag([10.0, 10.0, 10.0]),
+            pbc=True,
+        )
+    ])
+    homonuclear_result = C00PSMLFF(
+        species=[1],
+        r_cut=3.0,
+        n_radial=1,
+        l_max=0,
+        include_radial=False,
+    ).compute(homonuclear)
+    homonuclear_without_self = C00PSMLFF(
+        species=[1],
+        r_cut=3.0,
+        n_radial=1,
+        l_max=0,
+        include_radial=False,
+        exclude_self_interaction=False,
+    ).compute(homonuclear)
+    np.testing.assert_allclose(homonuclear_result.values, 0.0, rtol=0.0, atol=1e-12)
+    assert np.max(homonuclear_without_self.values) > 1e-8
+
+
+def test_c00ps_mlff_vasp_cross_species_equal_radial_weight():
+    batch = StructureBatch.from_ase([
+        Atoms(
+            "OHO",
+            positions=[[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0, 6.0, 5.0]],
+            cell=np.diag([10.0, 10.0, 10.0]),
+            pbc=True,
+        )
+    ])
+    result = C00PSMLFF(
+        species=[1, 8],
+        r_cut=3.0,
+        n_radial=1,
+        l_max=0,
+        include_radial=False,
+        normalize_angular=False,
+        exclude_self_interaction=False,
+    ).compute(batch)
+
+    diagonal_hh, cross_ho, diagonal_oo = result.values[0]
+    assert cross_ho / np.sqrt(diagonal_hh * diagonal_oo) == pytest.approx(
+        1.0, rel=1e-12, abs=1e-12
+    )
 
 
 def test_c00ps_mlff_higher_angular_channels_use_nonzero_bessel_basis():

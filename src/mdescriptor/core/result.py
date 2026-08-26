@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import importlib
 import math
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from copy import copy, deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from os import PathLike, fspath
@@ -49,6 +50,32 @@ class DescriptorLevel(str, Enum):
     ATOM = "atom"
     STRUCTURE = "structure"
     PAIR = "pair"
+
+
+class _NormalizedMetadata(Mapping[str, Any]):
+    """Internal immutable-by-convention metadata template.
+
+    Kernels may reuse a template whose values have already passed the JSON-safe
+    metadata normalization.  Results still receive a deep copy so mutating one
+    public result cannot affect a later result from the same kernel.
+    """
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: Mapping[str, Any]) -> None:
+        self._value = dict(value)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._value[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._value)
+
+    def __len__(self) -> int:
+        return len(self._value)
+
+    def copy_for_result(self) -> dict[str, Any]:
+        return deepcopy(self._value)
 
 
 def structure_samples(rows: int) -> np.ndarray:
@@ -245,7 +272,10 @@ class DescriptorResult:
                 raise ValueError("pair samples contain an invalid local atom index")
         object.__setattr__(self, "samples", samples)
 
-        metadata = _metadata_v1(self.metadata, level, feature_count)
+        if isinstance(self.metadata, _NormalizedMetadata):
+            metadata = self.metadata.copy_for_result()
+        else:
+            metadata = _metadata_v1(self.metadata, level, feature_count)
         object.__setattr__(self, "metadata", metadata)
 
     def _validate_layout(
@@ -280,6 +310,31 @@ class DescriptorResult:
     @property
     def shape(self) -> tuple[int, ...]:
         return tuple(self.values.shape)
+
+    def _replace_output(
+        self,
+        values: Any,
+        output: Mapping[str, Any],
+    ) -> DescriptorResult:
+        """Replace output representation without rerunning result validation.
+
+        The shared adapter calls this only after this result has completed the
+        full constructor validation.  Formatting preserves the two-dimensional
+        shape, so rebuilding the dataclass would only repeat validation and
+        metadata normalization on the hot path.
+        """
+
+        if tuple(getattr(values, "shape", ())) != self.shape:
+            raise ValueError("formatted descriptor values changed the result shape")
+        updated = copy(self)
+        metadata = dict(self.metadata)
+        metadata["output"] = {
+            "dtype": output["dtype"],
+            "sparse": output["sparse"],
+        }
+        object.__setattr__(updated, "values", values)
+        object.__setattr__(updated, "metadata", metadata)
+        return updated
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
         values = self.values.todense() if hasattr(self.values, "todense") else self.values
@@ -349,6 +404,18 @@ def _metadata_v1(
     if details:
         normalized["details"] = details
     return _json_safe(normalized)
+
+
+def normalize_metadata(
+    metadata: Mapping[str, Any],
+    level: DescriptorLevel | str,
+    feature_count: int | None,
+) -> Mapping[str, Any]:
+    """Create a reusable, already validated metadata template for kernels."""
+
+    return _NormalizedMetadata(
+        _metadata_v1(metadata, DescriptorLevel(level), feature_count)
+    )
 
 
 def _metadata_options(

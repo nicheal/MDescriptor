@@ -14,9 +14,14 @@ from typing import Any
 
 import numpy as np
 
-from ...core.result import format_values
+from ...core.result import (
+    DescriptorLevel,
+    DescriptorResult,
+    format_values,
+    normalize_metadata,
+)
 from ...models import NEP_MODEL
-from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
+from .core import StructureBatch, _as_batch, _cpp
 
 
 class NepKernel:
@@ -52,6 +57,10 @@ class NepKernel:
         options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
         self._native = _cpp.NepCalculator(options)
         self.species = tuple(int(value) for value in self._native.species)
+        self._labels_cache = tuple(f"nep:q{index + 1}" for index in range(self.feature_count))
+        self._metadata_template = normalize_metadata(
+            self._metadata(), DescriptorLevel.ATOM, self.feature_count
+        )
         self._closed = False
 
     @property
@@ -86,8 +95,8 @@ class NepKernel:
             "atom",
             batch.ids,
             batch.offsets.copy(),
-            self._labels(),
-            self._metadata(),
+            self._labels_cache,
+            self._metadata_template,
         )
 
     def close(self) -> None:
@@ -95,7 +104,7 @@ class NepKernel:
         self._native.close()
 
     def _labels(self) -> tuple[str, ...]:
-        return tuple(f"nep:q{index + 1}" for index in range(self.feature_count))
+        return self._labels_cache
 
     def _metadata(self) -> dict[str, Any]:
         return {

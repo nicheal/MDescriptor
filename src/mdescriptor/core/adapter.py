@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
-from dataclasses import replace
 from typing import Any, ClassVar
 
 from .control import ComputeControl
@@ -144,10 +143,10 @@ def _apply_output(result: DescriptorResult, options: OutputOptions) -> Descripto
     """Apply the common output representation after any backend computation."""
 
     values = format_values(result.values, dtype=options.dtype, sparse=options.sparse)
-
-    metadata = dict(result.metadata)
-    metadata["output"] = {"dtype": options.dtype, "sparse": options.sparse}
-    return replace(result, values=values, metadata=metadata)
+    output = {"dtype": options.dtype, "sparse": options.sparse}
+    if values is result.values and result.metadata.get("output") == output:
+        return result
+    return result._replace_output(values, output)
 
 
 class DescriptorAdapter(Descriptor):

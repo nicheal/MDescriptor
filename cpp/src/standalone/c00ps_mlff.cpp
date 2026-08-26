@@ -482,6 +482,7 @@ void C00PSMlffCalculator::compute(
                 continue;
             }
             const NeighborView neighbors = graph.for_center(center);
+            const std::int64_t center_type = mapping.at(batch.numbers[center]);
             std::vector<Vec3> vectors;
             std::vector<double> distances;
             std::vector<std::int64_t> types;
@@ -602,6 +603,11 @@ void C00PSMlffCalculator::compute(
                             * radial_count;
                         const double addition = (2.0 * l + 1.0) / (4.0 * kPi);
                         for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
+                            // Match VASP 6.6.0 MLFF LSIC: only the centre
+                            // species receives a self-interaction correction.
+                            if (types[neighbor] != center_type) {
+                                continue;
+                            }
                             const std::int64_t first_base = types[neighbor] * radial_count;
                             const double* values = neighbor_radial_values.data()
                                 + radial_offsets[static_cast<std::size_t>(l)]
@@ -645,7 +651,14 @@ void C00PSMlffCalculator::compute(
                                 total -= self_power[
                                     self_power_offsets[static_cast<std::size_t>(l)] + pair_index];
                             }
-                            const double radial_pair_weight = first == second ? 1.0 : std::sqrt(2.0);
+                            // VASP's WVAR distinguishes radial indices, not
+                            // flattened species/radial channels.  Therefore
+                            // cross-species channels with equal radial index
+                            // retain weight 1.0.
+                            const int first_radial = static_cast<int>(first % radial_count);
+                            const int second_radial = static_cast<int>(second % radial_count);
+                            const double radial_pair_weight = first_radial == second_radial
+                                ? 1.0 : std::sqrt(2.0);
                             row[angular_offset + angular_index++] = radial_pair_weight * prefactor * total;
                         }
                     }

@@ -95,6 +95,8 @@ struct C00PSMlffOptions {
     bool super_vector = false;
     double radial_weight = 1.0;
     double angular_weight = 1.0;
+    // VASP 6.6.0 MLFF LSIC semantics: subtract self terms only from PS
+    // channels whose neighbour species is the centre species.
     bool exclude_self_interaction = true;
     int num_threads = 0;
 };
