@@ -1,5 +1,9 @@
 #include "matrix_common.hpp"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace mdescriptor::detail {
 
 std::vector<double> ewald_matrix_values(
@@ -86,45 +90,57 @@ std::vector<double> ewald_matrix_values(
         }
     }
     std::vector<double> real_matrix(static_cast<std::size_t>(count * count), 0.0);
-    std::vector<Vec3> shifts;
-    for (int center = 0; center < count; ++center) {
-        const Vec3 center_position = positions[static_cast<std::size_t>(center)];
-        const Vec3 center_fractional{
-            center_position.x * inverse_cell.a[0][0] + center_position.y * inverse_cell.a[1][0] + center_position.z * inverse_cell.a[2][0],
-            center_position.x * inverse_cell.a[0][1] + center_position.y * inverse_cell.a[1][1] + center_position.z * inverse_cell.a[2][1],
-            center_position.x * inverse_cell.a[0][2] + center_position.y * inverse_cell.a[1][2] + center_position.z * inverse_cell.a[2][2],
-        };
-        const int minima[3] = {
-            static_cast<int>(std::floor(center_fractional.x - real_nmax[0])),
-            static_cast<int>(std::floor(center_fractional.y - real_nmax[1])),
-            static_cast<int>(std::floor(center_fractional.z - real_nmax[2])),
-        };
-        const int maxima[3] = {
-            static_cast<int>(std::ceil(center_fractional.x + real_nmax[0])),
-            static_cast<int>(std::ceil(center_fractional.y + real_nmax[1])),
-            static_cast<int>(std::ceil(center_fractional.z + real_nmax[2])),
-        };
-        shifts.clear();
-        for (int i = minima[0]; i < maxima[0]; ++i) {
-            for (int j = minima[1]; j < maxima[1]; ++j) {
-                for (int k = minima[2]; k < maxima[2]; ++k) {
-                    shifts.push_back(i * row(cell, 0) + j * row(cell, 1) + k * row(cell, 2));
+    // Each center writes one matrix column, so centers can be evaluated
+    // independently.  Keep the image list private to the worker: its bounds
+    // depend on the center and sharing the old scratch vector would race.  Do
+    // not create nested teams when a caller is already parallel over structures.
+#ifdef _OPENMP
+#pragma omp parallel if(count >= 8 && !omp_in_parallel())
+#endif
+    {
+        std::vector<Vec3> shifts;
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (int center = 0; center < count; ++center) {
+            const Vec3 center_position = positions[static_cast<std::size_t>(center)];
+            const Vec3 center_fractional{
+                center_position.x * inverse_cell.a[0][0] + center_position.y * inverse_cell.a[1][0] + center_position.z * inverse_cell.a[2][0],
+                center_position.x * inverse_cell.a[0][1] + center_position.y * inverse_cell.a[1][1] + center_position.z * inverse_cell.a[2][1],
+                center_position.x * inverse_cell.a[0][2] + center_position.y * inverse_cell.a[1][2] + center_position.z * inverse_cell.a[2][2],
+            };
+            const int minima[3] = {
+                static_cast<int>(std::floor(center_fractional.x - real_nmax[0])),
+                static_cast<int>(std::floor(center_fractional.y - real_nmax[1])),
+                static_cast<int>(std::floor(center_fractional.z - real_nmax[2])),
+            };
+            const int maxima[3] = {
+                static_cast<int>(std::ceil(center_fractional.x + real_nmax[0])),
+                static_cast<int>(std::ceil(center_fractional.y + real_nmax[1])),
+                static_cast<int>(std::ceil(center_fractional.z + real_nmax[2])),
+            };
+            shifts.clear();
+            for (int i = minima[0]; i < maxima[0]; ++i) {
+                for (int j = minima[1]; j < maxima[1]; ++j) {
+                    for (int k = minima[2]; k < maxima[2]; ++k) {
+                        shifts.push_back(i * row(cell, 0) + j * row(cell, 1) + k * row(cell, 2));
+                    }
                 }
             }
-        }
-        for (int target = 0; target < count; ++target) {
-            double real = 0.0;
-            for (const Vec3 shift : shifts) {
-                const Vec3 displacement = wrapped_positions[static_cast<std::size_t>(target)]
-                    - center_position + shift;
-                const double distance2 = norm2(displacement);
-                if (distance2 > 1e-16 && distance2 <= r_cut * r_cut) {
-                    const double distance = std::sqrt(distance2);
-                    real += std::erfc(alpha * distance) / distance;
+            for (int target = 0; target < count; ++target) {
+                double real = 0.0;
+                for (const Vec3 shift : shifts) {
+                    const Vec3 displacement = wrapped_positions[static_cast<std::size_t>(target)]
+                        - center_position + shift;
+                    const double distance2 = norm2(displacement);
+                    if (distance2 > 1e-16 && distance2 <= r_cut * r_cut) {
+                        const double distance = std::sqrt(distance2);
+                        real += std::erfc(alpha * distance) / distance;
+                    }
                 }
+                real_matrix[static_cast<std::size_t>(target * count + center)] = real
+                    * charges[static_cast<std::size_t>(target)] * charges[static_cast<std::size_t>(center)];
             }
-            real_matrix[static_cast<std::size_t>(target * count + center)] = real
-                * charges[static_cast<std::size_t>(target)] * charges[static_cast<std::size_t>(center)];
         }
     }
 
@@ -137,32 +153,51 @@ std::vector<double> ewald_matrix_values(
     std::vector<double> sum_phase(static_cast<std::size_t>(count));
     std::vector<double> difference_phase(static_cast<std::size_t>(count));
     std::vector<double> reciprocal_matrix(static_cast<std::size_t>(count * count), 0.0);
-    for (std::size_t g_index = 0; g_index < g_vectors.size(); ++g_index) {
-        const Vec3 g = g_vectors[g_index];
-        for (int atom = 0; atom < count; ++atom) {
-            const double phase = dot(g, positions[static_cast<std::size_t>(atom)]);
-            const double sine = std::sin(phase);
-            const double cosine = std::cos(phase);
-            sine_phase[static_cast<std::size_t>(atom)] = sine;
-            cosine_phase[static_cast<std::size_t>(atom)] = cosine;
-            sum_phase[static_cast<std::size_t>(atom)] = sine + cosine;
-            difference_phase[static_cast<std::size_t>(atom)] = sine - cosine;
-        }
-        const double factor = g_factors[g_index];
-        for (int i = 0; i < count; ++i) {
-            double* row_values = reciprocal_matrix.data() + static_cast<std::size_t>(i * count);
-            const double sine_i = sine_phase[static_cast<std::size_t>(i)];
-            const double cosine_i = cosine_phase[static_cast<std::size_t>(i)];
-            for (int j = 0; j < count; ++j) {
-                row_values[j] += (cosine_i * sum_phase[static_cast<std::size_t>(j)]
-                    + sine_i * difference_phase[static_cast<std::size_t>(j)])
-                    * factor * inverse_sqrt_two;
+    // One team processes all reciprocal vectors.  The two worksharing loops
+    // have implicit barriers: all phase values are ready before any matrix
+    // row is updated, and all rows finish vector g before vector g + 1 starts.
+    // Consequently each element keeps the serial G-vector accumulation order
+    // while different rows are evaluated concurrently.  The nested-team guard
+    // also lets a batch-level OpenMP caller own the available workers.
+#ifdef _OPENMP
+#pragma omp parallel if(count >= 8 && !g_vectors.empty() && !omp_in_parallel())
+#endif
+    {
+        for (std::size_t g_index = 0; g_index < g_vectors.size(); ++g_index) {
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+            for (int atom = 0; atom < count; ++atom) {
+                const double phase = dot(g_vectors[g_index], positions[static_cast<std::size_t>(atom)]);
+                const double sine = std::sin(phase);
+                const double cosine = std::cos(phase);
+                sine_phase[static_cast<std::size_t>(atom)] = sine;
+                cosine_phase[static_cast<std::size_t>(atom)] = cosine;
+                sum_phase[static_cast<std::size_t>(atom)] = sine + cosine;
+                difference_phase[static_cast<std::size_t>(atom)] = sine - cosine;
+            }
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+            for (int i = 0; i < count; ++i) {
+                double* row_values = reciprocal_matrix.data() + static_cast<std::size_t>(i * count);
+                const double sine_i = sine_phase[static_cast<std::size_t>(i)];
+                const double cosine_i = cosine_phase[static_cast<std::size_t>(i)];
+                const double factor = g_factors[g_index];
+                for (int j = 0; j < count; ++j) {
+                    row_values[j] += (cosine_i * sum_phase[static_cast<std::size_t>(j)]
+                        + sine_i * difference_phase[static_cast<std::size_t>(j)])
+                        * factor * inverse_sqrt_two;
+                }
             }
         }
     }
 
     std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
     const double reciprocal_scale = 4.0 * kPi / volume * std::sqrt(2.0);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(count >= 8 && !omp_in_parallel())
+#endif
     for (int i = 0; i < count; ++i) {
         const double zi = charges[static_cast<std::size_t>(i)];
         for (int j = 0; j < count; ++j) {
