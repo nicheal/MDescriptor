@@ -240,7 +240,7 @@
 | `tests/test_golden_independence.py` | 防止测试 golden 重新依赖本地 benchmarks 路径或缺失自带输入/输出。 |
 | `tests/test_all_descriptors.py` | 遍历所有描述符，检查 native/backend、输出形状、有限值、矩阵和取消行为。 |
 | `tests/test_c00ps_mlff.py` | 检查 C00PSMLFF 形状、标签、平移/旋转不变性、模式和取消。 |
-| `tests/test_descriptor_symmetry.py` | 对所有 standalone 描述符执行原子排列、平移和旋转对称性报告。 |
+| `tests/test_descriptor_symmetry.py` | 用单个水分子对 registry 中全部描述符执行原子排列、平移和旋转对称性报告。 |
 | `tests/test_dpa4.py` | 检查 DPA4 官方 checkpoint、几何/排列不变性、Torch-free 推理和 session 共享。 |
 | `tests/test_dpa4c.py` | 检查 DPA4C golden、charge/spin、type map、calibration 和 checkpoint schema 错误。 |
 | `tests/test_mtp.py` | 检查 MTP 不变性、MLIP-4 JSON、模型替换重载和多种 radial basis。 |

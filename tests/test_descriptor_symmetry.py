@@ -10,7 +10,7 @@ still reporting a single permutation-symmetry result for each descriptor.
 import numpy as np
 from ase import Atoms
 
-from tests._public import AssetPolicy, StructureBatch, builtin_registry
+from tests._public import StructureBatch, builtin_registry
 
 _SYMMETRY_RTOL = 1e-5
 _SYMMETRY_ATOL = 1e-7
@@ -119,6 +119,8 @@ def _calculator(name: str, calculator_class: type):
         )
     if name == "C00PSMLFF":
         return calculator_class(species=[1, 8], r_cut=3.0, n_radial=2, l_max=2)
+    if name in {"NEP", "DPA4", "DPA4C"}:
+        return calculator_class()
     raise AssertionError(f"no water configuration for catalog descriptor {name!r}")
 
 
@@ -146,7 +148,13 @@ def _structure_rows(result, structure: int, permutation: np.ndarray | None = Non
     return rows[order]
 
 
-def _difference(left: np.ndarray, right: np.ndarray) -> tuple[float, float, bool]:
+def _difference(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    rtol: float = _SYMMETRY_RTOL,
+    atol: float = _SYMMETRY_ATOL,
+) -> tuple[float, float, bool]:
     if left.shape != right.shape:
         return float("inf"), float("inf"), False
     delta = np.abs(left - right)
@@ -154,7 +162,7 @@ def _difference(left: np.ndarray, right: np.ndarray) -> tuple[float, float, bool
     scale = max(float(np.max(np.abs(left))) if left.size else 0.0,
                 float(np.max(np.abs(right))) if right.size else 0.0, 1e-12)
     relative = maximum / scale
-    equivalent = bool(np.allclose(left, right, rtol=_SYMMETRY_RTOL, atol=_SYMMETRY_ATOL))
+    equivalent = bool(np.allclose(left, right, rtol=rtol, atol=atol))
     return maximum, relative, equivalent
 
 
@@ -180,7 +188,7 @@ def _print_report(report: list[dict[str, object]]) -> None:
         )
 
 
-def test_all_standalone_descriptors_on_water_symmetry_report():
+def test_all_descriptors_on_single_water_symmetry_report():
     systems, permutation = _water_systems()
     batch = StructureBatch.from_ase(systems)
     report = []
@@ -189,33 +197,33 @@ def test_all_standalone_descriptors_on_water_symmetry_report():
     expected_non_rotational = {
         "NeighborList", "SphericalExpansion", "SphericalExpansionByPair", "LodeSphericalExpansion"
     }
-    descriptors = tuple(
-        (spec.name, spec.load_class())
-        for spec in builtin_registry
-        if spec.asset_policy in {AssetPolicy.NONE, AssetPolicy.OPTIONAL}
-    )
+    descriptors = tuple((spec.name, spec.load_class()) for spec in builtin_registry)
     for name, calculator_class in descriptors:
         calculator = _calculator(name, calculator_class)
-        result = calculator.compute(batch)
-        assert np.isfinite(np.asarray(result.values)).all(), name
-        reference = _structure_rows(result, 0)
-        rotation = _difference(reference, _structure_rows(result, 1))
-        translation = _difference(reference, _structure_rows(result, 2))
-        permutation_result = _difference(
-            reference, _structure_rows(result, 3, permutation=permutation)
-        )
-        report.append(
-            {
-                "name": name,
-                "level": result.level,
-                "rotation_delta": _format_difference(rotation),
-                "rotation_ok": rotation[2],
-                "translation_delta": _format_difference(translation),
-                "translation_ok": translation[2],
-                "permutation_delta": _format_difference(permutation_result),
-                "permutation_ok": permutation_result[2],
-            }
-        )
+        try:
+            result = calculator.compute(batch)
+            assert np.isfinite(np.asarray(result.values)).all(), name
+            reference = _structure_rows(result, 0)
+            tolerance = {"rtol": 1e-5, "atol": 3e-5} if name in {"DPA4", "DPA4C"} else {}
+            rotation = _difference(reference, _structure_rows(result, 1), **tolerance)
+            translation = _difference(reference, _structure_rows(result, 2), **tolerance)
+            permutation_result = _difference(
+                reference, _structure_rows(result, 3, permutation=permutation), **tolerance
+            )
+            report.append(
+                {
+                    "name": name,
+                    "level": result.level,
+                    "rotation_delta": _format_difference(rotation),
+                    "rotation_ok": rotation[2],
+                    "translation_delta": _format_difference(translation),
+                    "translation_ok": translation[2],
+                    "permutation_delta": _format_difference(permutation_result),
+                    "permutation_ok": permutation_result[2],
+                }
+            )
+        finally:
+            calculator.close()
 
     _print_report(report)
     assert {row["name"] for row in report} | {item.split(":", 1)[0] for item in skipped} == {
