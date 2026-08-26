@@ -1,12 +1,18 @@
 #include "mdescriptor/descriptor.hpp"
 #include "matrix_common.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <numeric>
 #include <string>
 #include <utility>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #if defined(_WIN32) && defined(__MINGW32__)
 #ifndef NOMINMAX
@@ -47,12 +53,14 @@ void compute_coulomb_matrix(
     std::int64_t n_atoms_max,
     const std::string& permutation,
     double exponent,
+    int num_threads,
     double* output,
     const std::shared_ptr<ComputeControl>& control
 ) {
     validate_batch(batch);
     if (n_atoms_max <= 0 || !std::isfinite(exponent)
-        || (permutation != "none" && permutation != "sorted_l2" && permutation != "eigenspectrum")) {
+        || (permutation != "none" && permutation != "sorted_l2" && permutation != "eigenspectrum")
+        || num_threads < 0) {
         throw std::invalid_argument("invalid Coulomb matrix parameters");
     }
     if (control) {
@@ -63,9 +71,6 @@ void compute_coulomb_matrix(
         ? n_atoms_max
         : n_atoms_max * n_atoms_max;
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-        if (control && control->cancelled()) {
-            throw CancelledError();
-        }
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
         const std::int64_t atom_count = end - begin;
@@ -75,34 +80,64 @@ void compute_coulomb_matrix(
         if (atom_count > n_atoms_max) {
             throw std::invalid_argument("structure exceeds n_atoms_max");
         }
+    }
 
-        std::vector<double> matrix(static_cast<std::size_t>(atom_count * atom_count), 0.0);
-        for (std::int64_t i = 0; i < atom_count; ++i) {
-            const double zi = static_cast<double>(batch.numbers[begin + i]);
-            for (std::int64_t j = i; j < atom_count; ++j) {
-                double value;
-                if (i == j) {
-                    value = 0.5 * reference_pow(zi, exponent);
-                } else {
-                    const double zj = static_cast<double>(batch.numbers[begin + j]);
-                    const double* first = batch.positions + (begin + i) * 3;
-                    const double* second = batch.positions + (begin + j) * 3;
-                    const double dx = first[0] - second[0];
-                    const double dy = first[1] - second[1];
-                    const double dz = first[2] - second[2];
-                    const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-                    value = zi * zj / distance;
+    // Exceptions must not escape an OpenMP loop: doing so calls std::terminate.
+    // Keep the per-structure work and its output row independent, capture any
+    // failure in the worker, and rethrow it after all workers have joined.
+    std::vector<std::exception_ptr> exceptions(static_cast<std::size_t>(batch.structures));
+    std::atomic<bool> failed{false};
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#endif
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        if (failed.load(std::memory_order_acquire) || (control && control->cancelled())) {
+            continue;
+        }
+        try {
+            const std::int64_t begin = batch.offsets[structure];
+            const std::int64_t end = batch.offsets[structure + 1];
+            const std::int64_t atom_count = end - begin;
+
+            std::vector<double> matrix(static_cast<std::size_t>(atom_count * atom_count), 0.0);
+            for (std::int64_t i = 0; i < atom_count; ++i) {
+                const double zi = static_cast<double>(batch.numbers[begin + i]);
+                const double* first = batch.positions + (begin + i) * 3;
+                for (std::int64_t j = i; j < atom_count; ++j) {
+                    double value;
+                    if (i == j) {
+                        value = 0.5 * reference_pow(zi, exponent);
+                    } else {
+                        const double zj = static_cast<double>(batch.numbers[begin + j]);
+                        const double* second = batch.positions + (begin + j) * 3;
+                        const double dx = first[0] - second[0];
+                        const double dy = first[1] - second[1];
+                        const double dz = first[2] - second[2];
+                        const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+                        value = zi * zj / distance;
+                    }
+                    matrix[static_cast<std::size_t>(i * atom_count + j)] = value;
+                    matrix[static_cast<std::size_t>(j * atom_count + i)] = value;
                 }
-                matrix[static_cast<std::size_t>(i * atom_count + j)] = value;
-                matrix[static_cast<std::size_t>(j * atom_count + i)] = value;
             }
-        }
 
-        double* row = output + structure * stride;
-        write_matrix(std::move(matrix), static_cast<int>(atom_count), n_atoms_max, permutation, row);
-        if (control) {
-            control->mark_completed();
+            double* row = output + structure * stride;
+            write_matrix(std::move(matrix), static_cast<int>(atom_count), n_atoms_max, permutation, row);
+            if (control) {
+                control->mark_completed();
+            }
+        } catch (...) {
+            exceptions[static_cast<std::size_t>(structure)] = std::current_exception();
+            failed.store(true, std::memory_order_release);
         }
+    }
+    for (const auto& exception : exceptions) {
+        if (exception) {
+            std::rethrow_exception(exception);
+        }
+    }
+    if (control && control->cancelled()) {
+        throw CancelledError();
     }
 }
 
