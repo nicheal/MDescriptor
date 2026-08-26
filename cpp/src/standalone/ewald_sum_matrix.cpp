@@ -14,10 +14,16 @@ std::vector<double> ewald_matrix_values(
     double w,
     double r_cut_option,
     double g_cut_option,
-    double a_option) {
+    double a_option,
+    int num_threads) {
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
+#ifdef _OPENMP
+    const int workers = num_threads > 0 ? num_threads : omp_get_max_threads();
+#else
+    (void)num_threads;
+#endif
     const Mat3 cell = load_cell(batch, structure);
     const Mat3 inverse_cell = inverse(cell);
     const double volume = std::abs(determinant(cell));
@@ -95,7 +101,7 @@ std::vector<double> ewald_matrix_values(
     // depend on the center and sharing the old scratch vector would race.  Do
     // not create nested teams when a caller is already parallel over structures.
 #ifdef _OPENMP
-#pragma omp parallel if(count >= 8 && !omp_in_parallel())
+#pragma omp parallel if(count >= 8 && !omp_in_parallel()) num_threads(workers)
 #endif
     {
         std::vector<Vec3> shifts;
@@ -160,7 +166,7 @@ std::vector<double> ewald_matrix_values(
     // while different rows are evaluated concurrently.  The nested-team guard
     // also lets a batch-level OpenMP caller own the available workers.
 #ifdef _OPENMP
-#pragma omp parallel if(count >= 8 && !g_vectors.empty() && !omp_in_parallel())
+#pragma omp parallel if(count >= 8 && !g_vectors.empty() && !omp_in_parallel()) num_threads(workers)
 #endif
     {
         for (std::size_t g_index = 0; g_index < g_vectors.size(); ++g_index) {
@@ -196,7 +202,7 @@ std::vector<double> ewald_matrix_values(
     std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
     const double reciprocal_scale = 4.0 * kPi / volume * std::sqrt(2.0);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) if(count >= 8 && !omp_in_parallel())
+#pragma omp parallel for schedule(static) num_threads(workers) if(count >= 8 && !omp_in_parallel())
 #endif
     for (int i = 0; i < count; ++i) {
         const double zi = charges[static_cast<std::size_t>(i)];

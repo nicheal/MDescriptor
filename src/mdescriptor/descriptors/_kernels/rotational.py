@@ -25,14 +25,23 @@ class _AtomKernel:
 class EadKernel(_AtomKernel):
     name = "EAD"
 
-    def __init__(self, parameters: dict[str, Any] | None = None, Rc: float = 6.0, cutoff: str = "cosine"):
+    def __init__(
+        self,
+        parameters: dict[str, Any] | None = None,
+        Rc: float = 6.0,
+        cutoff: str = "cosine",
+        num_threads: int | None = None,
+    ):
         parameters = parameters or {"L": 3, "eta": [0.05, 0.1, 0.5], "Rs": [0.0]}
         self.L = int(parameters.get("L", 3))
         self.eta = np.asarray(parameters.get("eta", [0.05]), dtype=np.float64).ravel()
         self.Rs = np.asarray(parameters.get("Rs", [0.0]), dtype=np.float64).ravel()
         self.Rc = float(Rc)
+        self.num_threads = 0 if num_threads is None else int(num_threads)
         if cutoff != "cosine" or self.L < 0 or self.Rc <= 0.0 or np.any(self.eta < 0.0):
             raise ValueError("invalid EAD parameters")
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -40,7 +49,13 @@ class EadKernel(_AtomKernel):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_ead(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, self.L, self.Rc, self.eta.tolist(), self.Rs.tolist(), control), dtype=np.float64)
+        values = np.asarray(
+            _cpp.compute_ead(
+                batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
+                self.L, self.Rc, self.eta.tolist(), self.Rs.tolist(), self.num_threads, control,
+            ),
+            dtype=np.float64,
+        )
         return DescriptorResult(
             values, "atom", batch.ids, batch.offsets.copy(),
             tuple(f"{self.name}:{index}" for index in range(values.shape[1])),
@@ -51,11 +66,22 @@ class EadKernel(_AtomKernel):
 class So3Kernel(_AtomKernel):
     name = "SO3"
 
-    def __init__(self, nmax: int = 3, lmax: int = 3, rcut: float = 3.5, alpha: float = 2.0, weight_on: bool = False):
+    def __init__(
+        self,
+        nmax: int = 3,
+        lmax: int = 3,
+        rcut: float = 3.5,
+        alpha: float = 2.0,
+        weight_on: bool = False,
+        num_threads: int | None = None,
+    ):
         self.nmax, self.lmax, self.rcut = int(nmax), int(lmax), float(rcut)
         self.alpha, self.weight_on = float(alpha), bool(weight_on)
+        self.num_threads = 0 if num_threads is None else int(num_threads)
         if self.nmax < 1 or self.lmax < 0 or self.rcut <= 0.0 or self.alpha <= 0.0:
             raise ValueError("invalid SO3 parameters")
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -63,21 +89,38 @@ class So3Kernel(_AtomKernel):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_rotational_descriptors(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 0, self.nmax, self.lmax, self.rcut, self.alpha, self.weight_on, False, 1.0, 3, 3, control, 1.0), dtype=np.float64)
+        values = np.asarray(_cpp.compute_rotational_descriptors(
+            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
+            0, self.nmax, self.lmax, self.rcut, self.alpha, self.weight_on,
+            False, 1.0, 3, 3, self.num_threads, control, 1.0,
+        ), dtype=np.float64)
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
 
 class So4Kernel(_AtomKernel):
     name = "SO4"
 
-    def __init__(self, lmax: int = 3, rcut: float = 3.5, normalize_U: bool = False):
+    def __init__(
+        self,
+        lmax: int = 3,
+        rcut: float = 3.5,
+        normalize_U: bool = False,
+        num_threads: int | None = None,
+    ):
         self.lmax, self.rcut, self.normalize_U = int(lmax), float(rcut), bool(normalize_U)
+        self.num_threads = 0 if num_threads is None else int(num_threads)
         if self.lmax < 0 or self.rcut <= 0.0:
             raise ValueError("invalid SO4 parameters")
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_rotational_descriptors(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 1, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U, 1.0, 3, 3, control, 1.0), dtype=np.float64)
+        values = np.asarray(_cpp.compute_rotational_descriptors(
+            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
+            1, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
+            1.0, 3, 3, self.num_threads, control, 1.0,
+        ), dtype=np.float64)
         self._feature_count = int(values.shape[1])
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
@@ -91,8 +134,9 @@ class SnapKernel(So4Kernel):
         lmax: int = 3,
         rcut: float = 3.5,
         normalize_U: bool = False,
+        num_threads: int | None = None,
     ):
-        super().__init__(lmax=lmax, rcut=rcut, normalize_U=normalize_U)
+        super().__init__(lmax=lmax, rcut=rcut, normalize_U=normalize_U, num_threads=num_threads)
         self.weights = weights or {}
 
     def _neighbor_weights(self, batch: StructureBatch) -> list[float]:
@@ -121,7 +165,12 @@ class SnapKernel(So4Kernel):
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_rotational_descriptors(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, 2, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U, 1.0, 3, 3, control, 0.99363, self._neighbor_weights(batch)), dtype=np.float64)
+        values = np.asarray(_cpp.compute_rotational_descriptors(
+            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
+            2, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
+            1.0, 3, 3, self.num_threads, control, 0.99363,
+            self._neighbor_weights(batch),
+        ), dtype=np.float64)
         self._feature_count = int(values.shape[1])
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
@@ -142,6 +191,7 @@ class LbispectrumKernel(SnapKernel):
         lmax: int | None = None,
         rcut: float = 3.5,
         normalize_U: bool = False,
+        num_threads: int | None = None,
     ):
         self.twojmax, self.diagonal = int(twojmax), int(diagonal)
         self.rfac0, self.rmin0, self.rcutfac = float(rfac0), float(rmin0), float(rcutfac)
@@ -158,6 +208,7 @@ class LbispectrumKernel(SnapKernel):
             rcut=rcut,
             normalize_U=normalize_U,
             weights=weights,
+            num_threads=num_threads,
         )
 
     @staticmethod
@@ -190,7 +241,7 @@ class LbispectrumKernel(SnapKernel):
         values = np.asarray(_cpp.compute_rotational_descriptors(
             batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
             3, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
-            1.0, self.twojmax, self.diagonal, control, self.rfac0,
+            1.0, self.twojmax, self.diagonal, self.num_threads, control, self.rfac0,
             self._neighbor_weights(batch), self.rmin0, self.rcutfac,
             self._element_values(batch, self.element_radii, "element_radii")), dtype=np.float64)
         self._feature_count = int(values.shape[1])

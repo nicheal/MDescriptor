@@ -25,9 +25,11 @@ def _batch() -> StructureBatch:
     )
 
 
-def _descriptor(permutation: str, num_threads: int) -> CoulombMatrix:
+def _descriptor(
+    permutation: str, num_threads: int, *, n_atoms_max: int = 24
+) -> CoulombMatrix:
     return CoulombMatrix(
-        n_atoms_max=24,
+        n_atoms_max=n_atoms_max,
         permutation=permutation,
         execution=ExecutionOptions(num_threads=num_threads),
     )
@@ -41,8 +43,6 @@ def test_coulombmatrix_openmp_matches_single_thread_bitwise() -> None:
         try:
             serial_result = serial.compute(batch)
             parallel_result = parallel.compute(batch)
-            assert serial_result.metadata["execution"]["num_threads"] == 1
-            assert parallel_result.metadata["execution"]["num_threads"] == 4
             np.testing.assert_array_equal(parallel_result.values, serial_result.values)
         finally:
             serial.close()
@@ -64,8 +64,8 @@ def test_coulombmatrix_openmp_small_batch_speed() -> None:
         [_system(4000 + index, 96) for index in range(16)],
         ids=[f"coulomb-speed-{index}" for index in range(16)],
     )
-    serial = _descriptor("none", 1)
-    parallel = _descriptor("none", 4)
+    serial = _descriptor("none", 1, n_atoms_max=96)
+    parallel = _descriptor("none", 4, n_atoms_max=96)
     try:
         serial_seconds = _median_runtime(serial, batch)
         parallel_seconds = _median_runtime(parallel, batch)

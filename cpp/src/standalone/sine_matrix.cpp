@@ -6,7 +6,11 @@
 
 namespace mdescriptor::detail {
 
-std::vector<double> sine_matrix_values(const StructureBatchView& batch, std::int64_t structure, double exponent) {
+std::vector<double> sine_matrix_values(
+    const StructureBatchView& batch,
+    std::int64_t structure,
+    double exponent,
+    int num_threads) {
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
@@ -14,7 +18,7 @@ std::vector<double> sine_matrix_values(const StructureBatchView& batch, std::int
     const Mat3 inverse_cell = inverse(cell);
     std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(omp_get_max_threads()) if(count >= 32 && !omp_in_parallel())
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads()) if(count >= 32 && !omp_in_parallel())
 #endif
     for (int i = 0; i < count; ++i) {
         const Vec3 first = position(batch, begin + i);

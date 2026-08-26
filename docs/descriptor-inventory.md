@@ -11,25 +11,25 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 | SOAP | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
 | SOAPTurbo | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | ACSF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| CoulombMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
-| SineMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
-| EwaldSumMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
-| MBTR | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
-| LMBTR | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
-| ValleOganov | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
-| AtomicComposition | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, sparse | `—` |
-| NeighborList | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, sparse | `—` |
+| CoulombMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| SineMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| EwaldSumMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| MBTR | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| LMBTR | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| ValleOganov | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| AtomicComposition | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
+| NeighborList | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | `—` |
 | SortedDistances | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | SphericalExpansion | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | SphericalExpansionByPair | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | `—` |
 | SoapRadialSpectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | SoapPowerSpectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | LodeSphericalExpansion | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| EAD | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
-| SO3 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
-| SO4 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
-| SNAP | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
-| LBispectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, sparse | `—` |
+| EAD | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| SO3 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| SO4 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| SNAP | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| LBispectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | MTP | `standalone` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
 | C00PSMLFF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | NEP | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |

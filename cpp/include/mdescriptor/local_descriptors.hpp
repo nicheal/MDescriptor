@@ -40,6 +40,7 @@ void compute_atomic_composition(
     const StructureBatchView& batch,
     const std::vector<std::int32_t>& species,
     bool per_system,
+    int num_threads,
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 
@@ -56,6 +57,7 @@ DescriptorPairTable compute_neighbor_list(
     double cutoff,
     bool full_neighbor_list,
     bool self_pairs,
+    int num_threads,
     const std::shared_ptr<ComputeControl>& control);
 
 void compute_spherical_expansion(

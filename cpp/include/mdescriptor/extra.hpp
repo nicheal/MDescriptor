@@ -27,6 +27,7 @@ void compute_matrix(
     double r_cut,
     double g_cut,
     double a,
+    int num_threads,
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 
@@ -67,6 +68,7 @@ struct MBTROptions {
     double r_cut = 6.0;
     double sharpness = 2.0;
     bool local = false;
+    int num_threads = 0;
 };
 
 std::int64_t mbtr_feature_count(const MBTROptions& options);
@@ -81,6 +83,7 @@ struct EadOptions {
     double cutoff = 6.0;
     std::vector<double> eta;
     std::vector<double> rs;
+    int num_threads = 0;
 };
 
 std::int64_t ead_feature_count(const EadOptions& options);
@@ -165,6 +168,7 @@ struct RotationalDescriptorOptions {
     double rfac0 = 1.0;
     double rmin0 = 0.0;
     double rcutfac = 1.0;
+    int num_threads = 0;
     std::vector<double> neighbor_weights;
     std::vector<double> neighbor_radii;
     int twojmax = 3;

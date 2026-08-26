@@ -1,5 +1,6 @@
 #include "mdescriptor/extra.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "descriptor_common.hpp"
 #include "extra_common.hpp"
 
 #include <algorithm>
@@ -30,7 +31,10 @@ void compute_ead(
     if (control) {
         control->reset(batch.structures);
     }
-    const NeighborGraph graph = build_neighbor_graph(batch, options.cutoff, control);
+    if (options.num_threads < 0) {
+        throw std::invalid_argument("num_threads must be non-negative");
+    }
+    const NeighborGraph graph = build_neighbor_graph(batch, options.cutoff, control, options.num_threads);
     std::vector<std::array<int, 4>> powers;
     for (int degree = 0; degree <= options.max_degree; ++degree) {
         for (int lx = 0; lx <= degree; ++lx) {
@@ -39,11 +43,16 @@ void compute_ead(
             }
         }
     }
-    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-        check_cancelled(control);
+    auto compute_structure = [&](std::int64_t structure) {
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
+#endif
         for (std::int64_t center = begin; center < end; ++center) {
+            if (cancelled(control)) {
+                continue;
+            }
             std::vector<double> terms(powers.size() * options.eta.size() * options.rs.size(), 0.0);
             const NeighborView neighbors = graph.for_center(center);
             for (std::size_t index = 0; index < neighbors.size; ++index) {
@@ -86,7 +95,13 @@ void compute_ead(
                 }
             }
         }
+    };
+    if (batch.structures == 1) {
+        compute_structure(0);
+        check_cancelled(control);
         mark_completed(control);
+        return;
     }
+    run_parallel_structures(batch.structures, options.num_threads, control, compute_structure);
 }
 } // namespace mdescriptor

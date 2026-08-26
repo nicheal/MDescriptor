@@ -78,6 +78,7 @@
 | `scripts/generate_descriptor_goldens.py` | 用显式 reference wheel 生成双结构本地 benchmark snapshot。 |
 | `scripts/promote_descriptor_golden.py` | 将 accepted snapshot 单向复制为独立的测试 golden fixture。 |
 | `scripts/benchmarking/run_descriptor_benchmark.py` | 根据测试 fixture 执行 CPU 单线程 benchmark，记录 median/p95。 |
+| `scripts/benchmarking/benchmark_openmp_small.py` | 在固定小批次上比较目标描述符的单线程/多线程精度与耗时。 |
 | `scripts/run_benchmark.py` | 受兼容性保留的 benchmark runner 入口。 |
 | `scripts/verify_wheel.py` | 在安装后的 wheel 环境中检查导入、基线、模型资源和输出契约。 |
 | `src/mdescriptor/__init__.py` | 根包稳定公共导出：核心契约、异常、registry 查询和配置 factory。 |
@@ -245,6 +246,12 @@
 | `tests/test_dpa4c.py` | 检查 DPA4C golden、charge/spin、type map、calibration 和 checkpoint schema 错误。 |
 | `tests/test_mtp.py` | 检查 MTP 不变性、MLIP-4 JSON、模型替换重载和多种 radial basis。 |
 | `tests/test_neighbor_graph.py` | 对比 native 周期邻居图与 brute-force 结果，并检查 self pair 过滤。 |
+| `tests/test_openmp_support.py` | 覆盖排除 DPA4/DPA4C 后 13 个目标描述符的 OpenMP 精度一致性。 |
+| `tests/test_coulombmatrix_openmp.py` | 检查 CoulombMatrix 的 OpenMP 排列结果和小批次速度。 |
+| `tests/test_ewaldsummatrix_openmp.py` | 检查 EwaldSumMatrix 的 OpenMP 数值稳定性和小批次速度。 |
+| `tests/test_lmbtr_openmp.py` | 检查 LMBTR 的局部输出、OpenMP 精度和小批次速度。 |
+| `tests/test_sinematrix_openmp.py` | 检查 SineMatrix 的 OpenMP 结果稳定性。 |
+| `tests/test_valleoganov_openmp.py` | 检查 ValleOganov 的归一化、OpenMP 精度和小批次速度。 |
 | `tests/test_nep.py` | 检查 NEP 本地模型加载、native 后端、缩放和同路径模型替换。 |
 | `tests/test_*_golden.py` | 每个 canonical descriptor 的独立双结构准确性测试。 |
 | `tests/test_reference.py` | 检查 native 核心对周期结构平移不变。 |

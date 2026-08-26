@@ -56,14 +56,23 @@ class _StructureKernel:
 class _MatrixKernel(_StructureKernel):
     kind = 0
 
-    def __init__(self, n_atoms_max: int | None = None, permutation: str = "sorted_l2", exponent: float = 2.4):
+    def __init__(
+        self,
+        n_atoms_max: int | None = None,
+        permutation: str = "sorted_l2",
+        exponent: float = 2.4,
+        num_threads: int | None = None,
+    ):
         self.n_atoms_max = n_atoms_max
         self.permutation = str(permutation)
         self.exponent = float(exponent)
+        self.num_threads = 0 if num_threads is None else int(num_threads)
         if self.n_atoms_max is not None and int(self.n_atoms_max) <= 0:
             raise ValueError("n_atoms_max must be positive")
         if self.permutation not in {"none", "sorted_l2", "eigenspectrum"}:
             raise ValueError("permutation must be 'none', 'sorted_l2', or 'eigenspectrum'")
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
@@ -77,7 +86,7 @@ class _MatrixKernel(_StructureKernel):
             if self.kind == 2:
                 values = _cpp.compute_coulomb_matrix(
                     batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
-                    max_atoms, native_permutation, self.exponent, control,
+                    max_atoms, native_permutation, self.exponent, self.num_threads, control,
                 )
             else:
                 values = _cpp.compute_matrix(
@@ -86,7 +95,7 @@ class _MatrixKernel(_StructureKernel):
                     getattr(self, "accuracy", 1e-5), getattr(self, "w", 1.0),
                     float(getattr(self, "r_cut", 0.0) or 0.0),
                     float(getattr(self, "g_cut", 0.0) or 0.0),
-                    float(getattr(self, "a", 0.0) or 0.0), control,
+                    float(getattr(self, "a", 0.0) or 0.0), self.num_threads, control,
                 )
             if self.kind == 0 and self.permutation == "none":
                 values = np.asarray(values, dtype=np.float64)
@@ -121,8 +130,13 @@ class EwaldSumMatrixKernel(_MatrixKernel):
         self, n_atoms_max: int | None = None, permutation: str = "sorted_l2",
         accuracy: float = 1e-5, w: float = 1.0, r_cut: float | None = None,
         g_cut: float | None = None, a: float | None = None,
+        num_threads: int | None = None,
     ):
-        super().__init__(n_atoms_max=n_atoms_max, permutation=permutation)
+        super().__init__(
+            n_atoms_max=n_atoms_max,
+            permutation=permutation,
+            num_threads=num_threads,
+        )
         self.accuracy, self.w, self.r_cut, self.g_cut, self.a = float(accuracy), float(w), r_cut, g_cut, a
         if not 0.0 < self.accuracy < 1.0 or self.w <= 0.0:
             raise ValueError("accuracy must be between zero and one and w must be positive")
@@ -151,6 +165,7 @@ class MBTRKernel(_StructureKernel):
         self, species: Iterable[int] | None = None, geometry: dict[str, Any] | None = None,
         grid: dict[str, Any] | None = None, weighting: dict[str, Any] | None = None,
         periodic: bool = True, normalize_gaussians: bool = True, normalization: str = "none",
+        num_threads: int | None = None,
     ):
         self.species = tuple(sorted(require_species(species, descriptor=self.name)))
         self.geometry = dict(geometry or {"function": "distance"})
@@ -161,6 +176,9 @@ class MBTRKernel(_StructureKernel):
         if normalization not in {"none", "l2", "n_atoms", "valle_oganov"}:
             raise ValueError("unsupported MBTR normalization")
         self.normalize_gaussians, self.normalization = bool(normalize_gaussians), normalization
+        self.num_threads = 0 if num_threads is None else int(num_threads)
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     def _options(self, batch: StructureBatch, *, local: bool = False) -> tuple[tuple[int, ...], tuple[Any, ...]]:
         species = validate_batch_species(batch, self.species, descriptor=self.name)
@@ -178,7 +196,10 @@ class MBTRKernel(_StructureKernel):
         if grid[3] < 2 or grid[1] <= grid[0] or grid[2] <= 0.0:
             raise ValueError("invalid MBTR grid")
         normalization = {"none": 0, "l2": 1, "n_atoms": 2, "valle_oganov": 3}[self.normalization]
-        return species, (geometry, weighting, normalization, *grid, self.normalize_gaussians, scale, threshold, r_cut, sharpness, local)
+        return species, (
+            geometry, weighting, normalization, *grid, self.normalize_gaussians,
+            scale, threshold, r_cut, sharpness, local, self.num_threads,
+        )
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
@@ -213,6 +234,7 @@ class ValleOganovKernel(MBTRKernel):
         periodic: bool = True,
         normalize_gaussians: bool = True,
         normalization: str | None = None,
+        num_threads: int | None = None,
     ):
         if function == "distance":
             geometry = geometry or {"function": "distance"}
@@ -232,6 +254,7 @@ class ValleOganovKernel(MBTRKernel):
             periodic=periodic,
             normalize_gaussians=normalize_gaussians,
             normalization="valle_oganov" if normalization is None else normalization,
+            num_threads=num_threads,
         )
 
 

@@ -88,7 +88,7 @@ void compute_coulomb_matrix(
     std::vector<std::exception_ptr> exceptions(static_cast<std::size_t>(batch.structures));
     std::atomic<bool> failed{false};
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads()) if(batch.structures > 1)
 #endif
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         if (failed.load(std::memory_order_acquire) || (control && control->cancelled())) {
@@ -100,6 +100,13 @@ void compute_coulomb_matrix(
             const std::int64_t atom_count = end - begin;
 
             std::vector<double> matrix(static_cast<std::size_t>(atom_count * atom_count), 0.0);
+            // The outer loop owns disjoint matrix entries.  When a batch has a
+            // single structure, this row-level loop is the useful parallel
+            // boundary; inside a structure-level team the `if` clause keeps
+            // the computation from creating nested teams.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads()) if(!omp_in_parallel())
+#endif
             for (std::int64_t i = 0; i < atom_count; ++i) {
                 const double zi = static_cast<double>(batch.numbers[begin + i]);
                 const double* first = batch.positions + (begin + i) * 3;
@@ -143,11 +150,18 @@ void compute_coulomb_matrix(
 
 namespace detail {
 
-std::vector<double> coulomb_matrix_values(const StructureBatchView& batch, std::int64_t structure, double exponent) {
+std::vector<double> coulomb_matrix_values(
+    const StructureBatchView& batch,
+    std::int64_t structure,
+    double exponent,
+    int num_threads) {
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
     std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads()) if(count >= 32 && !omp_in_parallel())
+#endif
     for (int i = 0; i < count; ++i) {
         const double zi = static_cast<double>(batch.numbers[begin + i]);
         const Vec3 first = position(batch, begin + i);

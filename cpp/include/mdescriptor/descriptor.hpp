@@ -161,6 +161,7 @@ void compute_coulomb_matrix(
     std::int64_t n_atoms_max,
     const std::string& permutation,
     double exponent,
+    int num_threads,
     double* output,
     const std::shared_ptr<ComputeControl>& control
 );

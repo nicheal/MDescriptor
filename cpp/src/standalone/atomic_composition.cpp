@@ -5,6 +5,10 @@
 #include <cstddef>
 #include <vector>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace mdescriptor {
 using namespace detail;
 
@@ -12,9 +16,13 @@ void compute_atomic_composition(
     const StructureBatchView& batch,
     const std::vector<std::int32_t>& species,
     bool per_system,
+    int num_threads,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
     validate_species(batch, species);
+    if (num_threads < 0) {
+        throw std::invalid_argument("num_threads must be non-negative");
+    }
     if (control) {
         control->reset(batch.structures);
     }
@@ -22,7 +30,7 @@ void compute_atomic_composition(
     const std::int64_t rows = per_system ? batch.structures : batch.atoms;
     std::fill(output, output + rows * static_cast<std::int64_t>(species.size()), 0.0);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
 #endif
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         if (control && control->cancelled()) {

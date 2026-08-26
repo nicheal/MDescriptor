@@ -44,9 +44,17 @@ def _atom_result(values: np.ndarray, batch: StructureBatch, name: str, species: 
 class AtomicCompositionKernel:
     name = "AtomicComposition"
 
-    def __init__(self, species: Iterable[int] | None = None, per_system: bool = True):
+    def __init__(
+        self,
+        species: Iterable[int] | None = None,
+        per_system: bool = True,
+        num_threads: int | None = None,
+    ):
         self.species = require_species(species, descriptor=self.name)
         self.per_system = bool(per_system)
+        self.num_threads = 0 if num_threads is None else int(num_threads)
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -56,7 +64,10 @@ class AtomicCompositionKernel:
         batch = _as_batch(value)
         species = validate_batch_species(batch, self.species, descriptor=self.name)
         self.species = species
-        values = _cpp.compute_atomic_composition(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.per_system, control)
+        values = _cpp.compute_atomic_composition(
+            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
+            list(species), self.per_system, self.num_threads, control,
+        )
         self._feature_count = int(values.shape[1])
         return _atom_result(values, batch, self.name, species, level="structure" if self.per_system else "atom", offsets=None if self.per_system else batch.offsets.copy())
 
@@ -82,17 +93,29 @@ class SortedDistancesKernel(_AtomKernel):
 class NeighborListKernel:
     name = "NeighborList"
 
-    def __init__(self, cutoff: float = 6.0, full_neighbor_list: bool = True, self_pairs: bool = False):
+    def __init__(
+        self,
+        cutoff: float = 6.0,
+        full_neighbor_list: bool = True,
+        self_pairs: bool = False,
+        num_threads: int | None = None,
+    ):
         self.cutoff, self.full_neighbor_list, self.self_pairs = float(cutoff), bool(full_neighbor_list), bool(self_pairs)
+        self.num_threads = 0 if num_threads is None else int(num_threads)
         if self.cutoff <= 0.0:
             raise ValueError("cutoff must be positive")
+        if self.num_threads < 0:
+            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
         return 9
 
     def _raw(self, batch: StructureBatch, control: Any = None) -> tuple[np.ndarray, np.ndarray]:
-        values, offsets = _cpp.compute_neighbor_list(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, self.cutoff, self.full_neighbor_list, self.self_pairs, control)
+        values, offsets = _cpp.compute_neighbor_list(
+            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
+            self.cutoff, self.full_neighbor_list, self.self_pairs, self.num_threads, control,
+        )
         return np.asarray(values, dtype=np.float64), np.asarray(offsets, dtype=np.int64)
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:

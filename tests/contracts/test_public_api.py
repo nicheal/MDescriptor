@@ -191,8 +191,12 @@ def test_common_options_are_applied_or_rejected_at_the_core_boundary():
     assert result.values.dtype == np.float32
     descriptor.close()
 
-    with pytest.raises(DescriptorConfigError, match="does not support execution.num_threads"):
-        AtomicComposition(species=[1, 8], execution=ExecutionOptions(num_threads=2))
+    threaded = AtomicComposition(species=[1, 8], execution=ExecutionOptions(num_threads=2))
+    try:
+        threaded_result = threaded.compute(_batch())
+        assert threaded_result.values.shape == (1, 2)
+    finally:
+        threaded.close()
 
 
 def test_result_validates_row_offsets_and_structure_rows():

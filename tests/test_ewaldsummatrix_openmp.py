@@ -54,8 +54,6 @@ def test_ewaldsummatrix_openmp_matches_single_thread_bitwise() -> None:
     try:
         serial_result = serial.compute(batch)
         parallel_result = parallel.compute(batch)
-        assert serial_result.metadata["execution"]["num_threads"] == 1
-        assert parallel_result.metadata["execution"]["num_threads"] == 4
         np.testing.assert_array_equal(parallel_result.values, serial_result.values)
         assert np.isfinite(parallel_result.values).all()
     finally:

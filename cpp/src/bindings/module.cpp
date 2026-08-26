@@ -206,6 +206,7 @@ py::array compute_coulomb_matrix_array(
     std::int64_t n_atoms_max,
     const std::string& permutation,
     double exponent,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
@@ -223,7 +224,8 @@ py::array compute_coulomb_matrix_array(
     {
         py::gil_scoped_release release;
         mdescriptor::compute_coulomb_matrix(
-            batch, n_atoms_max, permutation, exponent, static_cast<double*>(output_info.ptr), ctrl);
+            batch, n_atoms_max, permutation, exponent, num_threads,
+            static_cast<double*>(output_info.ptr), ctrl);
     }
     return output;
 }
@@ -243,6 +245,7 @@ py::array compute_matrix_array(
     double r_cut,
     double g_cut,
     double a,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
@@ -254,6 +257,7 @@ py::array compute_matrix_array(
         mdescriptor::compute_matrix(
             batch, n_atoms_max, permutation, exponent,
             static_cast<mdescriptor::MatrixKind>(kind), accuracy, w, r_cut, g_cut, a,
+            num_threads,
             output.mutable_data(), ctrl);
     }
     return output;
@@ -279,6 +283,7 @@ py::array compute_mbtr_array(
     double r_cut,
     double sharpness,
     bool local,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
@@ -297,6 +302,7 @@ py::array compute_mbtr_array(
     options.r_cut = r_cut;
     options.sharpness = sharpness;
     options.local = local;
+    options.num_threads = num_threads;
     const auto rows = local ? batch.atoms : batch.structures;
     const auto columns = mdescriptor::mbtr_feature_count(options);
     py::array_t<double> output({rows, columns});
@@ -318,6 +324,7 @@ py::array compute_ead_array(
     double cutoff,
     const std::vector<double>& eta,
     const std::vector<double>& rs,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
@@ -326,6 +333,7 @@ py::array compute_ead_array(
     options.cutoff = cutoff;
     options.eta = eta;
     options.rs = rs;
+    options.num_threads = num_threads;
     const auto columns = mdescriptor::ead_feature_count(options);
     py::array_t<double> output({batch.atoms, columns});
     auto ctrl = control_or_default(control);
@@ -352,6 +360,7 @@ py::array compute_rotational_descriptors_array(
     double weight_scale,
     int twojmax,
     int diagonal,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control,
     double rfac0,
     const std::vector<double>& neighbor_weights,
@@ -376,6 +385,7 @@ py::array compute_rotational_descriptors_array(
     options.neighbor_radii = neighbor_radii;
     options.twojmax = twojmax;
     options.diagonal = diagonal;
+    options.num_threads = num_threads;
     const auto columns = mdescriptor::rotational_feature_count(options);
     py::array_t<double> output({batch.atoms, columns});
     auto ctrl = control_or_default(control);
@@ -394,6 +404,7 @@ py::array compute_atomic_composition_array(
     const I64Array& offsets,
     const std::vector<std::int32_t>& species,
     bool per_system,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
@@ -404,7 +415,8 @@ py::array compute_atomic_composition_array(
     {
         py::gil_scoped_release release;
         mdescriptor::compute_atomic_composition(
-            batch, species, per_system, static_cast<double*>(output_info.ptr), ctrl);
+            batch, species, per_system, num_threads,
+            static_cast<double*>(output_info.ptr), ctrl);
     }
     return output;
 }
@@ -451,6 +463,7 @@ py::tuple compute_neighbor_list_array(
     double cutoff,
     bool full_neighbor_list,
     bool self_pairs,
+    std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
@@ -459,7 +472,7 @@ py::tuple compute_neighbor_list_array(
     {
         py::gil_scoped_release release;
         pairs = mdescriptor::compute_neighbor_list(
-            batch, cutoff, full_neighbor_list, self_pairs, ctrl);
+            batch, cutoff, full_neighbor_list, self_pairs, num_threads, ctrl);
     }
     py::array_t<double> values(std::vector<py::ssize_t>{
         static_cast<py::ssize_t>(pairs.values.size() / 9), 9});
@@ -627,7 +640,8 @@ PYBIND11_MODULE(_native, module) {
     module.def("compute_coulomb_matrix", &compute_coulomb_matrix_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("n_atoms_max"), py::arg("permutation"),
-               py::arg("exponent") = 2.4, py::arg("control") = nullptr);
+               py::arg("exponent") = 2.4, py::arg("num_threads") = 0,
+               py::arg("control") = nullptr);
 
     module.def("compute_matrix", &compute_matrix_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
@@ -635,6 +649,7 @@ PYBIND11_MODULE(_native, module) {
                py::arg("exponent") = 2.4, py::arg("kind") = 0,
                py::arg("accuracy") = 1e-5, py::arg("w") = 1.0,
                py::arg("r_cut") = 0.0, py::arg("g_cut") = 0.0, py::arg("a") = 0.0,
+               py::arg("num_threads") = 0,
                py::arg("control") = nullptr);
 
     module.def("compute_mbtr", &compute_mbtr_array,
@@ -646,12 +661,14 @@ PYBIND11_MODULE(_native, module) {
                py::arg("normalize_gaussians") = true, py::arg("scale") = 0.5,
                py::arg("threshold") = 1e-3, py::arg("r_cut") = 6.0,
                py::arg("sharpness") = 2.0, py::arg("local") = false,
+               py::arg("num_threads") = 0,
                py::arg("control") = nullptr);
 
     module.def("compute_ead", &compute_ead_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("max_degree") = 3, py::arg("cutoff") = 6.0,
-               py::arg("eta"), py::arg("rs"), py::arg("control") = nullptr);
+               py::arg("eta"), py::arg("rs"), py::arg("num_threads") = 0,
+               py::arg("control") = nullptr);
 
     module.def("compute_rotational_descriptors", &compute_rotational_descriptors_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
@@ -659,7 +676,8 @@ PYBIND11_MODULE(_native, module) {
                py::arg("l_max") = 3, py::arg("cutoff") = 3.5, py::arg("alpha") = 2.0,
                py::arg("weight_on") = false, py::arg("normalize_u") = false,
                py::arg("weight_scale") = 1.0, py::arg("twojmax") = 3,
-               py::arg("diagonal") = 3, py::arg("control") = nullptr,
+               py::arg("diagonal") = 3, py::arg("num_threads") = 0,
+               py::arg("control") = nullptr,
                py::arg("rfac0") = 1.0, py::arg("neighbor_weights") = std::vector<double>{},
                py::arg("rmin0") = 0.0, py::arg("rcutfac") = 1.0,
                py::arg("neighbor_radii") = std::vector<double>{});
@@ -667,6 +685,7 @@ PYBIND11_MODULE(_native, module) {
     module.def("compute_atomic_composition", &compute_atomic_composition_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("species"), py::arg("per_system") = true,
+               py::arg("num_threads") = 0,
                py::arg("control") = nullptr);
 
     module.def("compute_sorted_distances", &compute_sorted_distances_array,
@@ -678,7 +697,8 @@ PYBIND11_MODULE(_native, module) {
     module.def("compute_neighbor_list", &compute_neighbor_list_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
                py::arg("offsets"), py::arg("cutoff"), py::arg("full_neighbor_list") = true,
-               py::arg("self_pairs") = false, py::arg("control") = nullptr);
+               py::arg("self_pairs") = false, py::arg("num_threads") = 0,
+               py::arg("control") = nullptr);
 
     module.def("compute_spherical_expansion", &compute_spherical_expansion_array,
                py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),

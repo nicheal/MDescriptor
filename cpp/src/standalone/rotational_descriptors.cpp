@@ -1,5 +1,6 @@
 #include "mdescriptor/extra.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "descriptor_common.hpp"
 #include "extra_common.hpp"
 
 #include <algorithm>
@@ -558,6 +559,7 @@ void compute_rotational_descriptors(
         || !std::isfinite(options.weight_scale) || options.cutoff <= 0.0 || options.l_max < 0
         || options.n_max < 1 || options.alpha <= 0.0 || options.rfac0 <= 0.0
         || options.rmin0 < 0.0 || options.rcutfac <= 0.0
+        || options.num_threads < 0
         || (options.kind == RotationalDescriptorKind::LBispectrum && options.twojmax < 0)) {
         throw std::invalid_argument("invalid rotational descriptor parameters");
     }
@@ -594,9 +596,8 @@ void compute_rotational_descriptors(
     if (options.kind == RotationalDescriptorKind::LBispectrum && !options.neighbor_radii.empty()) {
         graph_cutoff = 2.0 * *std::max_element(options.neighbor_radii.begin(), options.neighbor_radii.end()) * options.rcutfac;
     }
-    const NeighborGraph graph = build_neighbor_graph(batch, graph_cutoff, control);
-    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-        check_cancelled(control);
+    const NeighborGraph graph = build_neighbor_graph(batch, graph_cutoff, control, options.num_threads);
+    auto compute_structure = [&](std::int64_t structure) {
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
         const bool so3 = options.kind == RotationalDescriptorKind::SO3;
@@ -607,7 +608,13 @@ void compute_rotational_descriptors(
         if (!so3) {
             const int expansion_order = options.kind == RotationalDescriptorKind::LBispectrum
                 ? std::max(0, options.twojmax) : 2 * options.l_max;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
+#endif
             for (std::int64_t center = begin; center < end; ++center) {
+                if (cancelled(control)) {
+                    continue;
+                }
                 const auto values = compute_bispectrum_center(
                     batch, center, expansion_order, options.cutoff, options.kind,
                     options.normalize_u, options.weight_scale, options.rfac0,
@@ -615,10 +622,15 @@ void compute_rotational_descriptors(
                     options.neighbor_radii, options.diagonal, graph);
                 std::copy(values.begin(), values.end(), output + center * features);
             }
-            mark_completed(control);
-            continue;
+            return;
         }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
+#endif
         for (std::int64_t center = begin; center < end; ++center) {
+            if (cancelled(control)) {
+                continue;
+            }
             if (so3) {
                 const auto coefficients = so3_coefficients(
                     batch, structure, static_cast<int>(center - begin), options.n_max, l_max,
@@ -643,7 +655,13 @@ void compute_rotational_descriptors(
                 continue;
             }
         }
+    };
+    if (batch.structures == 1) {
+        compute_structure(0);
+        check_cancelled(control);
         mark_completed(control);
+        return;
     }
+    run_parallel_structures(batch.structures, options.num_threads, control, compute_structure);
 }
 } // namespace mdescriptor
