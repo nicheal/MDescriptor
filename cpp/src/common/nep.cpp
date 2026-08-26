@@ -6,8 +6,10 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -805,6 +807,46 @@ void compute_nep(
     const std::size_t workspace_basis = std::max(radial_basis, angular_basis);
     const double neighbor_cutoff = std::max(model.radial_cutoff_max, model.angular_cutoff_max);
 
+    // Batch NEP implementations benefit from keeping the neighbor graph next
+    // to the descriptor work that consumes it.  The old batch path first built
+    // one global graph, copied every per-structure graph into it, and only then
+    // launched the descriptor loop.  NEP_CPU/NEPAdapters instead gives each
+    // worker a scratch area and completes one structure at a time.  Keep that
+    // ownership model here as well; it avoids the global graph merge and keeps
+    // the graph-builder's inner loop serial, so OpenMP is not nested.
+    auto compute_structure = [&](std::int64_t structure,
+                                 std::vector<double>& radial,
+                                 std::vector<double>& sums,
+                                 std::vector<double>& angular,
+                                 std::vector<double>& basis) {
+        const std::int64_t begin = batch.offsets[structure];
+        const std::int64_t end = batch.offsets[structure + 1];
+        const std::int64_t atom_count = end - begin;
+        if (atom_count == 0) return;
+
+        std::array<std::int64_t, 2> local_offsets{0, atom_count};
+        const StructureBatchView local_batch{
+            batch.numbers + begin,
+            batch.positions + begin * 3,
+            batch.cells + structure * 9,
+            batch.pbc + structure * 3,
+            local_offsets.data(),
+            1,
+            atom_count,
+        };
+        // This path is already inside the worker-level parallel region.  A
+        // single-thread graph build prevents nested OpenMP teams while still
+        // allowing every worker to build its own structure graph concurrently.
+        const NeighborGraph graph = build_neighbor_graph(
+            local_batch, neighbor_cutoff, control, 1, true, false, false);
+        const int* local_types = atom_types.data() + begin;
+        for (std::int64_t local = 0; local < atom_count; ++local) {
+            compute_center(
+                graph, local_types, local, begin + local,
+                radial, sums, angular, basis);
+        }
+    };
+
     // For the common single-thread path, consume each structure immediately.
     // This avoids the batch neighbor builder's local-graph concatenation and
     // keeps the graph and descriptor data in cache for small structures.
@@ -813,35 +855,55 @@ void compute_nep(
         std::vector<double> sums(angular_n * static_cast<std::size_t>(kNumAngularTerms));
         std::vector<double> angular(angular_n * static_cast<std::size_t>(model.num_l));
         std::vector<double> basis(workspace_basis);
-        std::array<std::int64_t, 2> local_offsets{};
         for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
             if (control && control->cancelled()) break;
-            const std::int64_t begin = batch.offsets[structure];
-            const std::int64_t end = batch.offsets[structure + 1];
-            const std::int64_t atom_count = end - begin;
-            if (atom_count == 0) continue;
-            local_offsets[0] = 0;
-            local_offsets[1] = atom_count;
-            const StructureBatchView local_batch{
-                batch.numbers + begin,
-                batch.positions + begin * 3,
-                batch.cells + structure * 9,
-                batch.pbc + structure * 3,
-                local_offsets.data(),
-                1,
-                atom_count,
-            };
-            const NeighborGraph graph = build_neighbor_graph(
-                local_batch, neighbor_cutoff, control, 1, true, false, false);
-            compute_center(
-                graph, atom_types.data() + begin, 0, begin,
-                radial, sums, angular, basis);
-            for (std::int64_t local = 1; local < atom_count; ++local) {
-                compute_center(
-                    graph, atom_types.data() + begin, local, begin + local,
-                    radial, sums, angular, basis);
+            compute_structure(structure, radial, sums, angular, basis);
+        }
+        if (control && control->cancelled()) throw CancelledError();
+        return;
+    }
+
+    if (batch.structures > 1) {
+        std::exception_ptr parallel_error;
+        std::mutex parallel_error_mutex;
+        auto record_error = [&](std::exception_ptr error) {
+            std::lock_guard<std::mutex> guard(parallel_error_mutex);
+            if (!parallel_error) parallel_error = std::move(error);
+        };
+#ifdef _OPENMP
+        const int workers = num_threads > 0 ? num_threads : omp_get_max_threads();
+#pragma omp parallel num_threads(workers)
+        {
+            std::vector<double> radial(radial_n);
+            std::vector<double> sums(angular_n * static_cast<std::size_t>(kNumAngularTerms));
+            std::vector<double> angular(angular_n * static_cast<std::size_t>(model.num_l));
+            std::vector<double> basis(workspace_basis);
+#pragma omp for schedule(dynamic, 1)
+            for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+                if (control && control->cancelled()) continue;
+                try {
+                    compute_structure(structure, radial, sums, angular, basis);
+                } catch (...) {
+                    record_error(std::current_exception());
+                }
             }
         }
+#else
+        std::vector<double> radial(radial_n);
+        std::vector<double> sums(angular_n * static_cast<std::size_t>(kNumAngularTerms));
+        std::vector<double> angular(angular_n * static_cast<std::size_t>(model.num_l));
+        std::vector<double> basis(workspace_basis);
+        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+            if (control && control->cancelled()) break;
+            try {
+                compute_structure(structure, radial, sums, angular, basis);
+            } catch (...) {
+                record_error(std::current_exception());
+                break;
+            }
+        }
+#endif
+        if (parallel_error) std::rethrow_exception(parallel_error);
         if (control && control->cancelled()) throw CancelledError();
         return;
     }
