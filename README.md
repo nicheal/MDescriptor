@@ -18,6 +18,9 @@ src/mdescriptor/descriptors/
   standalone/                 no model required (matrices/, many_body/, local/, rotational/)
   model_backed/               graph seam plus NEP, DPA4, DPA4C
 src/mdescriptor/models/assets/ packaged, hash-verified model resources
+tests/golden/              descriptor-owned, benchmark-independent accuracy fixtures
+scripts/benchmarking/      controlled local benchmark runners
+benchmarks/                local-only benchmark snapshots (ignored by Git)
 ```
 
 `standalone` descriptors never require a model file. `model_backed` descriptors

@@ -1,1 +1,0 @@
-{"case_id": "pyxtal_ff_acsf", "dtype": "float64", "phase_seconds": {"import": 1.58179681400361, "input": 0.21370755600219127, "kernel": 54.196370780991856, "model": 2.1240994101390243e-05, "total": 55.991900225999416}, "shape": [28337, 1], "status": "ok"}

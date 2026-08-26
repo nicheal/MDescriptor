@@ -1,0 +1,438 @@
+{
+  "configuration": {
+    "descriptor": "DPA4",
+    "parameters": {
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "model": {
+        "__type__": "ModelResource",
+        "expected_sha256": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23",
+        "identifier": "DPA4-Air-OMat24-v20260704",
+        "name": "DPA4-Air-OMat24-v20260704.pt"
+      },
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      }
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "two-structure-v1",
+    "sha256": "2a727a880fef8e2de10d4015b1bcec7650c190a2da2fab01e4fb786922f97591",
+    "source": "promoted-local-dataset"
+  },
+  "descriptor": "DPA4",
+  "expected_output": "expected_output.npz",
+  "input": "input.npz",
+  "input_ids": [
+    "hea32-periodic",
+    "water3-nonperiodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "kind": "bundled_dpa4desc_periodic_plus_current_nonperiodic",
+    "nonperiodic_reason": "Singular matrix",
+    "sha256": "ebdceb60c34c60b5e7987147e57262e5355d82ba8338fb5c20e1930d910ee887"
+  },
+  "result": {
+    "feature_count": 64,
+    "labels": [
+      "dpa4:scalar,channel=0",
+      "dpa4:scalar,channel=1",
+      "dpa4:scalar,channel=2",
+      "dpa4:scalar,channel=3",
+      "dpa4:scalar,channel=4",
+      "dpa4:scalar,channel=5",
+      "dpa4:scalar,channel=6",
+      "dpa4:scalar,channel=7",
+      "dpa4:scalar,channel=8",
+      "dpa4:scalar,channel=9",
+      "dpa4:scalar,channel=10",
+      "dpa4:scalar,channel=11",
+      "dpa4:scalar,channel=12",
+      "dpa4:scalar,channel=13",
+      "dpa4:scalar,channel=14",
+      "dpa4:scalar,channel=15",
+      "dpa4:scalar,channel=16",
+      "dpa4:scalar,channel=17",
+      "dpa4:scalar,channel=18",
+      "dpa4:scalar,channel=19",
+      "dpa4:scalar,channel=20",
+      "dpa4:scalar,channel=21",
+      "dpa4:scalar,channel=22",
+      "dpa4:scalar,channel=23",
+      "dpa4:scalar,channel=24",
+      "dpa4:scalar,channel=25",
+      "dpa4:scalar,channel=26",
+      "dpa4:scalar,channel=27",
+      "dpa4:scalar,channel=28",
+      "dpa4:scalar,channel=29",
+      "dpa4:scalar,channel=30",
+      "dpa4:scalar,channel=31",
+      "dpa4:scalar,channel=32",
+      "dpa4:scalar,channel=33",
+      "dpa4:scalar,channel=34",
+      "dpa4:scalar,channel=35",
+      "dpa4:scalar,channel=36",
+      "dpa4:scalar,channel=37",
+      "dpa4:scalar,channel=38",
+      "dpa4:scalar,channel=39",
+      "dpa4:scalar,channel=40",
+      "dpa4:scalar,channel=41",
+      "dpa4:scalar,channel=42",
+      "dpa4:scalar,channel=43",
+      "dpa4:scalar,channel=44",
+      "dpa4:scalar,channel=45",
+      "dpa4:scalar,channel=46",
+      "dpa4:scalar,channel=47",
+      "dpa4:scalar,channel=48",
+      "dpa4:scalar,channel=49",
+      "dpa4:scalar,channel=50",
+      "dpa4:scalar,channel=51",
+      "dpa4:scalar,channel=52",
+      "dpa4:scalar,channel=53",
+      "dpa4:scalar,channel=54",
+      "dpa4:scalar,channel=55",
+      "dpa4:scalar,channel=56",
+      "dpa4:scalar,channel=57",
+      "dpa4:scalar,channel=58",
+      "dpa4:scalar,channel=59",
+      "dpa4:scalar,channel=60",
+      "dpa4:scalar,channel=61",
+      "dpa4:scalar,channel=62",
+      "dpa4:scalar,channel=63"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-dpa4-numpy",
+      "descriptor": "DPA4",
+      "details": {
+        "add_chg_spin_ebd": false,
+        "basis_type": "bessel",
+        "channels": 64,
+        "lmax": 3,
+        "n_radial": 16,
+        "precision": "float32",
+        "rcut": 6.0,
+        "type_map": [
+          "H",
+          "He",
+          "Li",
+          "Be",
+          "B",
+          "C",
+          "N",
+          "O",
+          "F",
+          "Ne",
+          "Na",
+          "Mg",
+          "Al",
+          "Si",
+          "P",
+          "S",
+          "Cl",
+          "Ar",
+          "K",
+          "Ca",
+          "Sc",
+          "Ti",
+          "V",
+          "Cr",
+          "Mn",
+          "Fe",
+          "Co",
+          "Ni",
+          "Cu",
+          "Zn",
+          "Ga",
+          "Ge",
+          "As",
+          "Se",
+          "Br",
+          "Kr",
+          "Rb",
+          "Sr",
+          "Y",
+          "Zr",
+          "Nb",
+          "Mo",
+          "Tc",
+          "Ru",
+          "Rh",
+          "Pd",
+          "Ag",
+          "Cd",
+          "In",
+          "Sn",
+          "Sb",
+          "Te",
+          "I",
+          "Xe",
+          "Cs",
+          "Ba",
+          "La",
+          "Ce",
+          "Pr",
+          "Nd",
+          "Pm",
+          "Sm",
+          "Eu",
+          "Gd",
+          "Tb",
+          "Dy",
+          "Ho",
+          "Er",
+          "Tm",
+          "Yb",
+          "Lu",
+          "Hf",
+          "Ta",
+          "W",
+          "Re",
+          "Os",
+          "Ir",
+          "Pt",
+          "Au",
+          "Hg",
+          "Tl",
+          "Pb",
+          "Bi",
+          "Po",
+          "At",
+          "Rn",
+          "Fr",
+          "Ra",
+          "Ac",
+          "Th",
+          "Pa",
+          "U",
+          "Np",
+          "Pu",
+          "Am",
+          "Cm",
+          "Bk",
+          "Cf",
+          "Es",
+          "Fm",
+          "Md",
+          "No",
+          "Lr",
+          "Rf",
+          "Db",
+          "Sg",
+          "Bh",
+          "Hs",
+          "Mt",
+          "Ds",
+          "Rg",
+          "Cn",
+          "Nh",
+          "Fl",
+          "Mc",
+          "Lv",
+          "Ts",
+          "Og"
+        ],
+        "use_spin": null
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 64,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      32,
+      41
+    ],
+    "samples": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        7
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        0,
+        12
+      ],
+      [
+        0,
+        13
+      ],
+      [
+        0,
+        14
+      ],
+      [
+        0,
+        15
+      ],
+      [
+        0,
+        16
+      ],
+      [
+        0,
+        17
+      ],
+      [
+        0,
+        18
+      ],
+      [
+        0,
+        19
+      ],
+      [
+        0,
+        20
+      ],
+      [
+        0,
+        21
+      ],
+      [
+        0,
+        22
+      ],
+      [
+        0,
+        23
+      ],
+      [
+        0,
+        24
+      ],
+      [
+        0,
+        25
+      ],
+      [
+        0,
+        26
+      ],
+      [
+        0,
+        27
+      ],
+      [
+        0,
+        28
+      ],
+      [
+        0,
+        29
+      ],
+      [
+        0,
+        30
+      ],
+      [
+        0,
+        31
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ]
+    ],
+    "structure_ids": [
+      "hea32-periodic",
+      "water3-nonperiodic"
+    ]
+  },
+  "schema_version": 1,
+  "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
+  "tolerance": {
+    "atol": 1e-05,
+    "rtol": 2e-05
+  }
+}

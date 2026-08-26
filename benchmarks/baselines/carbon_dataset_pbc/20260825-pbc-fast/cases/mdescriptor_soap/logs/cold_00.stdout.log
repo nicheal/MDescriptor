@@ -1,1 +1,0 @@
-{"case_id": "mdescriptor_soap", "dtype": "float64", "phase_seconds": {"import": 0.007092498999554664, "input": 0.3477575740107568, "kernel": 0.3223048240033677, "model": 0.004378685989649966, "total": 0.681536877003964}, "shape": [28337, 18], "status": "ok"}

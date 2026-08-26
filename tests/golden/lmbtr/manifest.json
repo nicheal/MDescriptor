@@ -1,0 +1,402 @@
+{
+  "configuration": {
+    "descriptor": "LMBTR",
+    "parameters": {
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "geometry": {
+        "function": "distance"
+      },
+      "grid": {
+        "max": 4.0,
+        "min": 0.0,
+        "n": 20,
+        "sigma": 0.1
+      },
+      "normalization": "none",
+      "normalize_gaussians": true,
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "periodic": true,
+      "species": [
+        1,
+        8,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "weighting": {
+        "function": "exp",
+        "scale": 0.3,
+        "threshold": 0.001
+      }
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "two-structure-v1",
+    "sha256": "2a727a880fef8e2de10d4015b1bcec7650c190a2da2fab01e4fb786922f97591",
+    "source": "promoted-local-dataset"
+  },
+  "descriptor": "LMBTR",
+  "expected_output": "expected_output.npz",
+  "input": "input.npz",
+  "input_ids": [
+    "hea32-periodic",
+    "water3-nonperiodic"
+  ],
+  "nonperiodic": {
+    "match": "only periodic MBTR is supported",
+    "mode": "contract_rejection",
+    "type": "ValueError"
+  },
+  "reference": {
+    "kind": "project_commit",
+    "source_commit": "HEAD",
+    "wheel": {
+      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
+    }
+  },
+  "result": {
+    "feature_count": 160,
+    "labels": [
+      "LMBTR:0",
+      "LMBTR:1",
+      "LMBTR:2",
+      "LMBTR:3",
+      "LMBTR:4",
+      "LMBTR:5",
+      "LMBTR:6",
+      "LMBTR:7",
+      "LMBTR:8",
+      "LMBTR:9",
+      "LMBTR:10",
+      "LMBTR:11",
+      "LMBTR:12",
+      "LMBTR:13",
+      "LMBTR:14",
+      "LMBTR:15",
+      "LMBTR:16",
+      "LMBTR:17",
+      "LMBTR:18",
+      "LMBTR:19",
+      "LMBTR:20",
+      "LMBTR:21",
+      "LMBTR:22",
+      "LMBTR:23",
+      "LMBTR:24",
+      "LMBTR:25",
+      "LMBTR:26",
+      "LMBTR:27",
+      "LMBTR:28",
+      "LMBTR:29",
+      "LMBTR:30",
+      "LMBTR:31",
+      "LMBTR:32",
+      "LMBTR:33",
+      "LMBTR:34",
+      "LMBTR:35",
+      "LMBTR:36",
+      "LMBTR:37",
+      "LMBTR:38",
+      "LMBTR:39",
+      "LMBTR:40",
+      "LMBTR:41",
+      "LMBTR:42",
+      "LMBTR:43",
+      "LMBTR:44",
+      "LMBTR:45",
+      "LMBTR:46",
+      "LMBTR:47",
+      "LMBTR:48",
+      "LMBTR:49",
+      "LMBTR:50",
+      "LMBTR:51",
+      "LMBTR:52",
+      "LMBTR:53",
+      "LMBTR:54",
+      "LMBTR:55",
+      "LMBTR:56",
+      "LMBTR:57",
+      "LMBTR:58",
+      "LMBTR:59",
+      "LMBTR:60",
+      "LMBTR:61",
+      "LMBTR:62",
+      "LMBTR:63",
+      "LMBTR:64",
+      "LMBTR:65",
+      "LMBTR:66",
+      "LMBTR:67",
+      "LMBTR:68",
+      "LMBTR:69",
+      "LMBTR:70",
+      "LMBTR:71",
+      "LMBTR:72",
+      "LMBTR:73",
+      "LMBTR:74",
+      "LMBTR:75",
+      "LMBTR:76",
+      "LMBTR:77",
+      "LMBTR:78",
+      "LMBTR:79",
+      "LMBTR:80",
+      "LMBTR:81",
+      "LMBTR:82",
+      "LMBTR:83",
+      "LMBTR:84",
+      "LMBTR:85",
+      "LMBTR:86",
+      "LMBTR:87",
+      "LMBTR:88",
+      "LMBTR:89",
+      "LMBTR:90",
+      "LMBTR:91",
+      "LMBTR:92",
+      "LMBTR:93",
+      "LMBTR:94",
+      "LMBTR:95",
+      "LMBTR:96",
+      "LMBTR:97",
+      "LMBTR:98",
+      "LMBTR:99",
+      "LMBTR:100",
+      "LMBTR:101",
+      "LMBTR:102",
+      "LMBTR:103",
+      "LMBTR:104",
+      "LMBTR:105",
+      "LMBTR:106",
+      "LMBTR:107",
+      "LMBTR:108",
+      "LMBTR:109",
+      "LMBTR:110",
+      "LMBTR:111",
+      "LMBTR:112",
+      "LMBTR:113",
+      "LMBTR:114",
+      "LMBTR:115",
+      "LMBTR:116",
+      "LMBTR:117",
+      "LMBTR:118",
+      "LMBTR:119",
+      "LMBTR:120",
+      "LMBTR:121",
+      "LMBTR:122",
+      "LMBTR:123",
+      "LMBTR:124",
+      "LMBTR:125",
+      "LMBTR:126",
+      "LMBTR:127",
+      "LMBTR:128",
+      "LMBTR:129",
+      "LMBTR:130",
+      "LMBTR:131",
+      "LMBTR:132",
+      "LMBTR:133",
+      "LMBTR:134",
+      "LMBTR:135",
+      "LMBTR:136",
+      "LMBTR:137",
+      "LMBTR:138",
+      "LMBTR:139",
+      "LMBTR:140",
+      "LMBTR:141",
+      "LMBTR:142",
+      "LMBTR:143",
+      "LMBTR:144",
+      "LMBTR:145",
+      "LMBTR:146",
+      "LMBTR:147",
+      "LMBTR:148",
+      "LMBTR:149",
+      "LMBTR:150",
+      "LMBTR:151",
+      "LMBTR:152",
+      "LMBTR:153",
+      "LMBTR:154",
+      "LMBTR:155",
+      "LMBTR:156",
+      "LMBTR:157",
+      "LMBTR:158",
+      "LMBTR:159"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "LMBTR",
+      "details": {
+        "species": [
+          1,
+          8,
+          24,
+          25,
+          26,
+          27,
+          28
+        ]
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 160,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      32
+    ],
+    "samples": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        7
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        0,
+        12
+      ],
+      [
+        0,
+        13
+      ],
+      [
+        0,
+        14
+      ],
+      [
+        0,
+        15
+      ],
+      [
+        0,
+        16
+      ],
+      [
+        0,
+        17
+      ],
+      [
+        0,
+        18
+      ],
+      [
+        0,
+        19
+      ],
+      [
+        0,
+        20
+      ],
+      [
+        0,
+        21
+      ],
+      [
+        0,
+        22
+      ],
+      [
+        0,
+        23
+      ],
+      [
+        0,
+        24
+      ],
+      [
+        0,
+        25
+      ],
+      [
+        0,
+        26
+      ],
+      [
+        0,
+        27
+      ],
+      [
+        0,
+        28
+      ],
+      [
+        0,
+        29
+      ],
+      [
+        0,
+        30
+      ],
+      [
+        0,
+        31
+      ]
+    ],
+    "structure_ids": [
+      "hea32-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
+  "tolerance": {
+    "atol": 1e-11,
+    "rtol": 1e-09
+  }
+}

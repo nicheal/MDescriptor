@@ -1,0 +1,412 @@
+{
+  "configuration": {
+    "descriptor": "SoapRadialSpectrum",
+    "parameters": {
+      "cutoff": 3.5,
+      "density_width": 0.6,
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "max_angular": 2,
+      "max_radial": 2,
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "species": [
+        1,
+        8,
+        24,
+        25,
+        26,
+        27,
+        28
+      ]
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "two-structure-v1",
+    "sha256": "2a727a880fef8e2de10d4015b1bcec7650c190a2da2fab01e4fb786922f97591",
+    "source": "promoted-local-dataset"
+  },
+  "descriptor": "SoapRadialSpectrum",
+  "expected_output": "expected_output.npz",
+  "input": "input.npz",
+  "input_ids": [
+    "hea32-periodic",
+    "water3-nonperiodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "kind": "project_commit",
+    "source_commit": "HEAD",
+    "wheel": {
+      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
+    }
+  },
+  "result": {
+    "feature_count": 147,
+    "labels": [
+      "SoapRadialSpectrum:0",
+      "SoapRadialSpectrum:1",
+      "SoapRadialSpectrum:2",
+      "SoapRadialSpectrum:3",
+      "SoapRadialSpectrum:4",
+      "SoapRadialSpectrum:5",
+      "SoapRadialSpectrum:6",
+      "SoapRadialSpectrum:7",
+      "SoapRadialSpectrum:8",
+      "SoapRadialSpectrum:9",
+      "SoapRadialSpectrum:10",
+      "SoapRadialSpectrum:11",
+      "SoapRadialSpectrum:12",
+      "SoapRadialSpectrum:13",
+      "SoapRadialSpectrum:14",
+      "SoapRadialSpectrum:15",
+      "SoapRadialSpectrum:16",
+      "SoapRadialSpectrum:17",
+      "SoapRadialSpectrum:18",
+      "SoapRadialSpectrum:19",
+      "SoapRadialSpectrum:20",
+      "SoapRadialSpectrum:21",
+      "SoapRadialSpectrum:22",
+      "SoapRadialSpectrum:23",
+      "SoapRadialSpectrum:24",
+      "SoapRadialSpectrum:25",
+      "SoapRadialSpectrum:26",
+      "SoapRadialSpectrum:27",
+      "SoapRadialSpectrum:28",
+      "SoapRadialSpectrum:29",
+      "SoapRadialSpectrum:30",
+      "SoapRadialSpectrum:31",
+      "SoapRadialSpectrum:32",
+      "SoapRadialSpectrum:33",
+      "SoapRadialSpectrum:34",
+      "SoapRadialSpectrum:35",
+      "SoapRadialSpectrum:36",
+      "SoapRadialSpectrum:37",
+      "SoapRadialSpectrum:38",
+      "SoapRadialSpectrum:39",
+      "SoapRadialSpectrum:40",
+      "SoapRadialSpectrum:41",
+      "SoapRadialSpectrum:42",
+      "SoapRadialSpectrum:43",
+      "SoapRadialSpectrum:44",
+      "SoapRadialSpectrum:45",
+      "SoapRadialSpectrum:46",
+      "SoapRadialSpectrum:47",
+      "SoapRadialSpectrum:48",
+      "SoapRadialSpectrum:49",
+      "SoapRadialSpectrum:50",
+      "SoapRadialSpectrum:51",
+      "SoapRadialSpectrum:52",
+      "SoapRadialSpectrum:53",
+      "SoapRadialSpectrum:54",
+      "SoapRadialSpectrum:55",
+      "SoapRadialSpectrum:56",
+      "SoapRadialSpectrum:57",
+      "SoapRadialSpectrum:58",
+      "SoapRadialSpectrum:59",
+      "SoapRadialSpectrum:60",
+      "SoapRadialSpectrum:61",
+      "SoapRadialSpectrum:62",
+      "SoapRadialSpectrum:63",
+      "SoapRadialSpectrum:64",
+      "SoapRadialSpectrum:65",
+      "SoapRadialSpectrum:66",
+      "SoapRadialSpectrum:67",
+      "SoapRadialSpectrum:68",
+      "SoapRadialSpectrum:69",
+      "SoapRadialSpectrum:70",
+      "SoapRadialSpectrum:71",
+      "SoapRadialSpectrum:72",
+      "SoapRadialSpectrum:73",
+      "SoapRadialSpectrum:74",
+      "SoapRadialSpectrum:75",
+      "SoapRadialSpectrum:76",
+      "SoapRadialSpectrum:77",
+      "SoapRadialSpectrum:78",
+      "SoapRadialSpectrum:79",
+      "SoapRadialSpectrum:80",
+      "SoapRadialSpectrum:81",
+      "SoapRadialSpectrum:82",
+      "SoapRadialSpectrum:83",
+      "SoapRadialSpectrum:84",
+      "SoapRadialSpectrum:85",
+      "SoapRadialSpectrum:86",
+      "SoapRadialSpectrum:87",
+      "SoapRadialSpectrum:88",
+      "SoapRadialSpectrum:89",
+      "SoapRadialSpectrum:90",
+      "SoapRadialSpectrum:91",
+      "SoapRadialSpectrum:92",
+      "SoapRadialSpectrum:93",
+      "SoapRadialSpectrum:94",
+      "SoapRadialSpectrum:95",
+      "SoapRadialSpectrum:96",
+      "SoapRadialSpectrum:97",
+      "SoapRadialSpectrum:98",
+      "SoapRadialSpectrum:99",
+      "SoapRadialSpectrum:100",
+      "SoapRadialSpectrum:101",
+      "SoapRadialSpectrum:102",
+      "SoapRadialSpectrum:103",
+      "SoapRadialSpectrum:104",
+      "SoapRadialSpectrum:105",
+      "SoapRadialSpectrum:106",
+      "SoapRadialSpectrum:107",
+      "SoapRadialSpectrum:108",
+      "SoapRadialSpectrum:109",
+      "SoapRadialSpectrum:110",
+      "SoapRadialSpectrum:111",
+      "SoapRadialSpectrum:112",
+      "SoapRadialSpectrum:113",
+      "SoapRadialSpectrum:114",
+      "SoapRadialSpectrum:115",
+      "SoapRadialSpectrum:116",
+      "SoapRadialSpectrum:117",
+      "SoapRadialSpectrum:118",
+      "SoapRadialSpectrum:119",
+      "SoapRadialSpectrum:120",
+      "SoapRadialSpectrum:121",
+      "SoapRadialSpectrum:122",
+      "SoapRadialSpectrum:123",
+      "SoapRadialSpectrum:124",
+      "SoapRadialSpectrum:125",
+      "SoapRadialSpectrum:126",
+      "SoapRadialSpectrum:127",
+      "SoapRadialSpectrum:128",
+      "SoapRadialSpectrum:129",
+      "SoapRadialSpectrum:130",
+      "SoapRadialSpectrum:131",
+      "SoapRadialSpectrum:132",
+      "SoapRadialSpectrum:133",
+      "SoapRadialSpectrum:134",
+      "SoapRadialSpectrum:135",
+      "SoapRadialSpectrum:136",
+      "SoapRadialSpectrum:137",
+      "SoapRadialSpectrum:138",
+      "SoapRadialSpectrum:139",
+      "SoapRadialSpectrum:140",
+      "SoapRadialSpectrum:141",
+      "SoapRadialSpectrum:142",
+      "SoapRadialSpectrum:143",
+      "SoapRadialSpectrum:144",
+      "SoapRadialSpectrum:145",
+      "SoapRadialSpectrum:146"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "SoapRadialSpectrum",
+      "details": {
+        "species": [
+          1,
+          8,
+          24,
+          25,
+          26,
+          27,
+          28
+        ]
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 147,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      32,
+      41
+    ],
+    "samples": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        7
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        0,
+        12
+      ],
+      [
+        0,
+        13
+      ],
+      [
+        0,
+        14
+      ],
+      [
+        0,
+        15
+      ],
+      [
+        0,
+        16
+      ],
+      [
+        0,
+        17
+      ],
+      [
+        0,
+        18
+      ],
+      [
+        0,
+        19
+      ],
+      [
+        0,
+        20
+      ],
+      [
+        0,
+        21
+      ],
+      [
+        0,
+        22
+      ],
+      [
+        0,
+        23
+      ],
+      [
+        0,
+        24
+      ],
+      [
+        0,
+        25
+      ],
+      [
+        0,
+        26
+      ],
+      [
+        0,
+        27
+      ],
+      [
+        0,
+        28
+      ],
+      [
+        0,
+        29
+      ],
+      [
+        0,
+        30
+      ],
+      [
+        0,
+        31
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ]
+    ],
+    "structure_ids": [
+      "hea32-periodic",
+      "water3-nonperiodic"
+    ]
+  },
+  "schema_version": 1,
+  "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
+  "tolerance": {
+    "atol": 1e-11,
+    "rtol": 1e-09
+  }
+}

@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -14,36 +11,31 @@ from tests._public import DPA4C, StructureBatch
 
 pytestmark = pytest.mark.model
 
-ROOT = Path(__file__).parents[1]
 MODEL = DPA4C_MODEL
-GOLDEN = ROOT / "tests" / "data" / "dpa4c_air_h2o_golden.json"
 
-def _fixture() -> tuple[StructureBatch, np.ndarray]:
-    payload = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    batch = StructureBatch(
-        np.asarray(payload["numbers"], dtype=np.int32),
-        np.asarray(payload["positions"], dtype=np.float64),
-        np.asarray(payload["cells"], dtype=np.float64),
-        np.asarray(payload["pbc"], dtype=np.int32),
-        np.asarray(payload["offsets"], dtype=np.int64),
+def _fixture() -> StructureBatch:
+    return StructureBatch(
+        np.asarray([8, 1, 1, 8, 1, 1], dtype=np.int32),
+        np.asarray(
+            [[4.00, 4.00, 4.00], [4.76, 4.58, 4.00], [3.24, 4.58, 4.00],
+             [7.00, 7.00, 7.00], [7.76, 7.58, 7.00], [6.24, 7.58, 7.00]],
+            dtype=np.float64,
+        ),
+        np.stack((np.eye(3) * 12.0, np.eye(3) * 12.0)),
+        np.ones((2, 3), dtype=np.int32),
+        np.asarray([0, 3, 6], dtype=np.int64),
         ("golden-0", "golden-1"),
     )
-    expected = np.asarray(payload["values"], dtype=np.float64).reshape(-1, 219)
-    return batch, expected
 
 
 def test_dpa4c_matches_official_golden_fixture():
-    batch, expected = _fixture()
-    result = DPA4C(model=MODEL).compute(batch)
-    assert result.values.shape == (6, 219)
-    assert result.level == "atom"
-    assert result.metadata["backend"] == "mdescriptor-dpa4c-numpy"
-    assert len(result.labels) == 219
-    np.testing.assert_allclose(result.values, expected, rtol=2e-5, atol=1e-6)
+    from tests._golden import assert_descriptor_golden
+
+    assert_descriptor_golden("DPA4C")
 
 
 def test_dpa4c_is_rotation_and_atom_permutation_invariant():
-    batch, _ = _fixture()
+    batch = _fixture()
     calculator = DPA4C(model=MODEL)
     baseline = calculator.compute(batch).values
 
@@ -69,7 +61,7 @@ def test_dpa4c_is_rotation_and_atom_permutation_invariant():
 
 
 def test_dpa4c_maps_atomic_numbers_through_checkpoint_type_map():
-    batch, _ = _fixture()
+    batch = _fixture()
     calculator = DPA4C(model=MODEL)
     with pytest.raises(ValueError, match="absent from the checkpoint type_map"):
         calculator.compute(
@@ -90,7 +82,7 @@ def test_dpa4c_uses_the_bundled_checkpoint_by_default():
 
 
 def test_dpa4c_calibration_is_an_explicit_runtime_option():
-    batch, _ = _fixture()
+    batch = _fixture()
     calibrated = DPA4C(model=MODEL, calibrate=True).compute(batch)
     raw = DPA4C(model=MODEL, calibrate=False).compute(batch)
     assert calibrated.metadata["details"]["calibrated"] is True

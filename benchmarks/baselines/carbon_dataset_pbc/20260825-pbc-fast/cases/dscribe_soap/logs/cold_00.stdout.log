@@ -1,1 +1,0 @@
-{"case_id": "dscribe_soap", "dtype": "float64", "phase_seconds": {"import": 1.25099207200401, "input": 0.15817564500321168, "kernel": 0.3649045639904216, "model": 0.000600888000917621, "total": 1.77467667000019}, "shape": [28337, 18], "status": "ok"}

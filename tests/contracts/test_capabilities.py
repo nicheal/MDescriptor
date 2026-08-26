@@ -18,7 +18,7 @@ from mdescriptor import (
 )
 
 ROOT = Path(__file__).parents[2]
-MANIFEST = ROOT / "tests" / "data" / "numerical_baselines" / "manifest.json"
+GOLDEN_ROOT = ROOT / "tests" / "golden"
 
 
 def _restore_paths(value):
@@ -32,13 +32,13 @@ def _restore_paths(value):
 
 
 def _configurations() -> dict[str, DescriptorConfiguration]:
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     result: dict[str, DescriptorConfiguration] = {}
-    for case in manifest["cases"]:
+    for path in sorted(GOLDEN_ROOT.glob("*/manifest.json")):
+        case = json.loads(path.read_text(encoding="utf-8"))
         name = case["descriptor"]
         if name not in result:
             result[name] = DescriptorConfiguration.from_dict(
-                _restore_paths(case["configuration"])
+                _restore_paths(case["configuration"]),
             )
     return result
 

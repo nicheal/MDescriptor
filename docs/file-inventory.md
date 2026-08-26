@@ -1,6 +1,6 @@
 # MDescriptor 文件作用清单
 
-本表按 `git ls-files` 统计，覆盖项目中 228 个已纳入版本控制的文件。`.venv`、
+本表按 `git ls-files` 统计，覆盖项目中当前纳入版本控制的文件。`.venv`、
 `dist`、`__pycache__`、测试缓存和其他构建生成物未纳入；`_vendor` 下的文件是随
 项目打包的 DPA4 推理实现，单独列出以保持文件级完整性。
 
@@ -15,10 +15,6 @@
 | `CMakeLists.txt` | 声明 C++17 原生扩展的源文件、编译选项、OpenMP 和安装位置。 |
 | `LICENSE` | 项目 GPLv3 许可证全文。 |
 | `README.md` | 项目简介、目录布局、安装方式、输入契约、描述符 API 和模型资源说明。 |
-| `benchmarks/soap_diverse_dataset_300.xyz` | SOAP 等描述符基准使用的 300 个多样化周期结构数据集。 |
-| `benchmarks/carbon_dataset_pbc.xyz` | 含晶胞、周期性、能量、力和 virial 字段的 450 帧碳 extxyz 基准数据集。 |
-| `benchmarks/run_real_data_baseline.py` | 在固定 extxyz 输入上隔离运行各描述符包，保存原始/归一化输出、哈希、耗时和严格精度比较。 |
-| `benchmarks/build_vaspmlff_reference.py` | 从 `.deps/vaspmlff.zip` 的 Fortran 源码构建 Linux C00PS 参考共享库并记录构建信息。 |
 | `docs/descriptor-cpp-plan.md` | C++ 描述符边界、Python/C++ 分工、构建发布和后续重构计划。 |
 | `docs/descriptor-inventory.md` | 从内置 registry 派生的描述符名称、后端、输出级别和能力清单。 |
 | `docs/plan.md` | 项目剩余重构收口、数值冻结、模型资源、测试和验收计划。 |
@@ -78,9 +74,11 @@
 |---|---|
 | `scripts/build_reference_wheel.py` | 在隔离临时目录构建指定参考版本的 wheel，供数值基线生成使用。 |
 | `scripts/check_descriptor_inventory.py` | 从 builtin registry 渲染或检查 `docs/descriptor-inventory.md`。 |
-| `scripts/generate_model_goldens.py` | 使用内置 DPA4/DPA4C checkpoint 生成带 hash 和输出值的 golden JSON。 |
-| `scripts/generate_numerical_baselines.py` | 运行当前实现或参考 wheel，生成全描述符 NPZ 数值基线和 manifest。 |
-| `scripts/run_benchmark.py` | 根据描述符配置和固定输入运行基准，记录环境、耗时和结果信息。 |
+| `scripts/descriptor_reference.py` | 为双结构 golden 生成器提供 reference wheel、DPA evaluator 和结果规范化辅助。 |
+| `scripts/generate_descriptor_goldens.py` | 用显式 reference wheel 生成双结构本地 benchmark snapshot。 |
+| `scripts/promote_descriptor_golden.py` | 将 accepted snapshot 单向复制为独立的测试 golden fixture。 |
+| `scripts/benchmarking/run_descriptor_benchmark.py` | 根据测试 fixture 执行 CPU 单线程 benchmark，记录 median/p95。 |
+| `scripts/run_benchmark.py` | 受兼容性保留的 benchmark runner 入口。 |
 | `scripts/verify_wheel.py` | 在安装后的 wheel 环境中检查导入、基线、模型资源和输出契约。 |
 | `src/mdescriptor/__init__.py` | 根包稳定公共导出：核心契约、异常、registry 查询和配置 factory。 |
 | `src/mdescriptor/_native.py` | 未构建 native 扩展时的占位模块，给出明确安装/构建错误。 |
@@ -236,57 +234,24 @@
 | `tests/contracts/test_model_resources.py` | 检查模型解析优先级、hash、缓存、不可变快照、session 隔离和失败重试。 |
 | `tests/contracts/test_public_api.py` | 检查根包导出、懒加载、显式签名、统一 compute 边界、生命周期和 factory。 |
 | `tests/contracts/test_result_schema.py` | 检查结果 labels、metadata、sample 索引、row offsets 和 JSON-safe 契约。 |
-| `tests/data/dpa4_air_h2o_golden.json` | DPA4 官方模型在 H2O 周期结构上的 golden schema、标签和数值输出。 |
-| `tests/data/dpa4c_air_h2o_golden.json` | DPA4C 官方模型在 H2O 周期结构上的 golden schema、标签和数值输出。 |
 | `tests/data/mlip4_test_mtp.json` | 用于验证 MLIP-4 MTP 读取和特征前缀的测试模型。 |
 | `tests/reference/test_dscribe_reference.py` | 与固定 DScribe 2.1.2 对比 SOAP、ACSF、矩阵、MBTR/LMBTR 和 Valle-Oganov。 |
-| `tests/self_check.py` | 对安装环境执行最小导入、ASE 输入和 SOAP/ACSF 计算自检。 |
+| `tests/_golden.py` | 读取独立 descriptor golden、比较完整结果字段并验证非周期边界策略。 |
+| `tests/test_golden_independence.py` | 防止测试 golden 重新依赖本地 benchmarks 路径或缺失自带输入/输出。 |
 | `tests/test_all_descriptors.py` | 遍历所有描述符，检查 native/backend、输出形状、有限值、矩阵和取消行为。 |
 | `tests/test_c00ps_mlff.py` | 检查 C00PSMLFF 形状、标签、平移/旋转不变性、模式和取消。 |
 | `tests/test_descriptor_symmetry.py` | 对所有 standalone 描述符执行原子排列、平移和旋转对称性报告。 |
 | `tests/test_dpa4.py` | 检查 DPA4 官方 checkpoint、几何/排列不变性、Torch-free 推理和 session 共享。 |
 | `tests/test_dpa4c.py` | 检查 DPA4C golden、charge/spin、type map、calibration 和 checkpoint schema 错误。 |
-| `tests/test_model_goldens.py` | 校验 DPA4/DPA4C golden 文件的 hash、schema 和模型输出。 |
 | `tests/test_mtp.py` | 检查 MTP 不变性、MLIP-4 JSON、模型替换重载和多种 radial basis。 |
 | `tests/test_neighbor_graph.py` | 对比 native 周期邻居图与 brute-force 结果，并检查 self pair 过滤。 |
 | `tests/test_nep.py` | 检查 NEP 本地模型加载、native 后端、缩放和同路径模型替换。 |
-| `tests/test_numerical_baselines.py` | 检查固定 manifest 覆盖所有描述符、配置恢复和 NPZ 数值基线。 |
+| `tests/test_*_golden.py` | 每个 canonical descriptor 的独立双结构准确性测试。 |
 | `tests/test_reference.py` | 检查 native 核心对周期结构平移不变。 |
 | `tests/test_soap_acsf_advanced.py` | 检查 SOAP/ACSF 高级参数、参考值、dtype 和稀疏输出等价性。 |
 
-### 数值基线文件
+### Independent golden files
 
-这些 NPZ 文件保存对应描述符的冻结输出、labels、samples、metadata 或配置，供
-`tests/test_numerical_baselines.py` 和 wheel 验收复现比较。
-
-| 文件 | 作用简述 |
-|---|---|
-| `tests/data/numerical_baselines/acsf.npz` | ACSF 数值基线。 |
-| `tests/data/numerical_baselines/atomiccomposition.npz` | AtomicComposition 数值基线。 |
-| `tests/data/numerical_baselines/c00psmlff.npz` | C00PSMLFF 数值基线。 |
-| `tests/data/numerical_baselines/coulombmatrix.npz` | CoulombMatrix 数值基线。 |
-| `tests/data/numerical_baselines/dpa4.npz` | DPA4 数值基线。 |
-| `tests/data/numerical_baselines/dpa4c.npz` | DPA4C 数值基线。 |
-| `tests/data/numerical_baselines/ead.npz` | EAD 数值基线。 |
-| `tests/data/numerical_baselines/ewaldsummatrix.npz` | EwaldSumMatrix 数值基线。 |
-| `tests/data/numerical_baselines/lbispectrum.npz` | LBispectrum 数值基线。 |
-| `tests/data/numerical_baselines/lmbtr.npz` | LMBTR 数值基线。 |
-| `tests/data/numerical_baselines/lodesphericalexpansion.npz` | LodeSphericalExpansion 数值基线。 |
-| `tests/data/numerical_baselines/manifest.json` | 数值基线总索引，记录描述符、配置、输入、模型 hash 和文件信息。 |
-| `tests/data/numerical_baselines/mbtr.npz` | MBTR 数值基线。 |
-| `tests/data/numerical_baselines/mtp.npz` | 无外部模型或通用模式下的 MTP 数值基线。 |
-| `tests/data/numerical_baselines/mtp_mlip4.npz` | MLIP-4 模型模式下的 MTP 数值基线。 |
-| `tests/data/numerical_baselines/neighborlist.npz` | NeighborList pair 输出数值基线。 |
-| `tests/data/numerical_baselines/nep.npz` | NEP 数值基线。 |
-| `tests/data/numerical_baselines/sinematrix.npz` | SineMatrix 数值基线。 |
-| `tests/data/numerical_baselines/snap.npz` | SNAP 数值基线。 |
-| `tests/data/numerical_baselines/so3.npz` | SO3 数值基线。 |
-| `tests/data/numerical_baselines/so4.npz` | SO4 数值基线。 |
-| `tests/data/numerical_baselines/soap.npz` | SOAP 数值基线。 |
-| `tests/data/numerical_baselines/soappowerspectrum.npz` | SoapPowerSpectrum 数值基线。 |
-| `tests/data/numerical_baselines/soapradialspectrum.npz` | SoapRadialSpectrum 数值基线。 |
-| `tests/data/numerical_baselines/soapturbo.npz` | SOAPTurbo 数值基线。 |
-| `tests/data/numerical_baselines/sorteddistances.npz` | SortedDistances 数值基线。 |
-| `tests/data/numerical_baselines/sphericalexpansion.npz` | SphericalExpansion 数值基线。 |
-| `tests/data/numerical_baselines/sphericalexpansionbypair.npz` | SphericalExpansionByPair 数值基线。 |
-| `tests/data/numerical_baselines/valleoganov.npz` | ValleOganov 数值基线。 |
+Each `tests/golden/<descriptor>/` directory contains an input NPZ, expected
+output NPZ and manifest with the complete result schema, tolerance and
+reference provenance. These fixtures never reference `benchmarks/`.

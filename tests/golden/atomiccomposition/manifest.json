@@ -1,0 +1,107 @@
+{
+  "configuration": {
+    "descriptor": "AtomicComposition",
+    "parameters": {
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "per_system": true,
+      "species": [
+        1,
+        8,
+        24,
+        25,
+        26,
+        27,
+        28
+      ]
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "two-structure-v1",
+    "sha256": "2a727a880fef8e2de10d4015b1bcec7650c190a2da2fab01e4fb786922f97591",
+    "source": "promoted-local-dataset"
+  },
+  "descriptor": "AtomicComposition",
+  "expected_output": "expected_output.npz",
+  "input": "input.npz",
+  "input_ids": [
+    "hea32-periodic",
+    "water3-nonperiodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "kind": "project_commit",
+    "source_commit": "HEAD",
+    "wheel": {
+      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
+    }
+  },
+  "result": {
+    "feature_count": 7,
+    "labels": [
+      "AtomicComposition:0",
+      "AtomicComposition:1",
+      "AtomicComposition:2",
+      "AtomicComposition:3",
+      "AtomicComposition:4",
+      "AtomicComposition:5",
+      "AtomicComposition:6"
+    ],
+    "level": "structure",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "AtomicComposition",
+      "details": {
+        "species": [
+          1,
+          8,
+          24,
+          25,
+          26,
+          27,
+          28
+        ]
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 7,
+      "level": "structure",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": null,
+    "samples": [
+      [
+        0
+      ],
+      [
+        1
+      ]
+    ],
+    "structure_ids": [
+      "hea32-periodic",
+      "water3-nonperiodic"
+    ]
+  },
+  "schema_version": 1,
+  "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
+  "tolerance": {
+    "atol": 1e-11,
+    "rtol": 1e-09
+  }
+}

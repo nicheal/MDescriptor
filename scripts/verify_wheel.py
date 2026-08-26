@@ -18,34 +18,54 @@ def _restore_paths(value):
     return value
 
 
-def _batch(mdescriptor, payload):
+def _batch(mdescriptor, path: Path, ids: tuple[str, ...]):
     import numpy as np
 
+    with np.load(path) as arrays:
+        return mdescriptor.StructureBatch(
+            np.asarray(arrays["numbers"], dtype=np.int32),
+            np.asarray(arrays["positions"], dtype=np.float64),
+            np.asarray(arrays["cells"], dtype=np.float64),
+            np.asarray(arrays["pbc"], dtype=np.int32),
+            np.asarray(arrays["offsets"], dtype=np.int64),
+            ids,
+        )
+
+
+def _single_structure(mdescriptor, batch, index: int):
+    import numpy as np
+
+    begin = int(batch.offsets[index])
+    end = int(batch.offsets[index + 1])
     return mdescriptor.StructureBatch(
-        np.asarray(payload["numbers"], dtype=np.int32),
-        np.asarray(payload["positions"], dtype=np.float64),
-        np.asarray(payload["cells"], dtype=np.float64),
-        np.asarray(payload["pbc"], dtype=np.int32),
-        np.asarray(payload["offsets"], dtype=np.int64),
-        tuple(payload["ids"]),
+        batch.numbers[begin:end],
+        batch.positions[begin:end],
+        batch.cells[index : index + 1],
+        batch.pbc[index : index + 1],
+        np.asarray([0, end - begin], dtype=np.int64),
+        (batch.ids[index],),
     )
 
 
-def _verify_standalone_baselines(mdescriptor, baseline_dir: Path) -> None:
+def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
     import numpy as np
 
-    manifest = json.loads((baseline_dir / "manifest.json").read_text(encoding="utf-8"))
-    model_names = {"NEP", "DPA4", "DPA4C", "MTP-MLIP4"}
-    for case in manifest["cases"]:
-        if case["name"] in model_names:
-            continue
+    for manifest_path in sorted(golden_dir.glob("*/manifest.json")):
+        fixture_dir = manifest_path.parent
+        case = json.loads(manifest_path.read_text(encoding="utf-8"))
         configuration = mdescriptor.DescriptorConfiguration.from_dict(
             _restore_paths(case["configuration"])
         )
         descriptor = mdescriptor.create_descriptor(configuration)
         try:
-            result = descriptor.compute(_batch(mdescriptor, case["input"]))
-            with np.load(baseline_dir / case["values"]) as arrays:
+            batch = _batch(mdescriptor, fixture_dir / case["input"], tuple(case["input_ids"]))
+            compute_batch = (
+                _single_structure(mdescriptor, batch, 0)
+                if case["nonperiodic"]["mode"] != "output"
+                else batch
+            )
+            result = descriptor.compute(compute_batch)
+            with np.load(fixture_dir / case["expected_output"]) as arrays:
                 expected_values = arrays["values"]
                 expected_samples = arrays["samples"]
             tolerance = case["tolerance"]
@@ -54,21 +74,22 @@ def _verify_standalone_baselines(mdescriptor, baseline_dir: Path) -> None:
                 expected_values,
                 rtol=tolerance["rtol"],
                 atol=tolerance["atol"],
-                err_msg=case["name"],
+                err_msg=case["descriptor"],
             )
             np.testing.assert_array_equal(result.samples, expected_samples)
-            if result.level.value != case["level"]:
-                raise AssertionError(f"{case['name']} level changed")
-            if result.feature_count != case["feature_count"]:
-                raise AssertionError(f"{case['name']} feature count changed")
-            if result.labels != tuple(case["labels"]):
-                raise AssertionError(f"{case['name']} labels changed")
-            if result.structure_ids != tuple(case["structure_ids"]):
-                raise AssertionError(f"{case['name']} structure ids changed")
-            expected_offsets = case["row_offsets"]
+            expected = case["result"]
+            if result.level.value != expected["level"]:
+                raise AssertionError(f"{case['descriptor']} level changed")
+            if result.feature_count != expected["feature_count"]:
+                raise AssertionError(f"{case['descriptor']} feature count changed")
+            if result.labels != tuple(expected["labels"]):
+                raise AssertionError(f"{case['descriptor']} labels changed")
+            if result.structure_ids != tuple(expected["structure_ids"]):
+                raise AssertionError(f"{case['descriptor']} structure ids changed")
+            expected_offsets = expected["row_offsets"]
             if expected_offsets is None:
                 if result.row_offsets is not None:
-                    raise AssertionError(f"{case['name']} row offsets changed")
+                    raise AssertionError(f"{case['descriptor']} row offsets changed")
             else:
                 np.testing.assert_array_equal(result.row_offsets, expected_offsets)
         finally:
@@ -79,9 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", type=Path)
     parser.add_argument(
-        "--baseline-dir",
+        "--golden-dir",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "tests" / "data" / "numerical_baselines",
+        default=Path(__file__).resolve().parents[1] / "tests" / "golden",
     )
     args = parser.parse_args(argv)
     target = None if args.target is None else args.target.resolve()
@@ -130,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         nep.close()
 
-    _verify_standalone_baselines(mdescriptor, args.baseline_dir)
+    _verify_golden_fixtures(mdescriptor, args.golden_dir)
 
     from mdescriptor.descriptors import DPA4, DPA4C
 

@@ -3,13 +3,7 @@ dist/
 .deps/
 .venv/
 *.egg-info/
-benchmarks/*
-!benchmarks/soap_diverse_dataset_300.xyz
-!benchmarks/carbon_dataset_pbc.xyz
-!benchmarks/run_real_data_baseline.py
-!benchmarks/build_vaspmlff_reference.py
-!benchmarks/baselines/
-!benchmarks/baselines/**
+benchmarks/
 mdescriptor/*.so
 mdescriptor/*.pyd
 src/mdescriptor/*.so

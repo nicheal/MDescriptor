@@ -1,1 +1,0 @@
-{"case_id": "vaspmlff_c00ps", "dtype": "float64", "phase_seconds": {"import": 0.0017259669984923676, "input": 0.3480944240000099, "kernel": 6.675091732002329, "model": 8.932589415999246, "total": 15.957510963009554}, "shape": [28337, 142], "status": "ok"}

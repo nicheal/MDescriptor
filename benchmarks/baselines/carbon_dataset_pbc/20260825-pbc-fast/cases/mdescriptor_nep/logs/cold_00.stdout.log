@@ -1,1 +1,0 @@
-{"case_id": "mdescriptor_nep", "dtype": "float64", "phase_seconds": {"import": 0.007371040002908558, "input": 0.37226570599887054, "kernel": 0.44673576300556306, "model": 0.28945900200051256, "total": 1.115836280005169}, "shape": [28337, 35], "status": "ok"}

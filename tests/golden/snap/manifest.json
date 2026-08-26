@@ -1,0 +1,265 @@
+{
+  "configuration": {
+    "descriptor": "SNAP",
+    "parameters": {
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "lmax": 2,
+      "normalize_U": false,
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "rcut": 3.5,
+      "weights": {
+        "Co": 1.0,
+        "Cr": 1.0,
+        "Fe": 1.0,
+        "Mn": 1.0,
+        "Ni": 1.0
+      }
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "two-structure-v1",
+    "sha256": "2a727a880fef8e2de10d4015b1bcec7650c190a2da2fab01e4fb786922f97591",
+    "source": "promoted-local-dataset"
+  },
+  "descriptor": "SNAP",
+  "expected_output": "expected_output.npz",
+  "input": "input.npz",
+  "input_ids": [
+    "hea32-periodic",
+    "water3-nonperiodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "kind": "project_commit",
+    "source_commit": "HEAD",
+    "wheel": {
+      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
+    }
+  },
+  "result": {
+    "feature_count": 14,
+    "labels": [
+      "SNAP:0",
+      "SNAP:1",
+      "SNAP:2",
+      "SNAP:3",
+      "SNAP:4",
+      "SNAP:5",
+      "SNAP:6",
+      "SNAP:7",
+      "SNAP:8",
+      "SNAP:9",
+      "SNAP:10",
+      "SNAP:11",
+      "SNAP:12",
+      "SNAP:13"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "SNAP",
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 14,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      32,
+      41
+    ],
+    "samples": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        7
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        0,
+        12
+      ],
+      [
+        0,
+        13
+      ],
+      [
+        0,
+        14
+      ],
+      [
+        0,
+        15
+      ],
+      [
+        0,
+        16
+      ],
+      [
+        0,
+        17
+      ],
+      [
+        0,
+        18
+      ],
+      [
+        0,
+        19
+      ],
+      [
+        0,
+        20
+      ],
+      [
+        0,
+        21
+      ],
+      [
+        0,
+        22
+      ],
+      [
+        0,
+        23
+      ],
+      [
+        0,
+        24
+      ],
+      [
+        0,
+        25
+      ],
+      [
+        0,
+        26
+      ],
+      [
+        0,
+        27
+      ],
+      [
+        0,
+        28
+      ],
+      [
+        0,
+        29
+      ],
+      [
+        0,
+        30
+      ],
+      [
+        0,
+        31
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ]
+    ],
+    "structure_ids": [
+      "hea32-periodic",
+      "water3-nonperiodic"
+    ]
+  },
+  "schema_version": 1,
+  "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
+  "tolerance": {
+    "atol": 1e-11,
+    "rtol": 1e-09
+  }
+}
