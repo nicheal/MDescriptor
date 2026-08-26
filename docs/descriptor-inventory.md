@@ -33,7 +33,7 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 | MTP | `standalone` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
 | C00PSMLFF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | NEP | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
-| DPA4 | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, sparse, spin | `—` |
+| DPA4 | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | `—` |
 | DPA4C | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | `—` |
 
 The canonical algorithm imports are:
@@ -51,8 +51,9 @@ factory.  Algorithm classes are deliberately not re-exported from the root.
 - `mdescriptor._native` is the private pybind11 extension name.
 - Python adapters own input packing, lifecycle, typed options and result
   normalization.
-- DPA4/DPA4C use the bundled pure-NumPy checkpoint loader and inference core;
-  official ``.pt`` files are parsed without importing Torch.
+- DPA4/DPA4C use the bundled NumPy checkpoint loader and fallback inference
+  core; supported default graphs are executed by C++17/OpenMP, and official
+  ``.pt`` files are parsed without importing Torch.
 - NEP, DPA4 and DPA4C model files are resolved locally and verified by
   streaming SHA-256 before loading.
 

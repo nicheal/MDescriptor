@@ -1,4 +1,5 @@
 #include "mdescriptor/descriptor.hpp"
+#include "mdescriptor/dpa4.hpp"
 #include "mdescriptor/dpa4c.hpp"
 #include "mdescriptor/extra.hpp"
 #include "mdescriptor/local_descriptors.hpp"
@@ -32,6 +33,9 @@ using mdescriptor::C00PSMlffCalculator;
 using mdescriptor::C00PSMlffOptions;
 using mdescriptor::Dpa4cCalculator;
 using mdescriptor::Dpa4cOptions;
+using mdescriptor::Dpa4Calculator;
+using mdescriptor::Dpa4Options;
+using mdescriptor::Dpa4BlockOptions;
 using mdescriptor::StructureBatchView;
 
 namespace {
@@ -122,6 +126,148 @@ Dpa4cOptions dpa4c_options_from_payload(const py::dict& payload) {
         required_payload_value(payload, "output_mean"), "output_mean");
     options.output_stddev = vector_from_array<float>(
         required_payload_value(payload, "output_stddev"), "output_stddev");
+    return options;
+}
+
+py::handle dpa4_required_payload_value(const py::dict& payload, const char* name) {
+    if (!payload.contains(name)) {
+        throw std::invalid_argument(std::string("DPA4 payload is missing ") + name);
+    }
+    return payload[name];
+}
+
+std::vector<std::vector<float>> dpa4_float_sequence(
+    py::handle value,
+    std::size_t expected_count,
+    const char* name) {
+    py::sequence sequence = py::cast<py::sequence>(value);
+    if (sequence.size() != static_cast<py::ssize_t>(expected_count)) {
+        throw std::invalid_argument(std::string("DPA4 ") + name + " has an unexpected count");
+    }
+    std::vector<std::vector<float>> result;
+    result.reserve(expected_count);
+    for (py::ssize_t index = 0; index < sequence.size(); ++index) {
+        result.push_back(vector_from_array<float>(sequence[index], name));
+    }
+    return result;
+}
+
+Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
+    Dpa4Options options;
+    options.rcut = py::cast<double>(dpa4_required_payload_value(payload, "rcut"));
+    options.ntypes = py::cast<int>(dpa4_required_payload_value(payload, "ntypes"));
+    options.channels = py::cast<int>(dpa4_required_payload_value(payload, "channels"));
+    options.n_radial = py::cast<int>(dpa4_required_payload_value(payload, "n_radial"));
+    if (payload.contains("num_threads")) {
+        options.num_threads = py::cast<int>(payload["num_threads"]);
+    }
+
+    auto required_float = [&](const char* name) {
+        return vector_from_array<float>(dpa4_required_payload_value(payload, name), name);
+    };
+    options.type_embedding = required_float("type_embedding");
+    options.env_rbf_layer1 = required_float("env_rbf_layer1");
+    options.env_rbf_layer2 = required_float("env_rbf_layer2");
+    options.env_type_embedding = required_float("env_type_embedding");
+    options.env_g_layer1 = required_float("env_g_layer1");
+    options.env_g_layer2 = required_float("env_g_layer2");
+    options.env_output_projection = required_float("env_output_projection");
+    options.film_scale_norm = required_float("film_scale_norm");
+    options.film_shift_norm = required_float("film_shift_norm");
+    options.film_scale_strength_log = py::cast<float>(
+        dpa4_required_payload_value(payload, "film_scale_strength_log"));
+    options.film_shift_strength_log = py::cast<float>(
+        dpa4_required_payload_value(payload, "film_shift_strength_log"));
+    options.radial_freqs = required_float("radial_freqs");
+    options.radial_layer1 = required_float("radial_layer1");
+    options.radial_norm_scale = required_float("radial_norm_scale");
+    options.radial_layer2 = required_float("radial_layer2");
+    options.wigner_l2_tensor = required_float("wigner_l2_tensor");
+    options.wigner_l3_coefficients = required_float("wigner_l3_coefficients");
+    options.wigner_l3_exponents = vector_from_array<std::int64_t>(
+        dpa4_required_payload_value(payload, "wigner_l3_exponents"),
+        "wigner_l3_exponents");
+    options.gie_row_index = vector_from_array<std::int64_t>(
+        dpa4_required_payload_value(payload, "gie_row_index"), "gie_row_index");
+    options.gie_m0_index = vector_from_array<std::int64_t>(
+        dpa4_required_payload_value(payload, "gie_m0_index"), "gie_m0_index");
+    options.gie_radial_index = vector_from_array<std::int64_t>(
+        dpa4_required_payload_value(payload, "gie_radial_index"), "gie_radial_index");
+    options.grid_to = required_float("grid_to");
+    options.grid_from = required_float("grid_from");
+    options.output_linear1 = required_float("output_linear1");
+    options.output_linear2 = required_float("output_linear2");
+    options.output_scalar_gate = required_float("output_scalar_gate");
+    options.output_grid_left = required_float("output_grid_left");
+    options.output_grid_right = required_float("output_grid_right");
+    options.output_grid_out = required_float("output_grid_out");
+
+    py::sequence blocks = py::cast<py::sequence>(
+        dpa4_required_payload_value(payload, "blocks"));
+    if (blocks.size() != 3) {
+        throw std::invalid_argument("DPA4 payload must contain three blocks");
+    }
+    for (py::ssize_t block_index = 0; block_index < blocks.size(); ++block_index) {
+        const py::dict block_payload = py::cast<py::dict>(blocks[block_index]);
+        Dpa4BlockOptions& block = options.blocks[static_cast<std::size_t>(block_index)];
+        auto block_required = [&](const char* name) {
+            return dpa4_required_payload_value(block_payload, name);
+        };
+        if (block_payload.contains("pre_norm_enabled")) {
+            block.pre_norm_enabled = py::cast<bool>(block_payload["pre_norm_enabled"]);
+        }
+        if (block_payload.contains("post_norm_enabled")) {
+            block.post_norm_enabled = py::cast<bool>(block_payload["post_norm_enabled"]);
+        }
+        if (block_payload.contains("ffn_norm_enabled")) {
+            block.ffn_norm_enabled = py::cast<bool>(block_payload["ffn_norm_enabled"]);
+        }
+        auto block_float = [&](const char* name) {
+            return vector_from_array<float>(block_required(name), name);
+        };
+        block.pre_norm_scale = block_float("pre_norm_scale");
+        block.pre_norm_bias = block_float("pre_norm_bias");
+        block.pre_norm_balance = block_float("pre_norm_balance");
+        block.post_norm_scale = block_float("post_norm_scale");
+        block.post_norm_bias = block_float("post_norm_bias");
+        block.post_norm_balance = block_float("post_norm_balance");
+        block.ffn_norm_scale = block_float("ffn_norm_scale");
+        block.ffn_norm_bias = block_float("ffn_norm_bias");
+        block.ffn_norm_balance = block_float("ffn_norm_balance");
+        block.pre_focus_weight = block_float("pre_focus_weight");
+        block.post_focus_weight = block_float("post_focus_weight");
+        block.radial_mixer_weight = block_float("radial_mixer_weight");
+        block.radial_channel_basis = block_float("radial_channel_basis");
+
+        const auto m0 = dpa4_float_sequence(block_required("so2_weight_m0"), 4, "so2_weight_m0");
+        const auto m1 = dpa4_float_sequence(block_required("so2_weight_m1"), 4, "so2_weight_m1");
+        const auto gates = dpa4_float_sequence(block_required("so2_gate_weight"), 3, "so2_gate_weight");
+        for (std::size_t index = 0; index < 4; ++index) {
+            block.so2_weight_m0[index] = m0[index];
+            block.so2_weight_m1[index] = m1[index];
+        }
+        for (std::size_t index = 0; index < 3; ++index) {
+            block.so2_gate_weight[index] = gates[index];
+        }
+        block.attn_qk_scale = block_float("attn_qk_scale");
+        block.attn_q_weight = block_float("attn_q_weight");
+        block.attn_k_weight = block_float("attn_k_weight");
+        block.attn_output_gate_scale = block_float("attn_output_gate_scale");
+        block.attn_logit_weight = block_float("attn_logit_weight");
+        block.attn_z_bias_raw = block_float("attn_z_bias_raw");
+        block.attn_gate_weight = block_float("attn_gate_weight");
+        block.message_scalar_gate = block_float("message_scalar_gate");
+        block.message_frame_expand = block_float("message_frame_expand");
+        block.message_frame_contract = block_float("message_frame_contract");
+        block.message_residual_scale = block_float("message_residual_scale");
+        block.ffn_linear1 = block_float("ffn_linear1");
+        block.ffn_linear2 = block_float("ffn_linear2");
+        block.ffn_scalar_gate = block_float("ffn_scalar_gate");
+        block.ffn_grid_left = block_float("ffn_grid_left");
+        block.ffn_grid_right = block_float("ffn_grid_right");
+        block.ffn_grid_router = block_float("ffn_grid_router");
+        block.ffn_grid_out = block_float("ffn_grid_out");
+    }
     return options;
 }
 
@@ -298,6 +444,29 @@ py::array compute_dpa4c_array(
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
     if (type_indices.ndim() != 1 || type_indices.shape(0) != batch.atoms) {
         throw std::invalid_argument("DPA4C type_indices must have one entry per atom");
+    }
+    py::array_t<double> output({batch.atoms, calculator.feature_count()});
+    auto ctrl = control_or_default(control);
+    {
+        py::gil_scoped_release release;
+        calculator.compute(batch, type_indices.data(), output.mutable_data(), ctrl);
+    }
+    return output;
+}
+
+py::array compute_dpa4_array(
+    const Dpa4Calculator& calculator,
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const I32Array& type_indices,
+    const std::shared_ptr<ComputeControl>& control
+) {
+    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
+    if (type_indices.ndim() != 1 || type_indices.shape(0) != batch.atoms) {
+        throw std::invalid_argument("DPA4 type_indices must have one entry per atom");
     }
     py::array_t<double> output({batch.atoms, calculator.feature_count()});
     auto ctrl = control_or_default(control);
@@ -914,6 +1083,19 @@ PYBIND11_MODULE(_native, module) {
         .def("close", &Dpa4cCalculator::close)
         .def("closed", &Dpa4cCalculator::closed)
         .def("compute", &compute_dpa4c_array,
+             py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
+             py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
+
+    py::class_<Dpa4Calculator, std::shared_ptr<Dpa4Calculator>>(
+        module, "Dpa4Calculator")
+        .def(py::init([](const py::dict& payload) {
+            return std::make_shared<Dpa4Calculator>(
+                dpa4_options_from_payload(payload));
+        }))
+        .def_property_readonly("feature_count", &Dpa4Calculator::feature_count)
+        .def("close", &Dpa4Calculator::close)
+        .def("closed", &Dpa4Calculator::closed)
+        .def("compute", &compute_dpa4_array,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
 

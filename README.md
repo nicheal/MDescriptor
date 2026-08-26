@@ -47,9 +47,11 @@ python -m pip install ".[ase]"
 python -m pip install ".[sparse]"
 ```
 
-DPA4 and DPA4C are CPU-only pure-NumPy implementations. Their official `.pt`
-checkpoints are parsed by the bundled restricted reader without importing or
-installing Torch. No network model download is performed.
+DPA4 and DPA4C are CPU-only implementations. Their official `.pt` checkpoints
+are parsed by the bundled restricted NumPy reader without importing or
+installing Torch; the supported default graphs run through the C++17/OpenMP
+backend and specialised configurations retain the NumPy fallback. No network
+model download is performed.
 
 ## Input contract / 输入契约
 
@@ -142,9 +144,9 @@ dpa4 = DPA4(
 result = dpa4.compute(batch)
 ```
 
-The DPA4/DPA4C neural-network internals remain vendor/black-box adapters in
-this phase; they are intentionally isolated for a later dedicated DPA-series
-refactor.
+The DPA4/DPA4C checkpoint readers and NumPy reference path remain isolated
+vendor adapters. The default inference graphs are lowered into the private
+`mdescriptor._native` C++17/OpenMP extension.
 
 ## Development / 开发
 

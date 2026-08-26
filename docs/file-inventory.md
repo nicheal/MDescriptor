@@ -134,6 +134,10 @@
 | `src/mdescriptor/descriptors/model_backed/dpa4/descriptor.py` | 用统一 adapter 工厂绑定 DPA4 默认模型资源和 kernel。 |
 | `src/mdescriptor/descriptors/model_backed/dpa4c/__init__.py` | DPA4C 公共类的包入口。 |
 | `src/mdescriptor/descriptors/model_backed/dpa4c/descriptor.py` | 用统一 adapter 工厂绑定 DPA4C 默认模型资源和 kernel。 |
+| `cpp/include/mdescriptor/dpa4.hpp` | DPA4 C++17/OpenMP calculator 的扁平权重 ABI、生命周期和批次计算接口。 |
+| `cpp/include/mdescriptor/dpa4_wigner.hpp` | DPA4 低阶 Wigner-D 旋转与单项式/tensor 权重接口。 |
+| `cpp/src/model_backed/dpa4.cpp` | 执行默认 DPA4 图的邻居、环境/径向网络、GIE、SO(2) block、SO(3) grid 和 readout。 |
+| `cpp/src/model_backed/dpa4_wigner.cpp` | DPA4 l=1/2/3 Wigner-D 低阶多项式计算核心。 |
 | `src/mdescriptor/descriptors/model_backed/graph.py` | 提供原子序数到元素符号的 DPA checkpoint type map 查找。 |
 | `src/mdescriptor/descriptors/model_backed/nep/__init__.py` | NEP 公共类的包入口。 |
 | `src/mdescriptor/descriptors/model_backed/nep/descriptor.py` | 用统一 model adapter 绑定 NEP 默认模型资源和 native kernel。 |

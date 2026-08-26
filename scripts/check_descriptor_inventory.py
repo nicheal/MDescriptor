@@ -57,8 +57,9 @@ factory.  Algorithm classes are deliberately not re-exported from the root.
 - `mdescriptor._native` is the private pybind11 extension name.
 - Python adapters own input packing, lifecycle, typed options and result
   normalization.
-- DPA4/DPA4C use the bundled pure-NumPy checkpoint loader and inference core;
-  official ``.pt`` files are parsed without importing Torch.
+- DPA4/DPA4C use the bundled NumPy checkpoint loader and fallback inference
+  core; supported default graphs are executed by C++17/OpenMP, and official
+  ``.pt`` files are parsed without importing Torch.
 - NEP, DPA4 and DPA4C model files are resolved locally and verified by
   streaming SHA-256 before loading.
 

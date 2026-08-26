@@ -109,7 +109,7 @@
     ],
     "level": "atom",
     "metadata": {
-      "backend": "mdescriptor-dpa4-numpy",
+      "backend": "mdescriptor-dpa4-cpp",
       "descriptor": "DPA4",
       "details": {
         "add_chg_spin_ebd": false,

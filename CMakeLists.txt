@@ -26,6 +26,8 @@ set(MDESCRIPTOR_CPP_SOURCES
     cpp/src/standalone/mtp4.cpp
     cpp/src/standalone/rotational_descriptors.cpp
     cpp/src/common/nep.cpp
+    cpp/src/model_backed/dpa4.cpp
+    cpp/src/model_backed/dpa4_wigner.cpp
     cpp/src/model_backed/dpa4c.cpp
     cpp/src/standalone/atomic_composition.cpp
     cpp/src/standalone/sorted_distances.cpp

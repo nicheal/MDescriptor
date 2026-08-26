@@ -5,8 +5,9 @@ import sys
 import numpy as np
 import pytest
 
+from mdescriptor.descriptors.model_backed.dpa import compute_batch, load_dpa_checkpoint, new_runtime
 from mdescriptor.models import DPA4_MODEL
-from tests._public import DPA4, ModelLoadError, StructureBatch
+from tests._public import DPA4, ExecutionOptions, ModelLoadError, StructureBatch
 
 pytestmark = pytest.mark.model
 
@@ -39,7 +40,7 @@ def test_official_checkpoint_and_batch_output():
     assert result.values.shape == (4, 64)
     assert np.isfinite(result.values).all()
     assert result.level == "atom"
-    assert result.metadata["backend"] == "mdescriptor-dpa4-numpy"
+    assert result.metadata["backend"] == "mdescriptor-dpa4-cpp"
     assert result.row_offsets.tolist() == [0, 3, 4]
     assert result.labels[0] == "dpa4:scalar,channel=0"
 
@@ -77,6 +78,32 @@ def test_geometry_rotation_and_atom_permutation_are_invariant():
         batch.ids,
     )
     np.testing.assert_allclose(calculator.compute(permuted).values, reference[order], atol=2e-5)
+
+
+def test_native_backend_matches_bundled_numpy_reference():
+    calculator = DPA4(model=MODEL)
+    _info, checkpoint = load_dpa_checkpoint(MODEL, expected_descriptor="DPA4")
+    reference_runtime = new_runtime(MODEL, checkpoint)
+    try:
+        expected = compute_batch(reference_runtime, _batch())
+        actual = calculator.compute(_batch()).values
+        np.testing.assert_allclose(actual, expected, rtol=2e-5, atol=4e-5)
+    finally:
+        calculator.close()
+
+
+def test_native_backend_is_thread_stable():
+    batch = _batch()
+    serial = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=1))
+    threaded = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=4))
+    try:
+        np.testing.assert_array_equal(
+            serial.compute(batch).values,
+            threaded.compute(batch).values,
+        )
+    finally:
+        serial.close()
+        threaded.close()
 
 
 def test_dpa4_rejects_project_native_archive(tmp_path):
