@@ -29,6 +29,7 @@
 | `cpp/include/mdescriptor/detail/control.hpp` | 原生计算的取消、完成进度和 `CancelledError` 辅助接口。 |
 | `cpp/include/mdescriptor/detail/math3.hpp` | 不依赖外部线性代数库的三维向量、矩阵、点积、行列式和逆矩阵工具。 |
 | `cpp/include/mdescriptor/detail/species.hpp` | 元素种类列表校验、元素到类型编号映射和批次元素检查。 |
+| `cpp/include/mdescriptor/dpa4c.hpp` | DPA4C C++ calculator 的参数 ABI、生命周期和批次计算接口。 |
 | `cpp/include/mdescriptor/extra.hpp` | 矩阵、MBTR、EAD、MTP 和旋转不变描述符的选项、特征数与计算接口。 |
 | `cpp/include/mdescriptor/local_descriptors.hpp` | 局部描述符类型、参数、pair 表以及原子组成、邻居表和球谐展开接口。 |
 | `cpp/include/mdescriptor/mtp4.hpp` | MLIP-4 MTP JSON 模型的读取、元数据查询和描述符计算接口。 |
@@ -48,6 +49,7 @@
 | `cpp/src/common/local_spherical_common.hpp` | 实现局部球谐描述符所需的 Gamma、合流超几何函数和径向积分数值工具。 |
 | `cpp/src/common/matrix_common.hpp` | 实现对称矩阵特征值、矩阵排列、补零和矩阵描述符公共输出逻辑。 |
 | `cpp/src/common/neighbor.cpp` | 构建周期扩展原子、空间网格和高效邻居图，并处理边界与自邻居。 |
+| `cpp/src/model_backed/dpa4c.cpp` | 执行默认无 spin/无 compression DPA4C 的邻居、径向网络、moment 和不变量读出。 |
 | `cpp/src/common/nep.cpp` | 解析 NEP 模型并执行径向/角向基函数、球谐和 NEP 特征累积。 |
 | `cpp/src/standalone/acsf.cpp` | 实现 ACSF 的 G2、G3、G4、G5 原生计算。 |
 | `cpp/src/standalone/atomic_composition.cpp` | 计算按结构或按原子统计的元素组成描述符。 |
@@ -104,7 +106,7 @@
 | `src/mdescriptor/descriptors/_kernels/c00ps_mlff.py` | C00PSMLFF kernel 的 Python 参数整理、native 调用、标签和 metadata。 |
 | `src/mdescriptor/descriptors/_kernels/core.py` | SOAP、ACSF kernel 以及径向基、权重、native 扩展发现和结果适配逻辑。 |
 | `src/mdescriptor/descriptors/_kernels/dpa4.py` | DPA4 kernel，负责 checkpoint 注入、CPU 推理调用和输出 metadata。 |
-| `src/mdescriptor/descriptors/_kernels/dpa4c.py` | DPA4C kernel，负责带 calibration 选项的 checkpoint 推理和结果适配。 |
+| `src/mdescriptor/descriptors/_kernels/dpa4c.py` | DPA4C kernel，负责带 calibration/线程选项的 checkpoint 推理、C++/NumPy 路由和结果适配。 |
 | `src/mdescriptor/descriptors/_kernels/extra.py` | 矩阵、MBTR/LMBTR、Valle-Oganov 等额外描述符的 Python kernel。 |
 | `src/mdescriptor/descriptors/_kernels/local.py` | 原子组成、邻居表、排序距离和球形展开系列的 Python kernel。 |
 | `src/mdescriptor/descriptors/_kernels/mtp.py` | MTP kernel，加载可选 MLIP-2/MLIP-4 模型并调用 native 特征计算。 |
@@ -138,8 +140,10 @@
 
 ## 随包 vendored 的 DPA4 推理实现：`_vendor/dpa4desc`
 
-以下文件是项目内裁剪的 DPA4/DPA4C 纯 NumPy 推理依赖；除许可证、数据文件和
-包入口外，均服务于 checkpoint 解析、邻居图、球谐/等变网络和读出计算。
+以下文件是项目内裁剪的 DPA4/DPA4C checkpoint 解析与 NumPy fallback 依赖；除
+许可证、数据文件和包入口外，均服务于 checkpoint 解析、邻居图、球谐/等变网络
+和读出计算。DPA4C 的默认无 spin、无 compression 路径在解析后由 C++17/OpenMP
+核心执行。
 
 | 文件 | 作用简述 |
 |---|---|

@@ -18,12 +18,16 @@ from mdescriptor import (
 )
 
 ROOT = Path(__file__).parents[2]
+PACKAGE_ROOT = Path(mdescriptor.__file__).resolve().parent
 GOLDEN_ROOT = ROOT / "tests" / "golden"
 
 
 def _restore_paths(value):
-    if isinstance(value, str) and value.startswith("${PROJECT_ROOT}/"):
-        return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
+    if isinstance(value, str):
+        if value.startswith("${PACKAGE_ROOT}/"):
+            return str(PACKAGE_ROOT / value.removeprefix("${PACKAGE_ROOT}/"))
+        if value.startswith("${PROJECT_ROOT}/"):
+            return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
     if isinstance(value, dict):
         return {key: _restore_paths(item) for key, item in value.items()}
     if isinstance(value, list):

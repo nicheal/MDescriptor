@@ -8,13 +8,16 @@ import sys
 from pathlib import Path
 
 
-def _restore_paths(value):
-    if isinstance(value, str) and value.startswith("${PROJECT_ROOT}/"):
-        return str(Path(__file__).resolve().parents[1] / value.removeprefix("${PROJECT_ROOT}/"))
+def _restore_paths(value, package_root=None):
+    if isinstance(value, str):
+        if package_root is not None and value.startswith("${PACKAGE_ROOT}/"):
+            return str(package_root / value.removeprefix("${PACKAGE_ROOT}/"))
+        if value.startswith("${PROJECT_ROOT}/"):
+            return str(Path(__file__).resolve().parents[1] / value.removeprefix("${PROJECT_ROOT}/"))
     if isinstance(value, dict):
-        return {key: _restore_paths(item) for key, item in value.items()}
+        return {key: _restore_paths(item, package_root) for key, item in value.items()}
     if isinstance(value, list):
-        return [_restore_paths(item) for item in value]
+        return [_restore_paths(item, package_root) for item in value]
     return value
 
 
@@ -50,11 +53,12 @@ def _single_structure(mdescriptor, batch, index: int):
 def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
     import numpy as np
 
+    package_root = Path(mdescriptor.__file__).resolve().parent
     for manifest_path in sorted(golden_dir.glob("*/manifest.json")):
         fixture_dir = manifest_path.parent
         case = json.loads(manifest_path.read_text(encoding="utf-8"))
         configuration = mdescriptor.DescriptorConfiguration.from_dict(
-            _restore_paths(case["configuration"])
+            _restore_paths(case["configuration"], package_root)
         )
         descriptor = mdescriptor.create_descriptor(configuration)
         try:

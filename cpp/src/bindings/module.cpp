@@ -1,4 +1,5 @@
 #include "mdescriptor/descriptor.hpp"
+#include "mdescriptor/dpa4c.hpp"
 #include "mdescriptor/extra.hpp"
 #include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/nep.hpp"
@@ -29,6 +30,8 @@ using mdescriptor::SoapTurboCalculator;
 using mdescriptor::SoapTurboOptions;
 using mdescriptor::C00PSMlffCalculator;
 using mdescriptor::C00PSMlffOptions;
+using mdescriptor::Dpa4cCalculator;
+using mdescriptor::Dpa4cOptions;
 using mdescriptor::StructureBatchView;
 
 namespace {
@@ -36,6 +39,91 @@ namespace {
 using I32Array = py::array_t<std::int32_t, py::array::c_style | py::array::forcecast>;
 using I64Array = py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
+
+template <typename Value>
+std::vector<Value> vector_from_array(py::handle value, const char* name) {
+    using Array = py::array_t<Value, py::array::c_style | py::array::forcecast>;
+    auto array = Array::ensure(value);
+    if (!array) {
+        throw std::invalid_argument(std::string(name) + " must be a numeric array");
+    }
+    const auto info = array.request();
+    const auto* data = static_cast<const Value*>(info.ptr);
+    return std::vector<Value>(data, data + info.size);
+}
+
+py::handle required_payload_value(const py::dict& payload, const char* name) {
+    if (!payload.contains(name)) {
+        throw std::invalid_argument(std::string("DPA4C payload is missing ") + name);
+    }
+    return payload[name];
+}
+
+Dpa4cOptions dpa4c_options_from_payload(const py::dict& payload) {
+    Dpa4cOptions options;
+    options.rcut = py::cast<double>(required_payload_value(payload, "rcut"));
+    options.ntypes = py::cast<int>(required_payload_value(payload, "ntypes"));
+    options.channels = py::cast<int>(required_payload_value(payload, "channels"));
+    options.lmax = py::cast<int>(required_payload_value(payload, "lmax"));
+    options.n_radial = py::cast<int>(required_payload_value(payload, "n_radial"));
+    options.radial_modes = py::cast<int>(required_payload_value(payload, "radial_modes"));
+    options.radial_hidden = py::cast<int>(required_payload_value(payload, "radial_hidden"));
+    options.pair_hidden = py::cast<int>(required_payload_value(payload, "pair_hidden"));
+    if (payload.contains("num_threads")) {
+        options.num_threads = py::cast<int>(payload["num_threads"]);
+    }
+    if (payload.contains("calibrate")) {
+        options.calibrate = py::cast<bool>(payload["calibrate"]);
+    }
+
+    options.type_embedding = vector_from_array<float>(
+        required_payload_value(payload, "type_embedding"), "type_embedding");
+    options.radial_freqs = vector_from_array<float>(
+        required_payload_value(payload, "radial_freqs"), "radial_freqs");
+    options.radial_w0 = vector_from_array<float>(
+        required_payload_value(payload, "radial_w0"), "radial_w0");
+    options.radial_w1 = vector_from_array<float>(
+        required_payload_value(payload, "radial_w1"), "radial_w1");
+    options.radial_mode_w = vector_from_array<float>(
+        required_payload_value(payload, "radial_mode_w"), "radial_mode_w");
+    options.pair_w0 = vector_from_array<float>(
+        required_payload_value(payload, "pair_w0"), "pair_w0");
+    options.pair_w1 = vector_from_array<float>(
+        required_payload_value(payload, "pair_w1"), "pair_w1");
+
+    options.degree_channels = py::cast<std::vector<int>>(
+        required_payload_value(payload, "degree_channels"));
+    options.bispectrum_ranks = py::cast<std::vector<int>>(
+        required_payload_value(payload, "bispectrum_ranks"));
+    options.readout_alignment = vector_from_array<float>(
+        required_payload_value(payload, "readout_alignment"), "readout_alignment");
+    options.readout_projections = vector_from_array<float>(
+        required_payload_value(payload, "readout_projections"), "readout_projections");
+    options.readout_alignment_offsets = vector_from_array<std::int64_t>(
+        required_payload_value(payload, "readout_alignment_offsets"),
+        "readout_alignment_offsets");
+    options.readout_projection_offsets = vector_from_array<std::int64_t>(
+        required_payload_value(payload, "readout_projection_offsets"),
+        "readout_projection_offsets");
+
+    options.bispectrum_coupling = vector_from_array<float>(
+        required_payload_value(payload, "bispectrum_coupling"), "bispectrum_coupling");
+    options.coupling_offsets = vector_from_array<std::int64_t>(
+        required_payload_value(payload, "coupling_offsets"), "coupling_offsets");
+    options.degree_triples = py::cast<std::vector<int>>(
+        required_payload_value(payload, "degree_triples"));
+    options.probe_offsets = vector_from_array<std::int64_t>(
+        required_payload_value(payload, "probe_offsets"), "probe_offsets");
+    options.probe_index = vector_from_array<std::int64_t>(
+        required_payload_value(payload, "probe_index"), "probe_index");
+    options.probe_scale = vector_from_array<float>(
+        required_payload_value(payload, "probe_scale"), "probe_scale");
+    options.output_mean = vector_from_array<float>(
+        required_payload_value(payload, "output_mean"), "output_mean");
+    options.output_stddev = vector_from_array<float>(
+        required_payload_value(payload, "output_stddev"), "output_stddev");
+    return options;
+}
 
 StructureBatchView view_batch(
     const I32Array& numbers,
@@ -193,6 +281,29 @@ py::array compute_nep_array(
     {
         py::gil_scoped_release release;
         calculator.compute(batch, static_cast<double*>(output_info.ptr), ctrl);
+    }
+    return output;
+}
+
+py::array compute_dpa4c_array(
+    const Dpa4cCalculator& calculator,
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const I32Array& type_indices,
+    const std::shared_ptr<ComputeControl>& control
+) {
+    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
+    if (type_indices.ndim() != 1 || type_indices.shape(0) != batch.atoms) {
+        throw std::invalid_argument("DPA4C type_indices must have one entry per atom");
+    }
+    py::array_t<double> output({batch.atoms, calculator.feature_count()});
+    auto ctrl = control_or_default(control);
+    {
+        py::gil_scoped_release release;
+        calculator.compute(batch, type_indices.data(), output.mutable_data(), ctrl);
     }
     return output;
 }
@@ -792,6 +903,19 @@ PYBIND11_MODULE(_native, module) {
         .def("compute", &compute_nep_array,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
+
+    py::class_<Dpa4cCalculator, std::shared_ptr<Dpa4cCalculator>>(
+        module, "Dpa4cCalculator")
+        .def(py::init([](const py::dict& payload) {
+            return std::make_shared<Dpa4cCalculator>(
+                dpa4c_options_from_payload(payload));
+        }))
+        .def_property_readonly("feature_count", &Dpa4cCalculator::feature_count)
+        .def("close", &Dpa4cCalculator::close)
+        .def("closed", &Dpa4cCalculator::closed)
+        .def("compute", &compute_dpa4c_array,
+             py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
+             py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
 
     py::class_<SoapOptions>(module, "SoapOptions")
         .def(py::init<>())

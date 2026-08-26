@@ -1,6 +1,6 @@
 # C++ descriptor architecture / C++ 描述符架构
 
-状态：布局重构已实施，DPA 系列核心保留为后续独立阶段。
+状态：布局重构已实施，DPA4C 默认图配置的核心已下沉到 C++；DPA4 完整图迁移仍为后续阶段。
 
 ## Boundaries
 
@@ -8,7 +8,9 @@
 internals. Its C++17 kernels own periodic neighbor construction, cancellation,
 finite-value validation and numerical loops. Python owns configuration parsing,
 input conversion and result metadata. DPA4 and DPA4C use the private pure
-NumPy vendor package and do not import Torch.
+NumPy vendor package and do not import Torch. DPA4C's Python loader hands the
+validated default graph configuration to a C++17/OpenMP calculator; specialised
+spin/charge/compressed variants retain the NumPy fallback.
 
 The public Python layer is split into `descriptors/standalone` and
 `descriptors/model_backed`. Standalone descriptors do not load models. NEP,
@@ -49,6 +51,7 @@ outputs and atom/structure/pair row layouts. Python contract tests cover:
 - close/context-manager behavior;
 - explicit model resolution and strict `.pt` loading.
 
-Numerical behavior is frozen for this refactor. The dedicated DPA4/DPA4C
-implementation refactor is intentionally deferred until after this boundary is
-stable.
+Numerical behavior is frozen for this refactor. The DPA4C native path is
+covered by the model golden and real-data comparisons; the full DPA4 graph
+implementation remains deferred because the current project has no libtorch
+dependency and its checkpoint is not TorchScript.

@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+import mdescriptor
 from mdescriptor import StructureBatch, get_descriptor
 from mdescriptor.descriptors.model_backed.dpa import (
     _ATOMIC_SYMBOLS,
@@ -21,6 +22,7 @@ from mdescriptor.descriptors.model_backed.dpa import (
 from mdescriptor.models import ModelResource
 
 ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = Path(mdescriptor.__file__).resolve().parent
 
 REFERENCE_PROGRAM = r"""
 import json
@@ -182,6 +184,11 @@ def _portable(value: Any) -> Any:
     """Replace checkout-specific absolute paths in the manifest."""
 
     if isinstance(value, str):
+        package_root = str(PACKAGE_ROOT)
+        if value == package_root:
+            return "${PACKAGE_ROOT}"
+        if value.startswith(package_root + "/"):
+            return "${PACKAGE_ROOT}/" + value[len(package_root) + 1 :]
         root = str(ROOT)
         if value == root:
             return "${PROJECT_ROOT}"

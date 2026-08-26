@@ -43,7 +43,7 @@ _BUILTIN_SPECS = (
     DescriptorSpec("C00PSMLFF", _STANDALONE + "c00ps_mlff:C00PSMLFF", AssetPolicy.NONE, "cpp", "atom", capabilities=_CPP_THREAD_CAPABILITIES),
     DescriptorSpec("NEP", _MODEL + "nep.descriptor:NEP", AssetPolicy.REQUIRED, "cpp", "atom", capabilities=_CPP_THREAD_CAPABILITIES | {"model"}),
     DescriptorSpec("DPA4", _MODEL + "dpa4.descriptor:DPA4", AssetPolicy.REQUIRED, "numpy", "atom", capabilities=_COMMON_CAPABILITIES | {"model", "spin", "charge_spin"}),
-    DescriptorSpec("DPA4C", _MODEL + "dpa4c.descriptor:DPA4C", AssetPolicy.REQUIRED, "numpy", "atom", capabilities=_COMMON_CAPABILITIES | {"model", "spin", "charge_spin"}),
+    DescriptorSpec("DPA4C", _MODEL + "dpa4c.descriptor:DPA4C", AssetPolicy.REQUIRED, "numpy", "atom", capabilities=_COMMON_CAPABILITIES | {"model", "spin", "charge_spin", "num_threads"}),
 )
 
 builtin_registry = DescriptorRegistry(_BUILTIN_SPECS, frozen=True)

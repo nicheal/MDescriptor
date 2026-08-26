@@ -11,15 +11,20 @@ from typing import Any
 import numpy as np
 import pytest
 
+import mdescriptor
 from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor
 
 ROOT = Path(__file__).parents[1]
+PACKAGE_ROOT = Path(mdescriptor.__file__).resolve().parent
 GOLDEN_ROOT = ROOT / "tests" / "golden"
 
 
 def _restore_paths(value: Any) -> Any:
-    if isinstance(value, str) and value.startswith("${PROJECT_ROOT}/"):
-        return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
+    if isinstance(value, str):
+        if value.startswith("${PACKAGE_ROOT}/"):
+            return str(PACKAGE_ROOT / value.removeprefix("${PACKAGE_ROOT}/"))
+        if value.startswith("${PROJECT_ROOT}/"):
+            return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
     if isinstance(value, dict):
         return {key: _restore_paths(item) for key, item in value.items()}
     if isinstance(value, list):

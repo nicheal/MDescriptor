@@ -34,7 +34,7 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 | C00PSMLFF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | NEP | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
 | DPA4 | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, sparse, spin | `—` |
-| DPA4C | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, sparse, spin | `—` |
+| DPA4C | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | `—` |
 
 The canonical algorithm imports are:
 

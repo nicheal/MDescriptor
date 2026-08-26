@@ -46,7 +46,7 @@ def test_only_excluded_dpa_descriptors_lack_thread_capability() -> None:
     unsupported = {
         spec.name for spec in builtin_registry if "num_threads" not in spec.capabilities
     }
-    assert unsupported == {"DPA4", "DPA4C"}
+    assert unsupported == {"DPA4"}
 
 
 def _batch() -> StructureBatch:
