@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from ...core.result import format_values
+from ...core.result import DescriptorLevel, format_values, normalize_metadata
 from ...core.species import normalize_species, require_species, validate_batch_species
 from .core import (
     DescriptorResult,
@@ -117,6 +117,8 @@ class SoapTurboKernel:
         self._amplitude_scaling: list[float] | None = None
         self._central_weight: list[float] | None = None
         self._native: Any = None
+        self._labels_cache: tuple[str, ...] | None = None
+        self._metadata_template: Any = None
         self._closed = False
 
     def _ensure_native(self, batch: StructureBatch) -> None:
@@ -154,6 +156,10 @@ class SoapTurboKernel:
         options.compression = self.compression
         options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
         self._native = _cpp.SoapTurboCalculator(options)
+        self._labels_cache = self._build_labels()
+        self._metadata_template = normalize_metadata(
+            self._metadata(), DescriptorLevel.ATOM, self.feature_count
+        )
 
     @property
     def feature_count(self) -> int:
@@ -201,7 +207,13 @@ class SoapTurboKernel:
             batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, control)
         values = format_values(values, dtype=self.dtype, sparse=self.sparse)
         return DescriptorResult(
-            values, "atom", batch.ids, batch.offsets.copy(), self._labels(), self._metadata())
+            values,
+            "atom",
+            batch.ids,
+            batch.offsets.copy(),
+            self._labels(),
+            self._metadata_template if self._metadata_template is not None else self._metadata(),
+        )
 
     def close(self) -> None:
         self._closed = True
@@ -209,6 +221,11 @@ class SoapTurboKernel:
             self._native.close()
 
     def _labels(self) -> tuple[str, ...]:
+        if self._labels_cache is not None:
+            return self._labels_cache
+        return self._build_labels()
+
+    def _build_labels(self) -> tuple[str, ...]:
         if self._alpha_max is None or self.species is None:
             return ()
         if self.compression:

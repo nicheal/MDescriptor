@@ -171,6 +171,7 @@ struct RadialBasis {
     bool gaussian_origin = false;
     double sigma = 0.5;
     std::vector<double> transform;
+    std::vector<double> gaussian_column;
 };
 
 std::vector<double> gaussian_overlap_column(const RadialBasis& basis) {
@@ -224,6 +225,9 @@ RadialBasis make_radial_basis(int size, int basis, double sigma) {
         }
     }
     result.transform = inverse_sqrt(overlap).values;
+    if (result.gaussian_origin) {
+        result.gaussian_column = gaussian_overlap_column(result);
+    }
     return result;
 }
 
@@ -237,15 +241,19 @@ double smoothing_prefactor(double rj, double sigma, double soft, double hard, do
         / (sigma2 + dr * dr / (nf * nf)));
 }
 
-std::vector<double> radial_coefficients(
+void radial_coefficients(
     const RadialBasis& basis,
     const SoapTurboOptions& options,
     std::size_t type,
     double distance,
-    bool central) {
-    std::vector<double> result(static_cast<std::size_t>(basis.size), 0.0);
+    bool central,
+    double* result,
+    double* primitive,
+    double* filtered,
+    double* raw) {
+    std::fill_n(result, basis.size, 0.0);
     if (distance >= options.rcut_hard || (basis.gaussian_origin && central)) {
-        return result;
+        return;
     }
     const double hard = 1.0;
     const double soft = options.rcut_soft / options.rcut_hard;
@@ -259,7 +267,7 @@ std::vector<double> radial_coefficients(
     if (amplitude_power != 0.0) {
         const double polynomial = 1.0 + 2.0 * rj * rj * rj - 3.0 * rj * rj;
         if (polynomial <= 1e-10) {
-            return result;
+            return;
         }
         amplitude *= std::pow(polynomial, amplitude_power);
     }
@@ -272,12 +280,12 @@ std::vector<double> radial_coefficients(
         amplitude *= rj * rj + sigma2 + std::sqrt(8.0 / kSoapPi) * atom_sigma_scaled * rj;
     }
     if (amplitude == 0.0) {
-        return result;
+        return;
     }
 
     const int expansion_count = basis.gaussian_origin ? basis.size - 1 : basis.size;
-    std::vector<double> primitive(static_cast<std::size_t>(basis.size), 0.0);
-    std::vector<double> filtered(static_cast<std::size_t>(basis.size), 0.0);
+    std::fill_n(primitive, basis.size, 0.0);
+    std::fill_n(filtered, basis.size, 0.0);
     double integral_n = 0.0;
     double norm_n = 1.0;
     double norm_np1 = radial_normalization(-2);
@@ -337,14 +345,14 @@ std::vector<double> radial_coefficients(
 
     if (basis.gaussian_origin) {
         const double sigma_star = std::sqrt(basis.sigma * basis.sigma + sigma2);
-        primitive.back() = std::exp(-0.5 * rj * rj / (sigma_star * sigma_star))
+        primitive[static_cast<std::size_t>(basis.size - 1)] = std::exp(
+            -0.5 * rj * rj / (sigma_star * sigma_star))
             * std::sqrt(kSoapPi / 2.0) * atom_sigma_scaled * basis.sigma / sigma_star
             * (1.0 + std::erf(basis.sigma / atom_sigma_scaled * rj
                 / (std::sqrt(2.0) * sigma_star)))
             * std::sqrt(2.0 / basis.sigma) / std::pow(kSoapPi, 0.25);
     }
 
-    std::vector<double> raw(static_cast<std::size_t>(basis.size), 0.0);
     for (int index = 0; index < basis.size; ++index) {
         raw[static_cast<std::size_t>(index)] = amplitude
             * (primitive[static_cast<std::size_t>(index)]
@@ -357,10 +365,9 @@ std::vector<double> radial_coefficients(
                 * raw[static_cast<std::size_t>(source)];
         }
     }
-    for (double& value : result) {
-        value *= std::sqrt(options.rcut_hard);
+    for (int index = 0; index < basis.size; ++index) {
+        result[static_cast<std::size_t>(index)] *= std::sqrt(options.rcut_hard);
     }
-    return result;
 }
 
 double associated_legendre(int l, int m, double x) {
@@ -385,12 +392,46 @@ double associated_legendre(int l, int m, double x) {
     return pmp1m;
 }
 
-std::vector<double> modified_spherical_bessel(int l_max, double x) {
-    std::vector<double> values(static_cast<std::size_t>(l_max + 1), 0.0);
+struct AngularTerm {
+    int l = 0;
+    int m = 0;
+    double prefactor = 0.0;
+};
+
+std::vector<AngularTerm> make_angular_terms(int l_max) {
+    std::vector<AngularTerm> result;
+    result.reserve(static_cast<std::size_t>(1 + l_max * (l_max + 1) / 2 + l_max));
+    for (int l = 0; l <= l_max; ++l) {
+        double factorial_l_minus_m = 1.0;
+        for (int i = 1; i <= l; ++i) {
+            factorial_l_minus_m *= i;
+        }
+        for (int m = 0; m <= l; ++m) {
+            if (m > 0) {
+                factorial_l_minus_m /= static_cast<double>(l + 1 - m);
+            }
+            double factorial_l_plus_m = 1.0;
+            for (int i = 1; i <= l + m; ++i) {
+                factorial_l_plus_m *= i;
+            }
+            result.push_back({
+                l,
+                m,
+                std::sqrt((2.0 * l + 1.0) / (4.0 * kSoapPi)
+                    * factorial_l_minus_m / factorial_l_plus_m),
+            });
+        }
+    }
+    return result;
+}
+
+void modified_spherical_bessel(
+    int l_max, double x, double* values, double* semifactorial) {
+    std::fill_n(values, l_max + 1, 0.0);
     const double x2 = x * x;
     const double x4 = x2 * x2;
     constexpr double xcut = 1e-7;
-    std::vector<double> semifactorial(static_cast<std::size_t>(l_max + 1), 1.0);
+    std::fill_n(semifactorial, l_max + 1, 1.0);
     for (int l = 1; l <= l_max; ++l) {
         semifactorial[static_cast<std::size_t>(l)] = semifactorial[static_cast<std::size_t>(l - 1)]
             * (2.0 * l + 1.0);
@@ -420,54 +461,50 @@ std::vector<double> modified_spherical_bessel(int l_max, double x) {
             flm1 = values[static_cast<std::size_t>(l)];
         }
     }
-    return values;
 }
 
-std::vector<Complex> angular_coefficients(
+void angular_coefficients(
     const SoapTurboOptions& options,
     std::size_t type,
     double distance,
-    const std::array<double, 3>& displacement) {
+    const std::array<double, 3>& displacement,
+    const std::vector<AngularTerm>& terms,
+    Complex* result,
+    double* ilexp,
+    double* semifactorial) {
     const int l_max = options.l_max;
     const int packed_count = 1 + l_max * (l_max + 1) / 2 + l_max;
-    std::vector<Complex> result(static_cast<std::size_t>(packed_count), Complex{0.0, 0.0});
+    std::fill_n(result, packed_count, Complex{0.0, 0.0});
     if (distance >= options.rcut_hard) {
-        return result;
+        return;
     }
     const double sigma = options.atom_sigma_t[type]
         + options.atom_sigma_t_scaling[type] * distance;
     const double x = distance < 1e-14 ? 1.0
         : std::clamp(displacement[2] / distance, -1.0, 1.0);
     const double phi = distance < 1e-14 ? 0.0 : std::atan2(displacement[1], displacement[0]);
-    const auto ilexp = modified_spherical_bessel(l_max, distance / sigma);
+    modified_spherical_bessel(l_max, distance / sigma, ilexp, semifactorial);
     const double amplitude = options.rcut_hard * options.rcut_hard / (sigma * sigma);
+    const Complex phase_step = phi == 0.0
+        ? Complex{1.0, 0.0} : std::exp(Complex{0.0, -phi});
     int packed = 0;
     for (int l = 0; l <= l_max; ++l) {
-        double factorial_l_minus_m = 1.0;
-        for (int i = 1; i <= l; ++i) {
-            factorial_l_minus_m *= i;
-        }
+        Complex phase{1.0, 0.0};
         for (int m = 0; m <= l; ++m) {
             if (m > 0) {
-                factorial_l_minus_m /= static_cast<double>(l + 1 - m);
+                phase *= phase_step;
             }
-            double factorial_l_plus_m = 1.0;
-            for (int i = 1; i <= l + m; ++i) {
-                factorial_l_plus_m *= i;
-            }
-            const double preflm = std::sqrt((2.0 * l + 1.0) / (4.0 * kSoapPi)
-                * factorial_l_minus_m / factorial_l_plus_m);
-            result[static_cast<std::size_t>(packed++)] = amplitude * preflm
-                * associated_legendre(l, m, x)
-                * ilexp[static_cast<std::size_t>(l)]
-                * std::exp(Complex{0.0, -static_cast<double>(m) * phi});
+            const auto& term = terms[static_cast<std::size_t>(packed)];
+            result[static_cast<std::size_t>(packed++)] = amplitude * term.prefactor
+                * associated_legendre(term.l, term.m, x)
+                * ilexp[static_cast<std::size_t>(term.l)] * phase;
         }
     }
-    return result;
 }
 
 struct CompressionMap {
     std::int64_t dimension = 0;
+    bool identity = false;
     std::vector<std::vector<std::pair<std::int64_t, double>>> rows;
 };
 
@@ -477,10 +514,7 @@ CompressionMap make_compression_map(const SoapTurboOptions& options) {
     if (mode.empty()) {
         CompressionMap result;
         result.dimension = dense_count;
-        result.rows.resize(static_cast<std::size_t>(dense_count));
-        for (std::int64_t index = 0; index < dense_count; ++index) {
-            result.rows[static_cast<std::size_t>(index)].push_back({index, 1.0});
-        }
+        result.identity = true;
         return result;
     }
 
@@ -567,14 +601,40 @@ CompressionMap make_compression_map(const SoapTurboOptions& options) {
     return result;
 }
 
+int effective_thread_count(std::int64_t structures, int requested_threads) {
+    int available = requested_threads;
+    if (available <= 0) {
+#ifdef _OPENMP
+        available = omp_get_max_threads();
+#else
+        available = 1;
+#endif
+    }
+    return std::max(1, static_cast<int>(std::min<std::int64_t>(structures, available)));
+}
+
 template <typename Function>
 void run_structures(
     std::int64_t structures,
     int requested_threads,
     const std::shared_ptr<ComputeControl>& control,
     Function&& function) {
+    const int threads = effective_thread_count(structures, requested_threads);
+    if (threads == 1) {
+        for (std::int64_t structure = 0; structure < structures; ++structure) {
+            if (control && control->cancelled()) {
+                continue;
+            }
+            function(structure);
+            mark_completed(control);
+        }
+        if (control && control->cancelled()) {
+            throw CancelledError();
+        }
+        return;
+    }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(requested_threads > 0 ? requested_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(threads)
 #endif
     for (std::int64_t structure = 0; structure < structures; ++structure) {
         if (control && control->cancelled()) {
@@ -590,6 +650,48 @@ void run_structures(
 
 } // namespace
 
+struct SoapTurboPrepared {
+    CompressionMap compression;
+    std::vector<RadialBasis> bases;
+    std::vector<AngularTerm> angular_terms;
+    std::vector<std::size_t> channel_offsets;
+    detail::TypeMap mapping;
+    std::vector<char> central_allowed;
+    std::size_t max_basis_size = 0;
+    std::int64_t dense_features = 0;
+    int packed_count = 0;
+};
+
+std::shared_ptr<SoapTurboPrepared> make_soap_turbo_prepared(
+    const SoapTurboOptions& options) {
+    auto result = std::make_shared<SoapTurboPrepared>();
+    result->compression = make_compression_map(options);
+    result->mapping = make_type_map(options.species);
+    result->central_allowed.assign(
+        options.species.size(), options.central_species.empty() ? 1 : 0);
+    for (const auto species : options.central_species) {
+        result->central_allowed[result->mapping.at(species)] = 1;
+    }
+    result->bases.reserve(options.species.size());
+    for (std::size_t type = 0; type < options.species.size(); ++type) {
+        result->bases.push_back(make_radial_basis(
+            options.alpha_max[type], options.basis,
+            options.atom_sigma_r[type] / options.rcut_hard));
+        result->max_basis_size = std::max(
+            result->max_basis_size, result->bases.back().size > 0
+                ? static_cast<std::size_t>(result->bases.back().size) : std::size_t{0});
+    }
+    result->channel_offsets.assign(options.species.size() + 1, 0);
+    for (std::size_t type = 0; type < options.species.size(); ++type) {
+        result->channel_offsets[type + 1] = result->channel_offsets[type]
+            + static_cast<std::size_t>(options.alpha_max[type]);
+    }
+    result->dense_features = uncompressed_feature_count(options);
+    result->packed_count = 1 + options.l_max * (options.l_max + 1) / 2 + options.l_max;
+    result->angular_terms = make_angular_terms(options.l_max);
+    return result;
+}
+
 std::int64_t soap_turbo_feature_count(const SoapTurboOptions& options) {
     validate_options(options);
     return compression_feature_count(options);
@@ -598,11 +700,10 @@ std::int64_t soap_turbo_feature_count(const SoapTurboOptions& options) {
 void compute_soap_turbo(
     const StructureBatchView& batch,
     const SoapTurboOptions& options,
+    const SoapTurboPrepared& prepared,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
-    validate_options(options);
-    validate_species(batch, options.species);
-    const CompressionMap compression = make_compression_map(options);
+    const auto& compression = prepared.compression;
     const std::int64_t features = compression.dimension;
     std::fill(output, output + batch.atoms * features, 0.0);
     if (batch.atoms == 0) {
@@ -612,43 +713,53 @@ void compute_soap_turbo(
         control->reset(batch.structures);
     }
 
-    const auto mapping = make_type_map(options.species);
-    std::vector<char> central_allowed(options.species.size(), options.central_species.empty() ? 1 : 0);
-    for (const auto species : options.central_species) {
-        central_allowed[mapping.at(species)] = 1;
+    std::vector<std::size_t> atom_types(static_cast<std::size_t>(batch.atoms));
+    for (std::int64_t atom = 0; atom < batch.atoms; ++atom) {
+        if (batch.numbers[atom] <= 0) {
+            throw std::invalid_argument("atomic numbers must be positive");
+        }
+        const auto found = prepared.mapping.find(batch.numbers[atom]);
+        if (found == prepared.mapping.end()) {
+            throw std::invalid_argument("batch contains an atomic number outside calculator species");
+        }
+        atom_types[static_cast<std::size_t>(atom)] = found->second;
     }
-    std::vector<RadialBasis> bases;
-    bases.reserve(options.species.size());
-    for (std::size_t type = 0; type < options.species.size(); ++type) {
-        bases.push_back(make_radial_basis(
-            options.alpha_max[type], options.basis,
-            options.atom_sigma_r[type] / options.rcut_hard));
-    }
-    std::vector<std::size_t> channel_offsets(options.species.size() + 1, 0);
-    for (std::size_t type = 0; type < options.species.size(); ++type) {
-        channel_offsets[type + 1] = channel_offsets[type]
-            + static_cast<std::size_t>(options.alpha_max[type]);
-    }
-    const std::size_t channel_count = channel_offsets.back();
-    const int packed_count = 1 + options.l_max * (options.l_max + 1) / 2 + options.l_max;
-    const auto graph = build_neighbor_graph(batch, options.rcut_hard, control, options.num_threads);
+    const std::size_t channel_count = prepared.channel_offsets.back();
+    const auto& bases = prepared.bases;
+    const auto& channel_offsets = prepared.channel_offsets;
+    const int packed_count = prepared.packed_count;
+    const int threads = effective_thread_count(batch.structures, options.num_threads);
+    const auto graph = build_neighbor_graph(batch, options.rcut_hard, control, threads);
 
-    run_structures(batch.structures, options.num_threads, control, [&](std::int64_t structure) {
+    run_structures(batch.structures, threads, control, [&](std::int64_t structure) {
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
         std::vector<Complex> coefficients(channel_count * static_cast<std::size_t>(packed_count));
-        std::vector<double> radial;
+        std::vector<double> radial(prepared.max_basis_size);
+        std::vector<double> primitive(prepared.max_basis_size);
+        std::vector<double> filtered(prepared.max_basis_size);
+        std::vector<double> raw(prepared.max_basis_size);
+        std::vector<Complex> angular(static_cast<std::size_t>(packed_count));
+        std::vector<double> ilexp(static_cast<std::size_t>(options.l_max + 1));
+        std::vector<double> semifactorial(static_cast<std::size_t>(options.l_max + 1));
+        std::vector<double> dense(
+            compression.identity ? 0 : static_cast<std::size_t>(prepared.dense_features));
         for (std::int64_t center = begin; center < end; ++center) {
-            const std::size_t center_type = mapping.at(batch.numbers[center]);
-            if (!central_allowed[center_type]) {
+            const std::size_t center_type = atom_types[static_cast<std::size_t>(center)];
+            if (!prepared.central_allowed[center_type]) {
                 continue;
             }
             std::fill(coefficients.begin(), coefficients.end(), Complex{0.0, 0.0});
 
             auto add_atom = [&](std::size_t type, double distance,
                                 const std::array<double, 3>& displacement, bool central) {
-                radial = radial_coefficients(bases[type], options, type, distance, central);
-                const auto angular = angular_coefficients(options, type, distance, displacement);
+                radial_coefficients(
+                    bases[type], options, type, distance, central,
+                    radial.data(), primitive.data(), filtered.data(), raw.data());
+                angular_coefficients(
+                    options, type, distance, displacement,
+                    prepared.angular_terms,
+                    angular.data(), ilexp.data(), semifactorial.data());
                 const std::size_t offset = channel_offsets[type];
                 for (int n = 0; n < options.alpha_max[type]; ++n) {
                     for (int k = 0; k < packed_count; ++k) {
@@ -666,7 +777,7 @@ void compute_soap_turbo(
                 if (neighbors.exact_self(index, center)) {
                     continue;
                 }
-                const auto type = mapping.at(batch.numbers[neighbors.atoms[index]]);
+                const auto type = atom_types[static_cast<std::size_t>(neighbors.atoms[index])];
                 add_atom(
                     type,
                     std::sqrt(std::max(0.0, neighbors.distance2[index])),
@@ -677,7 +788,7 @@ void compute_soap_turbo(
 
             if (options.basis == 1 && options.central_weight[center_type] != 0.0) {
                 const auto& basis = bases[center_type];
-                const auto gaussian_column = gaussian_overlap_column(basis);
+                const auto& gaussian_column = basis.gaussian_column;
                 const double sigma_r = options.atom_sigma_r[center_type];
                 const double sigma_t = options.atom_sigma_t[center_type];
                 const double enhancement = options.radial_enhancement == 1
@@ -699,7 +810,8 @@ void compute_soap_turbo(
                 }
             }
 
-            std::vector<double> dense(static_cast<std::size_t>(uncompressed_feature_count(options)), 0.0);
+            double* row = output + center * features;
+            double* dense_values = compression.identity ? row : dense.data();
             std::int64_t dense_index = 0;
             for (std::size_t first = 0; first < channel_count; ++first) {
                 for (std::size_t second = first; second < channel_count; ++second) {
@@ -715,18 +827,19 @@ void compute_soap_turbo(
                                 + static_cast<std::size_t>(packed_offset + m)];
                             value += multiplicity * std::real(first_value * std::conj(second_value));
                         }
-                        dense[static_cast<std::size_t>(dense_index++)] = value;
+                        dense_values[static_cast<std::size_t>(dense_index++)] = value;
                     }
                 }
             }
 
-            double* row = output + center * features;
-            for (std::int64_t compressed = 0; compressed < features; ++compressed) {
-                double value = 0.0;
-                for (const auto [source, factor] : compression.rows[static_cast<std::size_t>(compressed)]) {
-                    value += factor * dense[static_cast<std::size_t>(source)];
+            if (!compression.identity) {
+                for (std::int64_t compressed = 0; compressed < features; ++compressed) {
+                    double value = 0.0;
+                    for (const auto [source, factor] : compression.rows[static_cast<std::size_t>(compressed)]) {
+                        value += factor * dense[static_cast<std::size_t>(source)];
+                    }
+                    row[compressed] = value;
                 }
-                row[compressed] = value;
             }
             double norm = 0.0;
             for (std::int64_t index = 0; index < features; ++index) {
@@ -758,7 +871,11 @@ void SoapTurboCalculator::compute(
         throw std::runtime_error("SOAPTurbo calculator is closed");
     }
     std::lock_guard<std::mutex> lock(compute_mutex_);
-    compute_soap_turbo(batch, options_, output, control);
+    if (!prepared_) {
+        validate_options(options_);
+        prepared_ = make_soap_turbo_prepared(options_);
+    }
+    compute_soap_turbo(batch, options_, *prepared_, output, control);
 }
 
 } // namespace mdescriptor

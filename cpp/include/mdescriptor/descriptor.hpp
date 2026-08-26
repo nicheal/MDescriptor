@@ -64,6 +64,8 @@ struct SoapTurboOptions {
     int num_threads = 0;
 };
 
+struct SoapTurboPrepared;
+
 struct AcsfOptions {
     std::vector<std::int32_t> species;
     double r_cut = 6.0;
@@ -202,6 +204,7 @@ public:
 private:
     SoapTurboOptions options_;
     mutable std::mutex compute_mutex_;
+    mutable std::shared_ptr<SoapTurboPrepared> prepared_;
     std::atomic<bool> closed_{false};
 };
 
