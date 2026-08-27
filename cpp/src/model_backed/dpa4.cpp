@@ -1,6 +1,7 @@
 #include "mdescriptor/dpa4.hpp"
 
 #include "mdescriptor/detail/batch.hpp"
+#include "mdescriptor/detail/math3.hpp"
 #include "mdescriptor/neighbor.hpp"
 
 #include <algorithm>
@@ -184,6 +185,72 @@ struct EdgeData {
     std::vector<float> gie_zonal;      // [E, 15]
 };
 
+// The dense DeepMD input adapter wraps periodic coordinates into the primary
+// cell before constructing the extended image list.  Do the same in the C++
+// path so a translated periodic frame follows exactly the same geometry and
+// neighbor ordering as the reference implementation.
+std::vector<double> normalized_positions(const StructureBatchView& batch) {
+    std::vector<double> positions(
+        static_cast<std::size_t>(batch.atoms) * 3U,
+        0.0);
+    if (batch.atoms > 0) {
+        std::copy(
+            batch.positions,
+            batch.positions + static_cast<std::size_t>(batch.atoms) * 3U,
+            positions.begin());
+    }
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        const std::int32_t* pbc = batch.pbc + structure * 3;
+        const bool periodic = pbc[0] == 1 && pbc[1] == 1 && pbc[2] == 1;
+        if (!periodic) {
+            continue;
+        }
+        detail::Mat3 cell;
+        const double* cell_data = batch.cells + structure * 9U;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                cell.a[row][column] = cell_data[row * 3 + column];
+            }
+        }
+        detail::Mat3 inverse;
+        const bool diagonal = cell.a[0][1] == 0.0 && cell.a[0][2] == 0.0
+            && cell.a[1][0] == 0.0 && cell.a[1][2] == 0.0
+            && cell.a[2][0] == 0.0 && cell.a[2][1] == 0.0;
+        if (diagonal) {
+            for (int axis = 0; axis < 3; ++axis) {
+                inverse.a[axis][axis] = 1.0 / cell.a[axis][axis];
+            }
+        } else {
+            inverse = detail::inverse(cell);
+        }
+        const std::int64_t begin = batch.offsets[structure];
+        const std::int64_t end = batch.offsets[structure + 1];
+        for (std::int64_t atom = begin; atom < end; ++atom) {
+            const double* point = batch.positions + atom * 3;
+            const detail::Vec3 fractional{
+                point[0] * inverse.a[0][0] + point[1] * inverse.a[1][0]
+                    + point[2] * inverse.a[2][0],
+                point[0] * inverse.a[0][1] + point[1] * inverse.a[1][1]
+                    + point[2] * inverse.a[2][1],
+                point[0] * inverse.a[0][2] + point[1] * inverse.a[1][2]
+                    + point[2] * inverse.a[2][2],
+            };
+            const detail::Vec3 wrapped{
+                fractional.x - std::floor(fractional.x),
+                fractional.y - std::floor(fractional.y),
+                fractional.z - std::floor(fractional.z),
+            };
+            const detail::Vec3 cartesian = wrapped.x * detail::row(cell, 0)
+                + wrapped.y * detail::row(cell, 1)
+                + wrapped.z * detail::row(cell, 2);
+            positions[static_cast<std::size_t>(atom * 3 + 0)] = cartesian.x;
+            positions[static_cast<std::size_t>(atom * 3 + 1)] = cartesian.y;
+            positions[static_cast<std::size_t>(atom * 3 + 2)] = cartesian.z;
+        }
+    }
+    return positions;
+}
+
 float c3_envelope(float distance, float rcut, int exponent) {
     float u = (rcut - distance) / rcut;
     u = std::max(0.0F, std::min(1.0F, u));
@@ -224,8 +291,11 @@ EdgeData build_edges(
     // convention as the other native descriptors.  DPA4's nlist excludes the
     // exact self pair, so remove only the original-cell self edge here; periodic
     // self images remain valid neighbors.
+    const std::vector<double> wrapped = normalized_positions(batch);
+    StructureBatchView normalized_batch = batch;
+    normalized_batch.positions = wrapped.data();
     const NeighborGraph graph = build_neighbor_graph(
-        batch, cutoff, control, num_threads, true, false, true);
+        normalized_batch, cutoff, control, num_threads, true, false, true);
     EdgeData edges;
     edges.offsets.assign(static_cast<std::size_t>(batch.atoms) + 1U, 0);
     edges.src.reserve(graph.atoms_data().size());
@@ -238,7 +308,45 @@ EdgeData build_edges(
                 batch.offsets, batch.offsets + batch.structures, center);
             return static_cast<std::int64_t>(std::max<std::ptrdiff_t>(0, (it - batch.offsets) - 1));
         }();
-        for (std::size_t local = 0; local < view.size; ++local) {
+        // ``_build_nlist`` used by the reference descriptor emits each row in
+        // ascending distance order.  The shared cell-list graph is deliberately
+        // order-agnostic and visits spatial cells first, which can reverse two
+        // neighbors in the same destination segment.  The attention reduction
+        // is mathematically permutation invariant, but its fp32 scatter order
+        // is not; reproduce the dense ABI's stable distance ordering here.
+        std::vector<std::size_t> order(view.size);
+        std::iota(order.begin(), order.end(), std::size_t{0});
+        std::stable_sort(order.begin(), order.end(), [&view](std::size_t lhs, std::size_t rhs) {
+            const double left_distance = std::sqrt(view.distance2[lhs]);
+            const double right_distance = std::sqrt(view.distance2[rhs]);
+            if (left_distance != right_distance) {
+                return left_distance < right_distance;
+            }
+            // The dense reference first orders periodic image shifts by their
+            // integer-vector norm (stable), then keeps source atoms in their
+            // original order.  This is the tie policy used by
+            // ``array_api_compat.numpy.argsort`` when equal distances occur.
+            if (view.shifts != nullptr) {
+                const std::int32_t* left = view.shifts + lhs * 3U;
+                const std::int32_t* right = view.shifts + rhs * 3U;
+                const std::int64_t left_norm = static_cast<std::int64_t>(left[0]) * left[0]
+                    + static_cast<std::int64_t>(left[1]) * left[1]
+                    + static_cast<std::int64_t>(left[2]) * left[2];
+                const std::int64_t right_norm = static_cast<std::int64_t>(right[0]) * right[0]
+                    + static_cast<std::int64_t>(right[1]) * right[1]
+                    + static_cast<std::int64_t>(right[2]) * right[2];
+                if (left_norm != right_norm) {
+                    return left_norm < right_norm;
+                }
+                for (int axis = 0; axis < 3; ++axis) {
+                    if (left[axis] != right[axis]) {
+                        return left[axis] < right[axis];
+                    }
+                }
+            }
+            return view.atoms[lhs] < view.atoms[rhs];
+        });
+        for (const std::size_t local : order) {
             if (view.exact_self(local, center)) {
                 continue;
             }
@@ -249,10 +357,11 @@ EdgeData build_edges(
             edges.dst.push_back(static_cast<std::int32_t>(center));
             for (int component = 0; component < 3; ++component) {
                 const float source_value = shift == nullptr
-                    ? static_cast<float>(batch.positions[static_cast<std::size_t>(source) * 3U + component])
-                    : edge_coordinate(batch, source, shift, structure, component);
+                    ? static_cast<float>(normalized_batch.positions[
+                        static_cast<std::size_t>(source) * 3U + component])
+                    : edge_coordinate(normalized_batch, source, shift, structure, component);
                 const float center_value = static_cast<float>(
-                    batch.positions[static_cast<std::size_t>(center) * 3U + component]);
+                    normalized_batch.positions[static_cast<std::size_t>(center) * 3U + component]);
                 edges.vector.push_back(source_value - center_value);
             }
         }
@@ -298,7 +407,14 @@ void fill_radial_basis(EdgeData& edges, const Dpa4Options& options) {
         for (int radial = 0; radial < 16; ++radial) {
             const float frequency = options.radial_freqs[static_cast<std::size_t>(radial)];
             const float argument = distance * frequency;
-            const float sinc = argument == 0.0F ? 1.0F : std::sin(argument) / argument;
+            // The reference uses ``torch.sinc(argument / pi)`` rather than
+            // evaluating ``sin(argument) / argument`` directly.  Keep the
+            // same float32 divide/multiply sequence before calling sin so
+            // the CPU kernel follows that precision boundary.
+            constexpr float pi = 3.1415927410125732422F;
+            const float sinc_argument = argument / pi;
+            const float sinc = sinc_argument == 0.0F
+                ? 1.0F : std::sin(pi * sinc_argument) / (pi * sinc_argument);
             edges.radial_basis[index * 16U + static_cast<std::size_t>(radial)] =
                 frequency * sinc * radial_env;
         }
@@ -353,13 +469,46 @@ void row_matmul(
     const std::vector<float>& weight,
     int output_width,
     float* output) {
-    std::fill(output, output + output_width, 0.0F);
-    for (int row = 0; row < input_width; ++row) {
-        const float input_value = input[row];
-        const std::size_t weight_offset = static_cast<std::size_t>(row * output_width);
-        for (int column = 0; column < output_width; ++column) {
-            output[column] += input_value * weight[weight_offset + static_cast<std::size_t>(column)];
+    // Keep short projections on the model's fp32/FMA path.  The two long
+    // reductions below are the channel projections used by the DPA4 grid
+    // branches.  A small fixed fan-in for width 384 approximates the pairwise
+    // reduction used by a batched GEMM without introducing a BLAS dependency;
+    // width 512/1152 uses a widened accumulator and crosses back to fp32 once.
+    for (int column = 0; column < output_width; ++column) {
+        if (input_width == 384) {
+            constexpr int lanes = 16;
+            std::array<float, lanes> partial{};
+            for (int row = 0; row < input_width; ++row) {
+                const std::size_t lane = static_cast<std::size_t>(row % lanes);
+                partial[lane] = std::fma(
+                    input[row],
+                    weight[static_cast<std::size_t>(row * output_width + column)],
+                    partial[lane]);
+            }
+            float value = 0.0F;
+            for (float part : partial) {
+                value += part;
+            }
+            output[column] = value;
+            continue;
         }
+        if (input_width >= 512) {
+            double value = 0.0;
+            for (int row = 0; row < input_width; ++row) {
+                value += static_cast<double>(input[row])
+                    * static_cast<double>(weight[static_cast<std::size_t>(row * output_width + column)]);
+            }
+            output[column] = static_cast<float>(value);
+            continue;
+        }
+        float value = 0.0F;
+        for (int row = 0; row < input_width; ++row) {
+            value = std::fma(
+                input[row],
+                weight[static_cast<std::size_t>(row * output_width + column)],
+                value);
+        }
+        output[column] = value;
     }
 }
 
@@ -402,8 +551,10 @@ void apply_so3_linear(
                 for (int out = 0; out < output_channels; ++out) {
                     float value = 0.0F;
                     for (int in = 0; in < input_channels; ++in) {
-                        value += input[input_offset + static_cast<std::size_t>(in)]
-                            * weight[weight_offset + static_cast<std::size_t>(in * output_channels + out)];
+                        value = std::fma(
+                            input[input_offset + static_cast<std::size_t>(in)],
+                            weight[weight_offset + static_cast<std::size_t>(in * output_channels + out)],
+                            value);
                     }
                     output[output_offset + static_cast<std::size_t>(out)] = value;
                 }
@@ -436,18 +587,19 @@ void compute_environment(
             options.type_embedding.begin() + static_cast<std::size_t>(type + 1) * 64U,
             type_features.begin() + static_cast<std::size_t>(node) * 64U);
     }
-    std::vector<float> degree(static_cast<std::size_t>(nodes), 0.0F);
+    std::vector<double> degree(static_cast<std::size_t>(nodes), 0.0);
     for (std::int64_t node = 0; node < nodes; ++node) {
         for (std::int64_t edge = edges.offsets[static_cast<std::size_t>(node)];
              edge < edges.offsets[static_cast<std::size_t>(node + 1)]; ++edge) {
             const float env = edges.envelope[static_cast<std::size_t>(edge)];
-            degree[static_cast<std::size_t>(node)] += env * env;
+            degree[static_cast<std::size_t>(node)] += static_cast<double>(env)
+                * static_cast<double>(env);
         }
     }
-    std::vector<float> inv_degree(static_cast<std::size_t>(nodes), 0.0F);
+    std::vector<double> inv_degree(static_cast<std::size_t>(nodes), 0.0);
     for (std::int64_t node = 0; node < nodes; ++node) {
         inv_degree[static_cast<std::size_t>(node)] =
-            1.0F / std::sqrt(degree[static_cast<std::size_t>(node)] + 0.25F);
+            1.0 / std::sqrt(degree[static_cast<std::size_t>(node)] + 0.25);
     }
     film.assign(static_cast<std::size_t>(nodes) * 128U, 0.0F);
 
@@ -455,7 +607,7 @@ void compute_environment(
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
     for (std::int64_t node = 0; node < nodes; ++node) {
-        std::array<float, 4U * 64U> env_agg{};
+        std::array<double, 4U * 64U> env_agg{};
         std::array<float, 32> rbf_hidden{};
         std::array<float, 32> rbf_projected{};
         std::array<float, 128> hidden{};
@@ -505,12 +657,13 @@ void compute_environment(
             for (int coordinate = 0; coordinate < 4; ++coordinate) {
                 for (int channel = 0; channel < 64; ++channel) {
                     env_agg[static_cast<std::size_t>(coordinate * 64 + channel)] +=
-                        rtilde[coordinate] * g[static_cast<std::size_t>(channel)];
+                        static_cast<double>(rtilde[coordinate])
+                        * static_cast<double>(g[static_cast<std::size_t>(channel)]);
                 }
             }
         }
-        const float scale = inv_degree[static_cast<std::size_t>(node)];
-        for (float& value : env_agg) {
+        const double scale = inv_degree[static_cast<std::size_t>(node)];
+        for (double& value : env_agg) {
             value *= scale;
         }
         std::array<float, 512> d_matrix{};
@@ -521,7 +674,8 @@ void compute_environment(
                     value += env_agg[static_cast<std::size_t>(coordinate * 64 + row)]
                         * env_agg[static_cast<std::size_t>(coordinate * 64 + column)];
                 }
-                d_matrix[static_cast<std::size_t>(row * 8 + column)] = value;
+                d_matrix[static_cast<std::size_t>(row * 8 + column)] =
+                    static_cast<float>(value);
             }
         }
         row_matmul(
@@ -535,16 +689,18 @@ void compute_environment(
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
     for (std::int64_t node = 0; node < nodes; ++node) {
-        float scale_sq = 0.0F;
-        float shift_sq = 0.0F;
+        double scale_sq = 0.0;
+        double shift_sq = 0.0;
         for (int channel = 0; channel < 64; ++channel) {
             const float scale_value = film[static_cast<std::size_t>(node) * 128U + static_cast<std::size_t>(channel)];
             const float shift_value = film[static_cast<std::size_t>(node) * 128U + 64U + static_cast<std::size_t>(channel)];
-            scale_sq += scale_value * scale_value;
-            shift_sq += shift_value * shift_value;
+            scale_sq += static_cast<double>(scale_value) * static_cast<double>(scale_value);
+            shift_sq += static_cast<double>(shift_value) * static_cast<double>(shift_value);
         }
-        const float scale_inv = 1.0F / std::sqrt(scale_sq / 64.0F + kEpsilon);
-        const float shift_inv = 1.0F / std::sqrt(shift_sq / 64.0F + kEpsilon);
+        const float scale_inv = static_cast<float>(1.0 / std::sqrt(
+            scale_sq / 64.0 + static_cast<double>(kEpsilon)));
+        const float shift_inv = static_cast<float>(1.0 / std::sqrt(
+            shift_sq / 64.0 + static_cast<double>(kEpsilon)));
         const float scale_strength = std::exp(options.film_scale_strength_log);
         const float shift_strength = std::exp(options.film_shift_strength_log);
         for (int channel = 0; channel < 64; ++channel) {
@@ -617,7 +773,10 @@ void initial_features(
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
     for (std::int64_t node = 0; node < nodes; ++node) {
-        const float inv_degree = 1.0F / std::sqrt(degree_sum[static_cast<std::size_t>(node)] + 0.25F);
+        const float inv_degree = 1.0F / std::sqrt(
+            degree_sum[static_cast<std::size_t>(node)] + 0.25F);
+        std::vector<float> node_features(
+            static_cast<std::size_t>(kFullDim * kChannels), 0.0F);
         for (std::int64_t edge = edges.offsets[static_cast<std::size_t>(node)];
              edge < edges.offsets[static_cast<std::size_t>(node + 1)]; ++edge) {
             const std::size_t e = static_cast<std::size_t>(edge);
@@ -626,7 +785,8 @@ void initial_features(
                 const int radial_slot = static_cast<int>(options.gie_radial_index[static_cast<std::size_t>(row_index)]);
                 const float coupling = edges.gie_zonal[e * 15U + static_cast<std::size_t>(row_index)];
                 for (int channel = 0; channel < 64; ++channel) {
-                    x[node_index(node, row, channel)] += coupling
+                    node_features[static_cast<std::size_t>(row * kChannels + channel)] +=
+                        coupling
                         // GIE receives the radial embedding with the l=0
                         // slice removed (radial_feat[:, 1:, :]); the stored
                         // slot index is therefore relative to l=1.
@@ -634,6 +794,12 @@ void initial_features(
                             + static_cast<std::size_t>((radial_slot + 1) * 64 + channel)]
                         * inv_degree;
                 }
+            }
+        }
+        for (int row = 0; row < kFullDim; ++row) {
+            for (int channel = 0; channel < kChannels; ++channel) {
+                x[node_index(node, row, channel)] =
+                    node_features[static_cast<std::size_t>(row * kChannels + channel)];
             }
         }
     }
@@ -669,27 +835,28 @@ void equivariant_norm(
 #pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
     for (std::int64_t node = 0; node < nodes; ++node) {
-        float mean = 0.0F;
+        double mean = 0.0;
         for (int channel = 0; channel < 64; ++channel) {
-            mean += input[node_index(node, 0, channel)];
+            mean += static_cast<double>(input[node_index(node, 0, channel)]);
         }
-        mean /= 64.0F;
-        float variance = 0.0F;
+        mean /= 64.0;
+        double variance = 0.0;
         for (int row = 0; row < kFullDim; ++row) {
             const float weight = norm_balance[static_cast<std::size_t>(row)];
             for (int channel = 0; channel < 64; ++channel) {
-                const float value = row == 0
-                    ? input[node_index(node, row, channel)] - mean
+                const double value = row == 0
+                    ? static_cast<double>(input[node_index(node, row, channel)]) - mean
                     : input[node_index(node, row, channel)];
-                variance += value * value * weight;
+                variance += value * value * static_cast<double>(weight);
             }
         }
-        const float inverse = 1.0F / std::sqrt(variance + kEquivariantNormEpsilon);
+        const float inverse = static_cast<float>(
+            1.0 / std::sqrt(variance + static_cast<double>(kEquivariantNormEpsilon)));
         for (int row = 0; row < kFullDim; ++row) {
             const int l = degree[static_cast<std::size_t>(row)];
             for (int channel = 0; channel < 64; ++channel) {
                 const float value = row == 0
-                    ? input[node_index(node, row, channel)] - mean
+                    ? static_cast<float>(static_cast<double>(input[node_index(node, row, channel)]) - mean)
                     : input[node_index(node, row, channel)];
                 output[node_index(node, row, channel)] = value * inverse
                     * norm_scale[static_cast<std::size_t>(l * 64 + channel)];
@@ -722,29 +889,30 @@ void apply_so2_linear(
         const std::size_t edge = static_cast<std::size_t>(edge_index);
         for (int output_degree = 0; output_degree < 4; ++output_degree) {
             for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-                float value = 0.0F;
+                double value = 0.0;
                 const int output_index = output_degree * kChannels + output_channel;
                 for (int input_degree = 0; input_degree < 4; ++input_degree) {
                     const int input_base = input_degree * kChannels;
                     for (int input_channel = 0; input_channel < kChannels; ++input_channel) {
                         const std::size_t input_offset =
                             edge * kReducedDim * kChannels + static_cast<std::size_t>(input_base + input_channel);
-                        value += input[input_offset]
-                            * weight_m0[static_cast<std::size_t>(
-                                (input_base + input_channel) * 256 + output_index)];
+                        value += static_cast<double>(input[input_offset])
+                            * static_cast<double>(weight_m0[static_cast<std::size_t>(
+                                (input_base + input_channel) * 256 + output_index)]);
                     }
                 }
-                output[edge * kReducedDim * kChannels + static_cast<std::size_t>(output_index)] = value;
+                output[edge * kReducedDim * kChannels + static_cast<std::size_t>(output_index)] =
+                    static_cast<float>(value);
             }
         }
 
         for (int output_degree = 1; output_degree <= 3; ++output_degree) {
             const int output_l = output_degree - 1;
             for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-                float neg_u = 0.0F;
-                float neg_v = 0.0F;
-                float pos_u = 0.0F;
-                float pos_v = 0.0F;
+                double neg_u = 0.0;
+                double neg_v = 0.0;
+                double pos_u = 0.0;
+                double pos_v = 0.0;
                 for (int input_degree = 1; input_degree <= 3; ++input_degree) {
                     const int input_l = input_degree - 1;
                     for (int input_channel = 0; input_channel < kChannels; ++input_channel) {
@@ -756,18 +924,22 @@ void apply_so2_linear(
                             + static_cast<std::size_t>((4 + input_l) * kChannels + input_channel);
                         const std::size_t pos_offset = edge * kReducedDim * kChannels
                             + static_cast<std::size_t>((7 + input_l) * kChannels + input_channel);
-                        neg_u += input[neg_offset] * coefficient_u;
-                        neg_v += input[neg_offset] * coefficient_v;
-                        pos_u += input[pos_offset] * coefficient_u;
-                        pos_v += input[pos_offset] * coefficient_v;
+                        neg_u += static_cast<double>(input[neg_offset])
+                            * static_cast<double>(coefficient_u);
+                        neg_v += static_cast<double>(input[neg_offset])
+                            * static_cast<double>(coefficient_v);
+                        pos_u += static_cast<double>(input[pos_offset])
+                            * static_cast<double>(coefficient_u);
+                        pos_v += static_cast<double>(input[pos_offset])
+                            * static_cast<double>(coefficient_v);
                     }
                 }
                 const std::size_t neg_output = edge * kReducedDim * kChannels
                     + static_cast<std::size_t>((4 + output_l) * kChannels + output_channel);
                 const std::size_t pos_output = edge * kReducedDim * kChannels
                     + static_cast<std::size_t>((7 + output_l) * kChannels + output_channel);
-                output[neg_output] = neg_u - pos_v;
-                output[pos_output] = neg_v + pos_u;
+                output[neg_output] = static_cast<float>(neg_u - pos_v);
+                output[pos_output] = static_cast<float>(neg_v + pos_u);
             }
         }
     }
@@ -795,12 +967,14 @@ void apply_so2_gate(
         }
         std::array<float, 192> gate{};
         for (int gate_channel = 0; gate_channel < 192; ++gate_channel) {
-            float value = 0.0F;
+            double value = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                value += input[edge_offset + static_cast<std::size_t>(channel)]
-                    * gate_weight[static_cast<std::size_t>(channel * 192 + gate_channel)];
+                value += static_cast<double>(input[
+                    edge_offset + static_cast<std::size_t>(channel)])
+                    * static_cast<double>(gate_weight[
+                        static_cast<std::size_t>(channel * 192 + gate_channel)]);
             }
-            gate[static_cast<std::size_t>(gate_channel)] = sigmoid(value);
+            gate[static_cast<std::size_t>(gate_channel)] = sigmoid(static_cast<float>(value));
         }
         for (int row = 1; row < kReducedDim; ++row) {
             const int degree = kReducedDegree[static_cast<std::size_t>(row - 1)];
@@ -851,14 +1025,15 @@ void dynamic_radial_mix(
             const int compact_offset = group == 0 ? 0 : 16;
             const int output_local = group == 0 ? output_degree : output_degree - 1;
             for (int channel = 0; channel < kChannels; ++channel) {
-                float value = 0.0F;
+                double value = 0.0;
                 for (int input_local = 0; input_local < group_size; ++input_local) {
                     const int input_row = group == 0
                         ? input_local
                         : (row < 7 ? 4 + input_local : 7 + input_local);
                     const int coefficient = compact_offset + input_local * group_size + output_local;
-                    value += compact[static_cast<std::size_t>(coefficient)]
-                        * local[edge_offset + static_cast<std::size_t>(input_row * kChannels + channel)];
+                    value += static_cast<double>(compact[static_cast<std::size_t>(coefficient)])
+                        * static_cast<double>(local[
+                            edge_offset + static_cast<std::size_t>(input_row * kChannels + channel)]);
                 }
                 output[edge_offset + static_cast<std::size_t>(row * kChannels + channel)] =
                     value * block.radial_channel_basis[static_cast<std::size_t>(channel)];
@@ -941,8 +1116,10 @@ void project_to_grid(
         for (int channel = 0; channel < channels; ++channel) {
             float value = 0.0F;
             for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
-                value += matrix[static_cast<std::size_t>(grid_point * kGridCoeff + coefficient)]
-                    * coefficients[static_cast<std::size_t>(coefficient * channels + channel)];
+                value = std::fma(
+                    matrix[static_cast<std::size_t>(grid_point * kGridCoeff + coefficient)],
+                    coefficients[static_cast<std::size_t>(coefficient * channels + channel)],
+                    value);
             }
             grid[static_cast<std::size_t>(grid_point * channels + channel)] = value;
         }
@@ -962,8 +1139,10 @@ void project_from_grid(
         for (int channel = 0; channel < channels; ++channel) {
             float value = 0.0F;
             for (int grid_point = 0; grid_point < kGridSize; ++grid_point) {
-                value += matrix[static_cast<std::size_t>(coefficient * kGridSize + grid_point)]
-                    * grid[static_cast<std::size_t>(grid_point * channels + channel)];
+                value = std::fma(
+                    matrix[static_cast<std::size_t>(coefficient * kGridSize + grid_point)],
+                    grid[static_cast<std::size_t>(grid_point * channels + channel)],
+                    value);
             }
             coefficients[static_cast<std::size_t>(coefficient * channels + channel)] = value;
         }
@@ -983,13 +1162,16 @@ void expand_frames(
         const int degree = kDegree[static_cast<std::size_t>(row)];
         for (int frame = 0; frame < kFrames; ++frame) {
             for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-                float value = 0.0F;
+                double value = 0.0;
                 for (int input_channel = 0; input_channel < kChannels; ++input_channel) {
-                    value += input[static_cast<std::size_t>(row * kChannels + input_channel)]
-                        * weight[static_cast<std::size_t>(degree * kChannels * (kFrames * kChannels)
-                            + input_channel * (kFrames * kChannels) + frame * kChannels + output_channel)];
+                    value += static_cast<double>(input[
+                        static_cast<std::size_t>(row * kChannels + input_channel)])
+                        * static_cast<double>(weight[static_cast<std::size_t>(
+                            degree * kChannels * (kFrames * kChannels)
+                            + input_channel * (kFrames * kChannels) + frame * kChannels + output_channel)]);
                 }
-                output[static_cast<std::size_t>((row * kFrames + frame) * kChannels + output_channel)] = value;
+                output[static_cast<std::size_t>((row * kFrames + frame) * kChannels + output_channel)] =
+                    static_cast<float>(value);
             }
         }
     }
@@ -1006,15 +1188,18 @@ void contract_frames(
     for (int row = 0; row < kFullDim; ++row) {
         const int degree = kDegree[static_cast<std::size_t>(row)];
         for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-            float value = 0.0F;
+            double value = 0.0;
             for (int frame = 0; frame < kFrames; ++frame) {
                 for (int input_channel = 0; input_channel < kChannels; ++input_channel) {
-                    value += input[static_cast<std::size_t>((row * kFrames + frame) * kChannels + input_channel)]
-                        * weight[static_cast<std::size_t>(degree * (kFrames * kChannels) * kChannels
-                            + (frame * kChannels + input_channel) * kChannels + output_channel)];
+                    value += static_cast<double>(input[static_cast<std::size_t>(
+                        (row * kFrames + frame) * kChannels + input_channel)])
+                        * static_cast<double>(weight[static_cast<std::size_t>(
+                            degree * (kFrames * kChannels) * kChannels
+                            + (frame * kChannels + input_channel) * kChannels + output_channel)]);
                 }
             }
-            output[static_cast<std::size_t>(row * kChannels + output_channel)] = value;
+            output[static_cast<std::size_t>(row * kChannels + output_channel)] =
+                static_cast<float>(value);
         }
     }
 }
@@ -1062,12 +1247,13 @@ void message_grid_one(
     scalar_swiglu(scalar_pair, kChannels, scalar_out);
     std::array<float, kChannels> scalar_gate{};
     for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-        float value = 0.0F;
+        double value = 0.0;
         for (int input_channel = 0; input_channel < 2 * kChannels; ++input_channel) {
-            value += scalar_pair[static_cast<std::size_t>(input_channel)]
-                * block.message_scalar_gate[static_cast<std::size_t>(input_channel * kChannels + output_channel)];
+            value += static_cast<double>(scalar_pair[static_cast<std::size_t>(input_channel)])
+                * static_cast<double>(block.message_scalar_gate[
+                    static_cast<std::size_t>(input_channel * kChannels + output_channel)]);
         }
-        scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(value);
+        scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(static_cast<float>(value));
     }
     for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
         for (int channel = 0; channel < kChannels; ++channel) {
@@ -1128,12 +1314,13 @@ void block_grid_branch_one(
     scalar_swiglu(scalar_pair, 192, scalar_out);
     std::array<float, 192> scalar_gate{};
     for (int output_channel = 0; output_channel < 192; ++output_channel) {
-        float value = 0.0F;
+        double value = 0.0;
         for (int input_channel = 0; input_channel < 384; ++input_channel) {
-            value += scalar_pair[static_cast<std::size_t>(input_channel)]
-                * block.ffn_scalar_gate[static_cast<std::size_t>(input_channel * 192 + output_channel)];
+            value += static_cast<double>(scalar_pair[static_cast<std::size_t>(input_channel)])
+                * static_cast<double>(block.ffn_scalar_gate[
+                    static_cast<std::size_t>(input_channel * 192 + output_channel)]);
         }
-        scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(value);
+        scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(static_cast<float>(value));
     }
     // The deployed model has one branch; the softmax over one route is exactly 1.
     (void)block.ffn_grid_router;
@@ -1191,12 +1378,13 @@ void output_grid_mlp_one(
     scalar_swiglu(scalar_pair, 192, scalar_out);
     std::array<float, 192> scalar_gate{};
     for (int output_channel = 0; output_channel < 192; ++output_channel) {
-        float value = 0.0F;
+        double value = 0.0;
         for (int input_channel = 0; input_channel < 384; ++input_channel) {
-            value += scalar_pair[static_cast<std::size_t>(input_channel)]
-                * options.output_scalar_gate[static_cast<std::size_t>(input_channel * 192 + output_channel)];
+            value += static_cast<double>(scalar_pair[static_cast<std::size_t>(input_channel)])
+                * static_cast<double>(options.output_scalar_gate[
+                    static_cast<std::size_t>(input_channel * 192 + output_channel)]);
         }
-        scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(value);
+        scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(static_cast<float>(value));
     }
     for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
         for (int channel = 0; channel < 192; ++channel) {
@@ -1218,7 +1406,8 @@ void scalar_rms_norm(
     for (int channel = 0; channel < kChannels; ++channel) {
         mean_square += input[channel] * input[channel];
     }
-    const float inverse = 1.0F / std::sqrt(mean_square / static_cast<float>(kChannels) + kEpsilon);
+    const float inverse = 1.0F / std::sqrt(mean_square / static_cast<float>(kChannels)
+        + kEpsilon);
     for (int channel = 0; channel < kChannels; ++channel) {
         output[channel] = input[channel] * inverse * scale[static_cast<std::size_t>(channel)];
     }
@@ -1265,15 +1454,16 @@ void run_block(
         const std::int32_t source = edges.src[e];
         for (int reduced = 0; reduced < kReducedDim; ++reduced) {
             for (int channel = 0; channel < kChannels; ++channel) {
-                float value = 0.0F;
+                double value = 0.0;
                 for (int global = 0; global < kFullDim; ++global) {
-                    value += edges.rotation_to_m[
+                    value += static_cast<double>(edges.rotation_to_m[
                         (e * kReducedDim + static_cast<std::size_t>(reduced)) * kFullDim
-                            + static_cast<std::size_t>(global)]
-                        * pre_focus[node_index(source, global, channel)];
+                            + static_cast<std::size_t>(global)])
+                        * static_cast<double>(pre_focus[node_index(source, global, channel)]);
                 }
                 local[e * kReducedDim * kChannels
-                    + static_cast<std::size_t>(reduced * kChannels + channel)] = value;
+                    + static_cast<std::size_t>(reduced * kChannels + channel)] =
+                    static_cast<float>(value);
                 const int degree = kReducedDegree[static_cast<std::size_t>(reduced)];
                 radial_reduced[e * kReducedDim * kChannels
                     + static_cast<std::size_t>(reduced * kChannels + channel)] =
@@ -1328,15 +1518,18 @@ void run_block(
     // Attention has a positive learned null mass.  Compute every destination
     // segment independently, which is both race-free and preserves the edge
     // order emitted by NeighborGraph for reproducible reductions.
-    std::vector<float> attention_output(static_cast<std::size_t>(nodes) * kFullDim * kChannels, 0.0F);
-    const float null_logit = std::log(softplus(block.attn_z_bias_raw[0]) + kEpsilon);
+    std::vector<double> attention_accum(
+        static_cast<std::size_t>(nodes) * kFullDim * kChannels, 0.0);
+    const double null_logit = std::log(
+        static_cast<double>(softplus(block.attn_z_bias_raw[0]))
+        + static_cast<double>(kEpsilon));
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
     for (std::int64_t node = 0; node < nodes; ++node) {
         const std::int64_t begin = edges.offsets[static_cast<std::size_t>(node)];
         const std::int64_t end = edges.offsets[static_cast<std::size_t>(node + 1)];
-        float max_logit = null_logit;
+        double max_logit = null_logit;
         for (std::int64_t edge = begin; edge < end; ++edge) {
             const std::size_t e = static_cast<std::size_t>(edge);
             const float env = edges.envelope[e];
@@ -1344,20 +1537,24 @@ void run_block(
                 continue;
             }
             const std::int32_t source = edges.src[e];
-            float dot = 0.0F;
+            double dot = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                dot += q[static_cast<std::size_t>(node) * kChannels + static_cast<std::size_t>(channel)]
-                    * key[static_cast<std::size_t>(source) * kChannels + static_cast<std::size_t>(channel)];
+                dot += static_cast<double>(q[static_cast<std::size_t>(node) * kChannels
+                    + static_cast<std::size_t>(channel)]
+                    * static_cast<double>(key[static_cast<std::size_t>(source) * kChannels
+                        + static_cast<std::size_t>(channel)]));
             }
-            float radial_bias = 0.0F;
+            double radial_bias = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                radial_bias += radial_reduced[e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
-                    * block.attn_logit_weight[static_cast<std::size_t>(channel)];
+                radial_bias += static_cast<double>(radial_reduced[
+                    e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
+                    * static_cast<double>(block.attn_logit_weight[static_cast<std::size_t>(channel)]));
             }
-            const float logit = dot * (1.0F / 8.0F) + radial_bias + 2.0F * std::log(env);
+            const double logit = dot * (1.0 / 8.0) + radial_bias
+                + 2.0 * std::log(static_cast<double>(env));
             max_logit = std::max(max_logit, logit);
         }
-        float denominator = std::exp(null_logit - max_logit);
+        double denominator = std::exp(null_logit - max_logit);
         for (std::int64_t edge = begin; edge < end; ++edge) {
             const std::size_t e = static_cast<std::size_t>(edge);
             const float env = edges.envelope[e];
@@ -1365,20 +1562,24 @@ void run_block(
                 continue;
             }
             const std::int32_t source = edges.src[e];
-            float dot = 0.0F;
+            double dot = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                dot += q[static_cast<std::size_t>(node) * kChannels + static_cast<std::size_t>(channel)]
-                    * key[static_cast<std::size_t>(source) * kChannels + static_cast<std::size_t>(channel)];
+                dot += static_cast<double>(q[static_cast<std::size_t>(node) * kChannels
+                    + static_cast<std::size_t>(channel)]
+                    * static_cast<double>(key[static_cast<std::size_t>(source) * kChannels
+                        + static_cast<std::size_t>(channel)]));
             }
-            float radial_bias = 0.0F;
+            double radial_bias = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                radial_bias += radial_reduced[e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
-                    * block.attn_logit_weight[static_cast<std::size_t>(channel)];
+                radial_bias += static_cast<double>(radial_reduced[
+                    e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
+                    * static_cast<double>(block.attn_logit_weight[static_cast<std::size_t>(channel)]));
             }
-            const float logit = dot * (1.0F / 8.0F) + radial_bias + 2.0F * std::log(env);
+            const double logit = dot * (1.0 / 8.0) + radial_bias
+                + 2.0 * std::log(static_cast<double>(env));
             denominator += std::exp(logit - max_logit);
         }
-        const float inverse_denominator = 1.0F / denominator;
+        const double inverse_denominator = 1.0 / denominator;
         for (std::int64_t edge = begin; edge < end; ++edge) {
             const std::size_t e = static_cast<std::size_t>(edge);
             const float env = edges.envelope[e];
@@ -1386,21 +1587,25 @@ void run_block(
                 continue;
             }
             const std::int32_t source = edges.src[e];
-            float dot = 0.0F;
+            double dot = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                dot += q[static_cast<std::size_t>(node) * kChannels + static_cast<std::size_t>(channel)]
-                    * key[static_cast<std::size_t>(source) * kChannels + static_cast<std::size_t>(channel)];
+                dot += static_cast<double>(q[static_cast<std::size_t>(node) * kChannels
+                    + static_cast<std::size_t>(channel)]
+                    * static_cast<double>(key[static_cast<std::size_t>(source) * kChannels
+                        + static_cast<std::size_t>(channel)]));
             }
-            float radial_bias = 0.0F;
+            double radial_bias = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                radial_bias += radial_reduced[e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
-                    * block.attn_logit_weight[static_cast<std::size_t>(channel)];
+                radial_bias += static_cast<double>(radial_reduced[
+                    e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
+                    * static_cast<double>(block.attn_logit_weight[static_cast<std::size_t>(channel)]));
             }
-            const float logit = dot * (1.0F / 8.0F) + radial_bias + 2.0F * std::log(env);
-            const float alpha = std::exp(logit - max_logit) * inverse_denominator;
+            const double logit = dot * (1.0 / 8.0) + radial_bias
+                + 2.0 * std::log(static_cast<double>(env));
+            const double alpha = std::exp(logit - max_logit) * inverse_denominator;
             for (int row = 0; row < kFullDim; ++row) {
                 for (int channel = 0; channel < kChannels; ++channel) {
-                    attention_output[node_index(node, row, channel)] +=
+                    attention_accum[node_index(node, row, channel)] +=
                         alpha * edge_message[edge_index(e, row, channel)];
                 }
             }
@@ -1411,19 +1616,23 @@ void run_block(
             pre_focus.data() + node_index(node, 0, 0),
             block.attn_output_gate_scale,
             normalized_gate.data());
-        float gate_logit = 0.0F;
+        double gate_logit = 0.0;
         for (int channel = 0; channel < kChannels; ++channel) {
-            gate_logit += normalized_gate[static_cast<std::size_t>(channel)]
-                * block.attn_gate_weight[static_cast<std::size_t>(channel)];
+            gate_logit += static_cast<double>(normalized_gate[static_cast<std::size_t>(channel)])
+                * static_cast<double>(block.attn_gate_weight[static_cast<std::size_t>(channel)]);
         }
-        const float gate = sigmoid(gate_logit);
+        const float gate = sigmoid(static_cast<float>(gate_logit));
         for (int row = 0; row < kFullDim; ++row) {
             for (int channel = 0; channel < kChannels; ++channel) {
-                attention_output[node_index(node, row, channel)] *= gate;
+                attention_accum[node_index(node, row, channel)] *= gate;
             }
         }
     }
 
+    std::vector<float> attention_output(attention_accum.size(), 0.0F);
+    for (std::size_t index = 0; index < attention_accum.size(); ++index) {
+        attention_output[index] = static_cast<float>(attention_accum[index]);
+    }
     // The grid cross-product is a residual branch evaluated against the
     // attention aggregate, then added before the final post-focus mix.
     const std::vector<float>& aggregate = attention_output;
@@ -1450,7 +1659,6 @@ void run_block(
             }
         }
     }
-
     std::vector<float> so2_output;
     apply_so3_linear(
         post_input, nodes, kChannels, kChannels,
@@ -1471,7 +1679,6 @@ void run_block(
     for (std::size_t index = 0; index < state.size(); ++index) {
         state[index] = input[index] + so2_output[index];
     }
-
     std::vector<float> ffn_input;
     if (block.ffn_norm_enabled) {
         equivariant_norm(
@@ -1597,11 +1804,48 @@ void Dpa4Calculator::compute(
             }
         }
     }
-    for (const Dpa4BlockOptions& block : options_.blocks) {
-        std::vector<float> block_output;
-        run_block(x, edges, radial, block, options_, batch.atoms, block_output);
-        x.swap(block_output);
-        detail::check_cancelled(control);
+    // ``build_neighbor_graph`` omits padded slots.  The native DeepMD graph
+    // lower skips all interaction blocks for a frame with no real edge;
+    // executing them against an empty message aggregate changes the
+    // descriptor through the residual/FFN path and produces a large,
+    // non-numerical mismatch.  A StructureBatch can mix connected and
+    // isolated frames, so retain the pre-block state for each inactive frame
+    // after running a block for the connected frames.
+    std::vector<bool> active_structures(static_cast<std::size_t>(batch.structures), false);
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        const std::int64_t begin = batch.offsets[structure];
+        const std::int64_t end = batch.offsets[structure + 1];
+        for (std::int64_t atom = begin; atom < end; ++atom) {
+            if (edges.offsets[static_cast<std::size_t>(atom + 1)]
+                > edges.offsets[static_cast<std::size_t>(atom)]) {
+                active_structures[static_cast<std::size_t>(structure)] = true;
+                break;
+            }
+        }
+    }
+    if (!edges.src.empty()) {
+        for (const Dpa4BlockOptions& block : options_.blocks) {
+            std::vector<float> block_output;
+            run_block(
+                x, edges, radial, block, options_, batch.atoms, block_output);
+            for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+                if (active_structures[static_cast<std::size_t>(structure)]) {
+                    continue;
+                }
+                const std::int64_t begin = batch.offsets[structure];
+                const std::int64_t end = batch.offsets[structure + 1];
+                const std::size_t row_width = static_cast<std::size_t>(kFullDim * kChannels);
+                for (std::int64_t atom = begin; atom < end; ++atom) {
+                    const std::size_t offset = static_cast<std::size_t>(atom) * row_width;
+                    std::copy(
+                        x.begin() + static_cast<std::ptrdiff_t>(offset),
+                        x.begin() + static_cast<std::ptrdiff_t>(offset + row_width),
+                        block_output.begin() + static_cast<std::ptrdiff_t>(offset));
+                }
+            }
+            x.swap(block_output);
+            detail::check_cancelled(control);
+        }
     }
 
     std::vector<float> output_hidden;

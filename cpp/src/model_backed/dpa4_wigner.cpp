@@ -31,7 +31,15 @@ float quaternion_norm(const Dpa4Quaternion& quaternion, float eps) {
 Dpa4Quaternion normalize_quaternion_unchecked(
     const Dpa4Quaternion& quaternion,
     float eps) {
-    const float divisor = quaternion_norm(quaternion, eps);
+    // Evaluate the norm in double precision before crossing back to the
+    // model's fp32 storage boundary.  This avoids a one-ulp drift in the
+    // chart blend and in the quaternion passed to the low-order kernels.
+    const double w = static_cast<double>(quaternion.w);
+    const double x = static_cast<double>(quaternion.x);
+    const double y = static_cast<double>(quaternion.y);
+    const double z = static_cast<double>(quaternion.z);
+    const double e = static_cast<double>(eps);
+    const float divisor = static_cast<float>(std::sqrt(w * w + x * x + y * y + z * z + e * e));
     return {
         quaternion.w / divisor,
         quaternion.x / divisor,

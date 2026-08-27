@@ -1681,7 +1681,20 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x = xp.astype(x, get_xp_precision(xp, self.precision))  # (N, D, 1, C)
         if force_embedding is not None:
             x = x + xp.astype(force_embedding, get_xp_precision(xp, self.precision))
-        if self.blocks:
+        # Dense quartet inputs keep a shape-static padded edge axis.  In that
+        # layout ``edge_cache.src`` is non-empty even when every neighbor slot
+        # is padding, while the native PT implementation skips interaction
+        # blocks when no real edge exists.  Use the graph mask for the eager
+        # NumPy/reference path so an isolated atom follows the same semantics.
+        # If an array backend cannot materialize the mask (for example while
+        # tracing a compiled graph), retain the shape-static behavior and let
+        # the compiled lower handle its own edge policy.
+        has_valid_edges = True
+        try:
+            has_valid_edges = bool(np.asarray(edge_mask).any())
+        except (TypeError, ValueError, RuntimeError):
+            pass
+        if self.blocks and has_valid_edges:
             edge_cache = edge_cache_to_dtype(
                 edge_cache, get_xp_precision(xp, self.precision)
             )

@@ -42,12 +42,13 @@ float affine_value(
     const float* input,
     int output
 ) {
-    float result = 0.0F;
+    double result = 0.0;
     for (int input_index = 0; input_index < input_width; ++input_index) {
-        result += input[input_index]
-            * weights[static_cast<std::size_t>(input_index * output_width + output)];
+        result += static_cast<double>(input[input_index])
+            * static_cast<double>(weights[static_cast<std::size_t>(
+                input_index * output_width + output)]);
     }
-    return result;
+    return static_cast<float>(result);
 }
 
 void validate_vector_size(
@@ -247,7 +248,17 @@ std::vector<double> normalized_positions(const StructureBatchView& batch) {
             continue;
         }
         const Mat3 cell = load_cell(batch, structure);
-        const Mat3 inverse = detail::inverse(cell);
+        Mat3 inverse;
+        const bool diagonal = cell.a[0][1] == 0.0 && cell.a[0][2] == 0.0
+            && cell.a[1][0] == 0.0 && cell.a[1][2] == 0.0
+            && cell.a[2][0] == 0.0 && cell.a[2][1] == 0.0;
+        if (diagonal) {
+            for (int axis = 0; axis < 3; ++axis) {
+                inverse.a[axis][axis] = 1.0 / cell.a[axis][axis];
+            }
+        } else {
+            inverse = detail::inverse(cell);
+        }
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
         for (std::int64_t atom = begin; atom < end; ++atom) {
@@ -506,7 +517,11 @@ void Dpa4cCalculator::compute(
             continue;
         }
         const int center_type = type_indices[center_atom];
-        std::vector<float> reduced(static_cast<std::size_t>(2 + moment_count_), 0.0F);
+        // Accumulate destination reductions in fp64 while keeping the
+        // checkpoint/activation storage in fp32.  A center can have many
+        // neighbors; rounding every contribution in fp32 was the dominant
+        // source of the residual DPA4C parity error.
+        std::vector<double> reduced(static_cast<std::size_t>(2 + moment_count_), 0.0);
         std::vector<float> radial_basis(static_cast<std::size_t>(options_.n_radial));
         std::vector<float> radial_pre(static_cast<std::size_t>(2 * options_.radial_hidden));
         std::vector<float> radial_hidden(static_cast<std::size_t>(options_.radial_hidden));
@@ -514,7 +529,17 @@ void Dpa4cCalculator::compute(
         std::vector<float> modes(static_cast<std::size_t>(options_.radial_modes));
         std::vector<float> basis(static_cast<std::size_t>(angular_width));
         const NeighborView neighbors = graph.for_center(center_atom);
-        for (std::size_t edge = 0; edge < neighbors.size; ++edge) {
+        // The Python dense builder presents each destination row in ascending
+        // distance order.  Match that order before the moment reduction so
+        // fp32 edge features and the final gram/bispectrum contractions do not
+        // depend on the cell-list traversal order.
+        std::vector<std::size_t> edge_order(neighbors.size);
+        std::iota(edge_order.begin(), edge_order.end(), std::size_t{0});
+        std::stable_sort(edge_order.begin(), edge_order.end(), [&neighbors](
+            std::size_t lhs, std::size_t rhs) {
+            return neighbors.distance2[lhs] < neighbors.distance2[rhs];
+        });
+        for (const std::size_t edge : edge_order) {
             if (neighbors.exact_self(edge, center_atom)) {
                 continue;
             }
@@ -588,19 +613,24 @@ void Dpa4cCalculator::compute(
                 * static_cast<std::size_t>(options_.radial_modes);
             angular_basis(ux, uy, uz, options_.lmax, basis.data());
 
-            reduced[0] += envelope * envelope;
+            reduced[0] += static_cast<double>(envelope) * static_cast<double>(envelope);
             const float envelope_squared = envelope * envelope;
-            reduced[1] += envelope_squared * envelope_squared;
+            reduced[1] += static_cast<double>(envelope_squared)
+                * static_cast<double>(envelope_squared);
             for (int channel = 0; channel < options_.channels; ++channel) {
-                float raw_amplitude = radial[static_cast<std::size_t>(channel)]
-                    * pair_scale_[pair_channel_offset + static_cast<std::size_t>(channel)]
-                    + pair_shift_[pair_channel_offset + static_cast<std::size_t>(channel)];
+                double raw_amplitude = static_cast<double>(radial[
+                    static_cast<std::size_t>(channel)])
+                    * static_cast<double>(pair_scale_[
+                        pair_channel_offset + static_cast<std::size_t>(channel)])
+                    + static_cast<double>(pair_shift_[
+                        pair_channel_offset + static_cast<std::size_t>(channel)]);
                 for (int mode = 0; mode < options_.radial_modes; ++mode) {
-                    raw_amplitude += pair_mixing_[pair_mode_offset + static_cast<std::size_t>(
-                        channel * options_.radial_modes + mode)]
-                        * modes[static_cast<std::size_t>(mode)];
+                    raw_amplitude += static_cast<double>(pair_mixing_[
+                        pair_mode_offset + static_cast<std::size_t>(
+                            channel * options_.radial_modes + mode)])
+                        * static_cast<double>(modes[static_cast<std::size_t>(mode)]);
                 }
-                const float edge_amplitude = raw_amplitude * envelope;
+                const double edge_amplitude = raw_amplitude * static_cast<double>(envelope);
                 reduced[static_cast<std::size_t>(2 + channel)] += edge_amplitude;
             }
             for (int degree = 1; degree <= options_.lmax; ++degree) {
@@ -609,29 +639,34 @@ void Dpa4cCalculator::compute(
                 const int moment_offset = degree_offsets_[static_cast<std::size_t>(degree)];
                 for (int component = 0; component < 2 * degree + 1; ++component) {
                     for (int channel = 0; channel < width; ++channel) {
-                        float raw_amplitude = radial[static_cast<std::size_t>(channel)]
-                            * pair_scale_[pair_channel_offset + static_cast<std::size_t>(channel)]
-                            + pair_shift_[pair_channel_offset + static_cast<std::size_t>(channel)];
+                        double raw_amplitude = static_cast<double>(radial[
+                            static_cast<std::size_t>(channel)])
+                            * static_cast<double>(pair_scale_[
+                                pair_channel_offset + static_cast<std::size_t>(channel)])
+                            + static_cast<double>(pair_shift_[
+                                pair_channel_offset + static_cast<std::size_t>(channel)]);
                         for (int mode = 0; mode < options_.radial_modes; ++mode) {
-                            raw_amplitude += pair_mixing_[pair_mode_offset + static_cast<std::size_t>(
-                                channel * options_.radial_modes + mode)]
-                                * modes[static_cast<std::size_t>(mode)];
+                            raw_amplitude += static_cast<double>(pair_mixing_[
+                                pair_mode_offset + static_cast<std::size_t>(
+                                    channel * options_.radial_modes + mode)])
+                                * static_cast<double>(modes[static_cast<std::size_t>(mode)]);
                         }
                         reduced[static_cast<std::size_t>(2 + moment_offset
                             + component * width + channel)] += raw_amplitude * envelope_squared
-                            * basis[static_cast<std::size_t>(basis_offset + component)];
+                            * static_cast<double>(basis[
+                                static_cast<std::size_t>(basis_offset + component)]);
                     }
                 }
             }
         }
 
-        const float divisor_scalar = std::sqrt(reduced[0] + kNormFloor);
-        const float divisor_angular = std::sqrt(reduced[1] + kNormFloor);
+        const double divisor_scalar = std::sqrt(reduced[0] + static_cast<double>(kNormFloor));
+        const double divisor_angular = std::sqrt(reduced[1] + static_cast<double>(kNormFloor));
         std::vector<float> moments(static_cast<std::size_t>(moment_count_), 0.0F);
         const int scalar_width = options_.channels;
         for (int channel = 0; channel < scalar_width; ++channel) {
-            moments[static_cast<std::size_t>(channel)] = reduced[static_cast<std::size_t>(2 + channel)]
-                / divisor_scalar;
+            moments[static_cast<std::size_t>(channel)] = static_cast<float>(
+                reduced[static_cast<std::size_t>(2 + channel)] / divisor_scalar);
         }
         for (int degree = 1; degree <= options_.lmax; ++degree) {
             const int width = options_.degree_channels[static_cast<std::size_t>(degree)];
@@ -639,8 +674,8 @@ void Dpa4cCalculator::compute(
             for (int component = 0; component < 2 * degree + 1; ++component) {
                 for (int channel = 0; channel < width; ++channel) {
                     moments[static_cast<std::size_t>(offset + component * width + channel)] =
-                        reduced[static_cast<std::size_t>(2 + offset + component * width + channel)]
-                        / divisor_angular;
+                        static_cast<float>(reduced[static_cast<std::size_t>(
+                            2 + offset + component * width + channel)] / divisor_angular);
                 }
             }
         }
@@ -665,12 +700,16 @@ void Dpa4cCalculator::compute(
                 std::vector<float> aligned = block;
                 for (int component = 0; component < dimension; ++component) {
                     for (int output_channel = 0; output_channel < width; ++output_channel) {
-                        float value = block[static_cast<std::size_t>(component * width + output_channel)];
+                        double value = static_cast<double>(block[
+                            static_cast<std::size_t>(component * width + output_channel)]);
                         for (int input_channel = 0; input_channel < width; ++input_channel) {
-                            value += block[static_cast<std::size_t>(component * width + input_channel)]
-                                * matrix[static_cast<std::size_t>(input_channel * width + output_channel)];
+                            value += static_cast<double>(block[static_cast<std::size_t>(
+                                component * width + input_channel)])
+                                * static_cast<double>(matrix[static_cast<std::size_t>(
+                                    input_channel * width + output_channel)]);
                         }
-                        aligned[static_cast<std::size_t>(component * width + output_channel)] = value;
+                        aligned[static_cast<std::size_t>(component * width + output_channel)] =
+                            static_cast<float>(value);
                     }
                 }
                 block = std::move(aligned);
@@ -692,13 +731,15 @@ void Dpa4cCalculator::compute(
                 const float* matrix = options_.readout_projections.data() + matrix_begin;
                 for (int component = 0; component < dimension; ++component) {
                     for (int output_channel = 0; output_channel < rank; ++output_channel) {
-                        float value = 0.0F;
+                        double value = 0.0;
                         for (int input_channel = 0; input_channel < width; ++input_channel) {
-                            value += blocks[static_cast<std::size_t>(degree)][
-                                static_cast<std::size_t>(component * width + input_channel)]
-                                * matrix[static_cast<std::size_t>(input_channel * rank + output_channel)];
+                            value += static_cast<double>(blocks[static_cast<std::size_t>(degree)][
+                                static_cast<std::size_t>(component * width + input_channel)])
+                                * static_cast<double>(matrix[static_cast<std::size_t>(
+                                    input_channel * rank + output_channel)]);
                         }
-                        block[static_cast<std::size_t>(component * rank + output_channel)] = value;
+                        block[static_cast<std::size_t>(component * rank + output_channel)] =
+                            static_cast<float>(value);
                     }
                 }
             }
@@ -717,14 +758,15 @@ void Dpa4cCalculator::compute(
                 const int flat = static_cast<int>(gram_index_[static_cast<std::size_t>(gram)]);
                 const int row = flat / width;
                 const int column = flat % width;
-                float value = 0.0F;
+                double value = 0.0;
                 for (int component = 0; component < dimension; ++component) {
-                    value += blocks[static_cast<std::size_t>(degree)][static_cast<std::size_t>(
-                        component * width + row)]
-                        * blocks[static_cast<std::size_t>(degree)][static_cast<std::size_t>(
-                            component * width + column)];
+                    value += static_cast<double>(blocks[static_cast<std::size_t>(degree)][
+                        static_cast<std::size_t>(component * width + row)])
+                        * static_cast<double>(blocks[static_cast<std::size_t>(degree)][
+                            static_cast<std::size_t>(component * width + column)]);
                 }
-                descriptor.push_back(value * gram_scale_[static_cast<std::size_t>(gram)]);
+                descriptor.push_back(static_cast<float>(value * static_cast<double>(
+                    gram_scale_[static_cast<std::size_t>(gram)])));
             }
         }
 
@@ -759,11 +801,20 @@ void Dpa4cCalculator::compute(
                             const float wx = vector_block[static_cast<std::size_t>(second)];
                             const float wy = vector_block[static_cast<std::size_t>(rank_1 + second)];
                             const float wz = vector_block[static_cast<std::size_t>(2 * rank_1 + second)];
-                            const float mx = matrix[0] * wx + matrix[1] * wy + matrix[2] * wz;
-                            const float my = matrix[3] * wx + matrix[4] * wy + matrix[5] * wz;
-                            const float mz = matrix[6] * wx + matrix[7] * wy + matrix[8] * wz;
+                            const double mx = static_cast<double>(matrix[0]) * wx
+                                + static_cast<double>(matrix[1]) * wy
+                                + static_cast<double>(matrix[2]) * wz;
+                            const double my = static_cast<double>(matrix[3]) * wx
+                                + static_cast<double>(matrix[4]) * wy
+                                + static_cast<double>(matrix[5]) * wz;
+                            const double mz = static_cast<double>(matrix[6]) * wx
+                                + static_cast<double>(matrix[7]) * wy
+                                + static_cast<double>(matrix[8]) * wz;
                             full[static_cast<std::size_t>((first * rank_2 + second) * rank_3 + tensor)] =
-                                -(vx * mx + vy * my + vz * mz) / kSqrt5;
+                                static_cast<float>(-(static_cast<double>(vx) * mx
+                                    + static_cast<double>(vy) * my
+                                    + static_cast<double>(vz) * mz)
+                                    / static_cast<double>(kSqrt5));
                         }
                     }
                 }
@@ -772,21 +823,26 @@ void Dpa4cCalculator::compute(
                 for (int first = 0; first < rank_1; ++first) {
                     for (int second = 0; second < rank_2; ++second) {
                         for (int third = 0; third < rank_3; ++third) {
-                            float value = 0.0F;
+                            double value = 0.0;
                             for (int i = 0; i < dimension_1; ++i) {
                                 for (int j = 0; j < dimension_2; ++j) {
                                     for (int k = 0; k < dimension_3; ++k) {
-                                        value += coupling[(i * dimension_2 + j) * dimension_3 + k]
-                                            * projected[static_cast<std::size_t>(degree_1 - 1)][
-                                                static_cast<std::size_t>(i * rank_1 + first)]
-                                            * projected[static_cast<std::size_t>(degree_2 - 1)][
-                                                static_cast<std::size_t>(j * rank_2 + second)]
-                                            * projected[static_cast<std::size_t>(degree_3 - 1)][
-                                                static_cast<std::size_t>(k * rank_3 + third)];
+                                        value += static_cast<double>(coupling[
+                                            (i * dimension_2 + j) * dimension_3 + k])
+                                            * static_cast<double>(projected[
+                                                static_cast<std::size_t>(degree_1 - 1)][
+                                                static_cast<std::size_t>(i * rank_1 + first)])
+                                            * static_cast<double>(projected[
+                                                static_cast<std::size_t>(degree_2 - 1)][
+                                                static_cast<std::size_t>(j * rank_2 + second)])
+                                            * static_cast<double>(projected[
+                                                static_cast<std::size_t>(degree_3 - 1)][
+                                                static_cast<std::size_t>(k * rank_3 + third)]);
                                     }
                                 }
                             }
-                            full[static_cast<std::size_t>((first * rank_2 + second) * rank_3 + third)] = value;
+                            full[static_cast<std::size_t>((first * rank_2 + second) * rank_3 + third)] =
+                                static_cast<float>(value);
                         }
                     }
                 }
@@ -814,10 +870,16 @@ void Dpa4cCalculator::compute(
                 const float vx = vector_block[static_cast<std::size_t>(vector)];
                 const float vy = vector_block[static_cast<std::size_t>(vector_rank + vector)];
                 const float vz = vector_block[static_cast<std::size_t>(2 * vector_rank + vector)];
-                const float mx = matrix[0] * vx + matrix[1] * vy + matrix[2] * vz;
-                const float my = matrix[3] * vx + matrix[4] * vy + matrix[5] * vz;
-                const float mz = matrix[6] * vx + matrix[7] * vy + matrix[8] * vz;
-                descriptor.push_back(mx * mx + my * my + mz * mz);
+                const double mx = static_cast<double>(matrix[0]) * vx
+                    + static_cast<double>(matrix[1]) * vy
+                    + static_cast<double>(matrix[2]) * vz;
+                const double my = static_cast<double>(matrix[3]) * vx
+                    + static_cast<double>(matrix[4]) * vy
+                    + static_cast<double>(matrix[5]) * vz;
+                const double mz = static_cast<double>(matrix[6]) * vx
+                    + static_cast<double>(matrix[7]) * vy
+                    + static_cast<double>(matrix[8]) * vz;
+                descriptor.push_back(static_cast<float>(mx * mx + my * my + mz * mz));
             }
         }
         descriptor.push_back(divisor_scalar);
@@ -830,11 +892,12 @@ void Dpa4cCalculator::compute(
         }
         double* destination = output + center_atom * feature_count_;
         for (std::size_t feature = 0; feature < descriptor.size(); ++feature) {
-            float value = descriptor[feature];
+            double value = static_cast<double>(descriptor[feature]);
             if (options_.calibrate) {
-                value = (value - options_.output_mean[feature]) / options_.output_stddev[feature];
+                value = (value - static_cast<double>(options_.output_mean[feature]))
+                    / static_cast<double>(options_.output_stddev[feature]);
             }
-            destination[feature] = static_cast<double>(value);
+            destination[feature] = value;
         }
         if (control) {
             control->mark_completed();

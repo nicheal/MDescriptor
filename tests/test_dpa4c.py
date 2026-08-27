@@ -5,7 +5,13 @@ from mdescriptor.core.errors import ModelLoadError
 from mdescriptor.descriptors.model_backed._vendor.dpa4desc.weights import (
     load_torch_checkpoint,
 )
-from mdescriptor.descriptors.model_backed.dpa import validate_dpa_checkpoint_mapping
+from mdescriptor.descriptors.model_backed.dpa import (
+    _frame_inputs,
+    compute_batch,
+    load_dpa_checkpoint,
+    new_runtime,
+    validate_dpa_checkpoint_mapping,
+)
 from mdescriptor.models import DPA4C_MODEL
 from tests._public import DPA4C, StructureBatch
 
@@ -88,6 +94,34 @@ def test_dpa4c_calibration_is_an_explicit_runtime_option():
     assert calibrated.metadata["details"]["calibrated"] is True
     assert raw.metadata["details"]["calibrated"] is False
     assert not np.allclose(calibrated.values, raw.values)
+
+
+def test_dpa4c_reference_uses_descriptor_precision_boundary():
+    batch = _fixture()
+    _info, checkpoint = load_dpa_checkpoint(MODEL, expected_descriptor="DPA4C")
+    evaluator = new_runtime(MODEL, checkpoint)
+    actual = compute_batch(evaluator, batch)
+    for frame in range(batch.structures):
+        begin = int(batch.offsets[frame])
+        end = int(batch.offsets[frame + 1])
+        symbols = [{1: "H", 8: "O"}[int(number)] for number in batch.numbers[begin:end]]
+        atype = evaluator.symbols_to_atype(symbols)
+        coord_ext, atype_ext, mapping, nlist = _frame_inputs(
+            evaluator,
+            batch.positions[begin:end],
+            atype,
+            batch.cells[frame],
+        )
+        expected = evaluator.descriptor.call(
+            coord_ext,
+            atype_ext,
+            nlist,
+            mapping,
+        )[0]
+        np.testing.assert_array_equal(
+            actual[begin:end],
+            np.asarray(expected, dtype=np.float64).reshape(end - begin, -1),
+        )
 
 
 def test_dpa4c_default_calibration_is_frozen_in_configuration():

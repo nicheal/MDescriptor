@@ -92,6 +92,24 @@ def test_native_backend_matches_bundled_numpy_reference():
         calculator.close()
 
 
+def test_dpa4_empty_frame_is_independent_of_other_batch_frames():
+    batch = _batch()
+    calculator = DPA4(model=MODEL)
+    try:
+        batched = calculator.compute(batch).values[3]
+        isolated = StructureBatch(
+            batch.numbers[3:4],
+            batch.positions[3:4],
+            batch.cells[1:2],
+            batch.pbc[1:2],
+            np.asarray([0, 1], dtype=np.int64),
+            ("isolated",),
+        )
+        np.testing.assert_array_equal(batched, calculator.compute(isolated).values[0])
+    finally:
+        calculator.close()
+
+
 def test_native_backend_is_thread_stable():
     batch = _batch()
     serial = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=1))

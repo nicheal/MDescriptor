@@ -240,8 +240,45 @@ def _frame_descriptor(
         )[0]
         return np.asarray(output, dtype=np.float64).reshape(len(coordinates), -1)
 
+    # DPA4C exposes a dense ``call`` adapter as well.  Keep this path on the
+    # adapter instead of calling ``evaluate_graph`` directly: ``call`` is
+    # decorated with ``cast_precision`` and therefore performs the same
+    # float32 (or checkpoint-selected) geometry conversion as the native
+    # descriptor.  Calling ``evaluate_graph`` here with the float64 arrays
+    # produced by ``_frame_inputs`` silently promoted the whole reference
+    # calculation and made it disagree with the C++/DeepMD execution path.
+    # A spin-conditioned DPA4C has no spin argument on the dense ABI, so it
+    # keeps the graph route below where the per-atom spin tensor is threaded.
+    if (
+        descriptor.__class__.__name__ == "DescrptDPA4C"
+        and getattr(descriptor, "spin", None) is None
+    ):
+        output = descriptor.call(
+            coord_ext,
+            atype_ext,
+            nlist,
+            mapping,
+            charge_spin=charge_spin,
+        )[0]
+        return np.asarray(output, dtype=np.float64).reshape(len(coordinates), -1)
+
+    # ``evaluate_graph`` expects geometry in descriptor precision.  This
+    # branch is currently needed only for spin-conditioned DPA4C, whose dense
+    # ABI cannot carry the per-atom spin tensor.  Match the graph-native
+    # precision contract before constructing the graph rather than letting
+    # float64 coordinates leak into all downstream reductions.
+    descriptor_precision = getattr(descriptor, "precision", None)
+    graph_coordinates = coord_ext
+    if descriptor_precision is not None:
+        try:
+            graph_coordinates = np.asarray(coord_ext, dtype=np.dtype(descriptor_precision))
+        except TypeError:
+            # ``default`` is a valid dpmodel precision alias but not a NumPy
+            # dtype name; the descriptor's own graph lower will resolve it.
+            pass
+
     graph, atype_local = graph_from_dense_quartet(
-        coord_ext,
+        graph_coordinates,
         atype_ext,
         nlist,
         mapping,
