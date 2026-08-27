@@ -53,6 +53,26 @@ installing Torch; the supported default graphs run through the C++17/OpenMP
 backend and specialised configurations retain the NumPy fallback. No network
 model download is performed.
 
+性能说明：DPA4 native 路径现在使用固定大小分块的 SGEMM、可复用的计算工作区，
+并只为每条边计算一次 attention logit；DPA4C 的类型对 MLP 采用每个 calculator
+实例独立的惰性缓存。OpenBLAS 仅作为构建依赖，官方 wheel 会内置 prefixed 的
+OpenBLAS 及其运行时闭包和许可文件，安装后不需要 `scipy-openblas32`、Torch
+或其他新增运行时依赖。大批量独立结构按结构分块消费，以控制峰值内存。
+
+本地可复现实测（脚本默认 2 次预热、5 次稳态；基线为提交 `334e159`）可用
+以下命令生成完整 JSON 报告；报告同时记录构造、首次调用、p95、线程扫描、RSS
+和 profiling 构建中的私有阶段计时：
+
+```bash
+python scripts/benchmark_dpa_native.py \
+  --descriptor DPA4 --dataset carbon_dataset_pbc --limit-frames 50 \
+  --threads 1,4,32 --output /tmp/dpa4-native.json
+```
+
+当前 Linux 主机的候选测量中，DPA4 的 41 原子小批 median 约为 0.47 s（1
+线程）和 0.30 s（32 线程）；50 帧/3200 原子单次吞吐约为 57.8 s（1 线程）
+和 21.6 s（32 线程）。这些数字用于同机 A/B 门禁，不代表跨机器性能保证。
+
 ## Input contract / 输入契约
 
 ```python

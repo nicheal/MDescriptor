@@ -43,6 +43,23 @@ The release workflow builds sdist and wheels separately, tests the installed
 artifact outside the repository, and verifies the bundled model checkpoints
 without a model-runtime extra.
 
+## 性能现状 / Performance status
+
+DPA4 native 已采用固定大小分块的 SGEMM、compute-local 工作区和一次计算/复用
+attention logit；大批量独立结构按结构分块构图，避免全批次 image-cell 中间量
+造成内存放大。DPA4C 类型对 MLP 则改为每个 calculator 实例独立的惰性缓存，按
+实际出现的有序类型对确定性生成。OpenBLAS 只在构建期由精确版本
+`scipy-openblas32==0.3.34.106.0` 提供，并随 wheel 内置其运行时闭包和许可文件；
+安装后的 DPA 计算不需要该 Python 包或 Torch。
+
+性能报告由 `scripts/benchmark_dpa_native.py` 生成（默认 2 次预热、5 次稳态），
+覆盖构造、首次调用、稳态 median/p95、1/4/32 线程、峰值 RSS、边数和
+（profiling 构建启用时）私有阶段计时。在同一 Linux 主机以提交 `334e159` 为
+基线，当前候选测量约为 0.47 s/0.30 s（41 原子小批，1/32 线程）和
+57.8 s/21.6 s（50 帧、3200 原子单次吞吐，1/32 线程）。
+这些是同机 A/B 门禁数据，不作为跨平台性能承诺；wheel 仍需通过三平台安装、
+动态依赖及许可检查。
+
 ## Contract tests
 
 Native contract tests cover periodic input validation, cancellation, finite

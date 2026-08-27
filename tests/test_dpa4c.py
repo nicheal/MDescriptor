@@ -132,6 +132,39 @@ def test_dpa4c_default_calibration_is_frozen_in_configuration():
         descriptor.close()
 
 
+def test_dpa4c_lazy_pair_cache_handles_empty_and_new_batches():
+    # A calculator may first see an isolated frame (there are no ordered type
+    # pairs to materialize), then a later batch can introduce a new pair.  The
+    # lazy cache must populate that pair deterministically and remain local to
+    # the calculator instance.
+    isolated = StructureBatch(
+        np.asarray([8], dtype=np.int32),
+        np.asarray([[0.0, 0.0, 0.0]], dtype=np.float64),
+        np.asarray([np.eye(3, dtype=np.float64) * 40.0]),
+        np.zeros((1, 3), dtype=np.int32),
+        np.asarray([0, 1], dtype=np.int64),
+        ("isolated",),
+    )
+    new_pair = StructureBatch(
+        np.asarray([8, 8], dtype=np.int32),
+        np.asarray([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]], dtype=np.float64),
+        np.asarray([np.eye(3, dtype=np.float64) * 40.0]),
+        np.zeros((1, 3), dtype=np.int32),
+        np.asarray([0, 2], dtype=np.int64),
+        ("new-pair",),
+    )
+    cached = DPA4C(model=MODEL)
+    fresh = DPA4C(model=MODEL)
+    try:
+        assert cached.compute(isolated).values.shape == (1, 219)
+        actual = cached.compute(new_pair).values
+        expected = fresh.compute(new_pair).values
+        np.testing.assert_array_equal(actual, expected)
+    finally:
+        cached.close()
+        fresh.close()
+
+
 @pytest.mark.parametrize("mutation", ["missing", "shape", "dtype", "type_map"])
 def test_dpa4c_checkpoint_schema_failures_are_model_load_errors(mutation):
     checkpoint = load_torch_checkpoint(str(MODEL))

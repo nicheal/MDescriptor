@@ -4,6 +4,7 @@
 #include "mdescriptor/detail/control.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -69,6 +70,14 @@ public:
     ) const;
 
 private:
+    struct PairCoefficients {
+        std::vector<float> scale;
+        std::vector<float> shift;
+        std::vector<float> mixing;
+    };
+
+    void ensure_pair_cache(const std::vector<std::size_t>& pair_indices) const;
+
     Dpa4cOptions options_;
     std::int64_t feature_count_ = 0;
     std::int64_t moment_count_ = 0;
@@ -76,9 +85,7 @@ private:
     std::vector<std::int64_t> gram_offsets_;
     std::vector<std::int64_t> gram_index_;
     std::vector<float> gram_scale_;
-    std::vector<float> pair_scale_;
-    std::vector<float> pair_shift_;
-    std::vector<float> pair_mixing_;
+    mutable std::vector<std::unique_ptr<PairCoefficients>> pair_cache_;
     mutable std::mutex compute_mutex_;
     std::atomic<bool> closed_{false};
 };

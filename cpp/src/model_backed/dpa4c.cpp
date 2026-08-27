@@ -392,73 +392,81 @@ Dpa4cCalculator::Dpa4cCalculator(Dpa4cOptions options)
 
     const int type_rows = options_.ntypes + 1;
     const std::size_t pair_count = static_cast<std::size_t>(type_rows) * type_rows;
-    const int pair_output = options_.channels * (2 + options_.radial_modes);
-    pair_scale_.resize(pair_count * static_cast<std::size_t>(options_.channels));
-    pair_shift_.resize(pair_count * static_cast<std::size_t>(options_.channels));
-    pair_mixing_.resize(
-        pair_count * static_cast<std::size_t>(options_.channels)
-        * static_cast<std::size_t>(options_.radial_modes));
+    pair_cache_.resize(pair_count);
+}
 
+void Dpa4cCalculator::ensure_pair_cache(
+    const std::vector<std::size_t>& pair_indices) const {
+    if (pair_indices.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(compute_mutex_);
+    const int type_rows = options_.ntypes + 1;
+    const int pair_output = options_.channels * (2 + options_.radial_modes);
     std::vector<float> input(static_cast<std::size_t>(2 * options_.channels));
     std::vector<float> pre_activation(static_cast<std::size_t>(2 * options_.pair_hidden));
     std::vector<float> hidden(static_cast<std::size_t>(options_.pair_hidden));
     std::vector<float> logits(static_cast<std::size_t>(pair_output));
-    for (int center_type = 0; center_type < type_rows; ++center_type) {
-        for (int neighbor_type = 0; neighbor_type < type_rows; ++neighbor_type) {
-            const float* center = options_.type_embedding.data()
-                + static_cast<std::size_t>(center_type * options_.channels);
-            const float* neighbor = options_.type_embedding.data()
-                + static_cast<std::size_t>(neighbor_type * options_.channels);
-            std::copy(center, center + options_.channels, input.begin());
-            std::copy(
-                neighbor,
-                neighbor + options_.channels,
-                input.begin() + options_.channels);
-            for (int output = 0; output < 2 * options_.pair_hidden; ++output) {
-                pre_activation[static_cast<std::size_t>(output)] = affine_value(
-                    options_.pair_w0,
-                    2 * options_.channels,
-                    2 * options_.pair_hidden,
-                    input.data(),
-                    output);
-            }
-            for (int index = 0; index < options_.pair_hidden; ++index) {
-                const float gate = pre_activation[static_cast<std::size_t>(index)];
-                const float value = pre_activation[static_cast<std::size_t>(
-                    options_.pair_hidden + index)];
-                hidden[static_cast<std::size_t>(index)] = gate * sigmoid(gate) * value;
-            }
-            for (int output = 0; output < pair_output; ++output) {
-                logits[static_cast<std::size_t>(output)] = 0.1F * affine_value(
-                    options_.pair_w1,
-                    options_.pair_hidden,
-                    pair_output,
-                    hidden.data(),
-                    output);
-            }
-            const std::size_t pair_index = static_cast<std::size_t>(
-                center_type * type_rows + neighbor_type);
-            const std::size_t scale_offset = pair_index * static_cast<std::size_t>(options_.channels);
-            for (int channel = 0; channel < options_.channels; ++channel) {
-                pair_scale_[scale_offset + static_cast<std::size_t>(channel)] =
-                    1.0F + std::tanh(logits[static_cast<std::size_t>(channel)]);
-                pair_shift_[scale_offset + static_cast<std::size_t>(channel)] =
-                    center[channel] + neighbor[channel]
-                    + std::tanh(logits[static_cast<std::size_t>(options_.channels + channel)]);
-            }
-            const std::size_t mixing_offset = pair_index
-                * static_cast<std::size_t>(options_.channels)
-                * static_cast<std::size_t>(options_.radial_modes);
-            for (int channel = 0; channel < options_.channels; ++channel) {
-                for (int mode = 0; mode < options_.radial_modes; ++mode) {
-                    const int logit_index = 2 * options_.channels
-                        + channel * options_.radial_modes + mode;
-                    pair_mixing_[mixing_offset + static_cast<std::size_t>(
-                        channel * options_.radial_modes + mode)] =
-                        std::tanh(logits[static_cast<std::size_t>(logit_index)]);
-                }
+    for (const std::size_t pair_index : pair_indices) {
+        if (pair_index >= pair_cache_.size() || pair_cache_[pair_index]) {
+            continue;
+        }
+        const int center_type = static_cast<int>(pair_index / static_cast<std::size_t>(type_rows));
+        const int neighbor_type = static_cast<int>(pair_index % static_cast<std::size_t>(type_rows));
+        const float* center = options_.type_embedding.data()
+            + static_cast<std::size_t>(center_type * options_.channels);
+        const float* neighbor = options_.type_embedding.data()
+            + static_cast<std::size_t>(neighbor_type * options_.channels);
+        std::copy(center, center + options_.channels, input.begin());
+        std::copy(
+            neighbor,
+            neighbor + options_.channels,
+            input.begin() + options_.channels);
+        for (int output = 0; output < 2 * options_.pair_hidden; ++output) {
+            pre_activation[static_cast<std::size_t>(output)] = affine_value(
+                options_.pair_w0,
+                2 * options_.channels,
+                2 * options_.pair_hidden,
+                input.data(),
+                output);
+        }
+        for (int index = 0; index < options_.pair_hidden; ++index) {
+            const float gate = pre_activation[static_cast<std::size_t>(index)];
+            const float value = pre_activation[static_cast<std::size_t>(
+                options_.pair_hidden + index)];
+            hidden[static_cast<std::size_t>(index)] = gate * sigmoid(gate) * value;
+        }
+        for (int output = 0; output < pair_output; ++output) {
+            logits[static_cast<std::size_t>(output)] = 0.1F * affine_value(
+                options_.pair_w1,
+                options_.pair_hidden,
+                pair_output,
+                hidden.data(),
+                output);
+        }
+        auto coefficients = std::make_unique<PairCoefficients>();
+        coefficients->scale.resize(static_cast<std::size_t>(options_.channels));
+        coefficients->shift.resize(static_cast<std::size_t>(options_.channels));
+        coefficients->mixing.resize(
+            static_cast<std::size_t>(options_.channels)
+            * static_cast<std::size_t>(options_.radial_modes));
+        for (int channel = 0; channel < options_.channels; ++channel) {
+            coefficients->scale[static_cast<std::size_t>(channel)] =
+                1.0F + std::tanh(logits[static_cast<std::size_t>(channel)]);
+            coefficients->shift[static_cast<std::size_t>(channel)] =
+                center[channel] + neighbor[channel]
+                + std::tanh(logits[static_cast<std::size_t>(options_.channels + channel)]);
+        }
+        for (int channel = 0; channel < options_.channels; ++channel) {
+            for (int mode = 0; mode < options_.radial_modes; ++mode) {
+                const int logit_index = 2 * options_.channels
+                    + channel * options_.radial_modes + mode;
+                coefficients->mixing[static_cast<std::size_t>(
+                    channel * options_.radial_modes + mode)] =
+                    std::tanh(logits[static_cast<std::size_t>(logit_index)]);
             }
         }
+        pair_cache_[pair_index] = std::move(coefficients);
     }
 }
 
@@ -508,6 +516,29 @@ void Dpa4cCalculator::compute(
         false,
         true);
 
+    // Most inputs use a small subset of the checkpoint type map.  Resolve
+    // only the ordered type pairs that are present in this graph, in a stable
+    // order, before entering the parallel reduction below.
+    const std::size_t type_rows = static_cast<std::size_t>(options_.ntypes + 1);
+    std::vector<std::size_t> used_pair_indices;
+    for (std::int64_t center_atom = 0; center_atom < batch.atoms; ++center_atom) {
+        const NeighborView neighbors = graph.for_center(center_atom);
+        const std::size_t center_type = static_cast<std::size_t>(type_indices[center_atom]);
+        for (std::size_t edge = 0; edge < neighbors.size; ++edge) {
+            if (neighbors.exact_self(edge, center_atom)) {
+                continue;
+            }
+            const std::size_t neighbor_type = static_cast<std::size_t>(
+                type_indices[neighbors.atoms[edge]]);
+            used_pair_indices.push_back(center_type * type_rows + neighbor_type);
+        }
+    }
+    std::sort(used_pair_indices.begin(), used_pair_indices.end());
+    used_pair_indices.erase(
+        std::unique(used_pair_indices.begin(), used_pair_indices.end()),
+        used_pair_indices.end());
+    ensure_pair_cache(used_pair_indices);
+
     const int angular_width = (options_.lmax + 1) * (options_.lmax + 1);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options_.num_threads > 0 ? options_.num_threads : omp_get_max_threads())
@@ -528,6 +559,7 @@ void Dpa4cCalculator::compute(
         std::vector<float> radial(static_cast<std::size_t>(options_.channels));
         std::vector<float> modes(static_cast<std::size_t>(options_.radial_modes));
         std::vector<float> basis(static_cast<std::size_t>(angular_width));
+        std::vector<double> amplitudes(static_cast<std::size_t>(options_.channels));
         const NeighborView neighbors = graph.for_center(center_atom);
         // The Python dense builder presents each destination row in ascending
         // distance order.  Match that order before the moment reduction so
@@ -606,11 +638,7 @@ void Dpa4cCalculator::compute(
 
             const std::size_t pair_index = static_cast<std::size_t>(
                 center_type * (options_.ntypes + 1) + neighbor_type);
-            const std::size_t pair_channel_offset = pair_index
-                * static_cast<std::size_t>(options_.channels);
-            const std::size_t pair_mode_offset = pair_index
-                * static_cast<std::size_t>(options_.channels)
-                * static_cast<std::size_t>(options_.radial_modes);
+            const PairCoefficients& pair = *pair_cache_[pair_index];
             angular_basis(ux, uy, uz, options_.lmax, basis.data());
 
             reduced[0] += static_cast<double>(envelope) * static_cast<double>(envelope);
@@ -620,18 +648,16 @@ void Dpa4cCalculator::compute(
             for (int channel = 0; channel < options_.channels; ++channel) {
                 double raw_amplitude = static_cast<double>(radial[
                     static_cast<std::size_t>(channel)])
-                    * static_cast<double>(pair_scale_[
-                        pair_channel_offset + static_cast<std::size_t>(channel)])
-                    + static_cast<double>(pair_shift_[
-                        pair_channel_offset + static_cast<std::size_t>(channel)]);
+                    * static_cast<double>(pair.scale[static_cast<std::size_t>(channel)])
+                    + static_cast<double>(pair.shift[static_cast<std::size_t>(channel)]);
                 for (int mode = 0; mode < options_.radial_modes; ++mode) {
-                    raw_amplitude += static_cast<double>(pair_mixing_[
-                        pair_mode_offset + static_cast<std::size_t>(
-                            channel * options_.radial_modes + mode)])
+                    raw_amplitude += static_cast<double>(pair.mixing[
+                        static_cast<std::size_t>(channel * options_.radial_modes + mode)])
                         * static_cast<double>(modes[static_cast<std::size_t>(mode)]);
                 }
-                const double edge_amplitude = raw_amplitude * static_cast<double>(envelope);
-                reduced[static_cast<std::size_t>(2 + channel)] += edge_amplitude;
+                amplitudes[static_cast<std::size_t>(channel)] = raw_amplitude;
+                reduced[static_cast<std::size_t>(2 + channel)] +=
+                    raw_amplitude * static_cast<double>(envelope);
             }
             for (int degree = 1; degree <= options_.lmax; ++degree) {
                 const int width = options_.degree_channels[static_cast<std::size_t>(degree)];
@@ -639,20 +665,9 @@ void Dpa4cCalculator::compute(
                 const int moment_offset = degree_offsets_[static_cast<std::size_t>(degree)];
                 for (int component = 0; component < 2 * degree + 1; ++component) {
                     for (int channel = 0; channel < width; ++channel) {
-                        double raw_amplitude = static_cast<double>(radial[
-                            static_cast<std::size_t>(channel)])
-                            * static_cast<double>(pair_scale_[
-                                pair_channel_offset + static_cast<std::size_t>(channel)])
-                            + static_cast<double>(pair_shift_[
-                                pair_channel_offset + static_cast<std::size_t>(channel)]);
-                        for (int mode = 0; mode < options_.radial_modes; ++mode) {
-                            raw_amplitude += static_cast<double>(pair_mixing_[
-                                pair_mode_offset + static_cast<std::size_t>(
-                                    channel * options_.radial_modes + mode)])
-                                * static_cast<double>(modes[static_cast<std::size_t>(mode)]);
-                        }
                         reduced[static_cast<std::size_t>(2 + moment_offset
-                            + component * width + channel)] += raw_amplitude * envelope_squared
+                            + component * width + channel)] += amplitudes[
+                                static_cast<std::size_t>(channel)] * envelope_squared
                             * static_cast<double>(basis[
                                 static_cast<std::size_t>(basis_offset + component)]);
                     }

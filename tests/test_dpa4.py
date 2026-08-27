@@ -110,18 +110,47 @@ def test_dpa4_empty_frame_is_independent_of_other_batch_frames():
         calculator.close()
 
 
+def test_dpa4_structure_chunking_matches_individual_computes():
+    batch = _batch()
+    calculator = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=4))
+    try:
+        combined = calculator.compute(batch).values
+        rows = []
+        for structure in range(batch.structures):
+            begin = int(batch.offsets[structure])
+            end = int(batch.offsets[structure + 1])
+            rows.append(
+                calculator.compute(
+                    StructureBatch(
+                        batch.numbers[begin:end],
+                        batch.positions[begin:end],
+                        batch.cells[structure : structure + 1],
+                        batch.pbc[structure : structure + 1],
+                        np.asarray([0, end - begin], dtype=np.int64),
+                        (batch.ids[structure],),
+                    )
+                ).values
+            )
+        np.testing.assert_array_equal(combined, np.concatenate(rows, axis=0))
+    finally:
+        calculator.close()
+
+
 def test_native_backend_is_thread_stable():
     batch = _batch()
     serial = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=1))
-    threaded = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=4))
+    threaded = [
+        DPA4(model=MODEL, execution=ExecutionOptions(num_threads=num_threads))
+        for num_threads in (2, 4, 8, 16, 32)
+    ]
     try:
-        np.testing.assert_array_equal(
-            serial.compute(batch).values,
-            threaded.compute(batch).values,
-        )
+        expected = serial.compute(batch).values
+        for calculator in threaded:
+            np.testing.assert_array_equal(expected, calculator.compute(batch).values)
     finally:
         serial.close()
-        threaded.close()
+        for calculator in threaded:
+            calculator.close()
 
 
 def test_dpa4_rejects_project_native_archive(tmp_path):

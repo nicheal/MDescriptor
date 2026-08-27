@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -100,6 +101,51 @@ def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
             descriptor.close()
 
 
+def _verify_vendored_openblas(mdescriptor) -> None:
+    """Check the native extension's private OpenBLAS closure in an install."""
+
+    package_root = Path(mdescriptor.__file__).resolve().parent
+    native_candidates = [
+        path
+        for path in package_root.iterdir()
+        if path.name.startswith("_native") and path.suffix in {".so", ".pyd", ".dylib"}
+    ]
+    if len(native_candidates) != 1:
+        raise SystemExit(f"expected one native extension, found {native_candidates}")
+    runtime_candidates = sorted(
+        path
+        for path in package_root.rglob("*")
+        if path.is_file()
+        and "openblas" in path.name.lower()
+        and any(
+            suffix in path.name.lower()
+            for suffix in (".so", ".dylib", ".dll")
+        )
+    )
+    if len(runtime_candidates) != 1:
+        raise SystemExit(
+            f"wheel must contain exactly one OpenBLAS runtime: {runtime_candidates}"
+        )
+    license_file = package_root / "licenses" / "scipy-openblas32-METADATA.txt"
+    if not license_file.is_file() or license_file.stat().st_size == 0:
+        raise SystemExit(f"missing bundled scipy-openblas license metadata: {license_file}")
+    license_text = package_root / "licenses" / "scipy-openblas32-LICENSE.txt"
+    if not license_text.is_file() or license_text.stat().st_size == 0:
+        raise SystemExit(f"missing bundled scipy-openblas license text: {license_text}")
+
+    native = native_candidates[0]
+    if sys.platform.startswith("linux"):
+        probe = subprocess.run(["ldd", str(native)], capture_output=True, text=True, check=False)
+        if probe.returncode != 0 or "not found" in probe.stdout:
+            raise SystemExit(f"unresolved native dependencies for {native}:\n{probe.stdout}")
+    elif sys.platform == "darwin":
+        probe = subprocess.run(
+            ["otool", "-L", str(native)], capture_output=True, text=True, check=False
+        )
+        if probe.returncode != 0 or "scipy_openblas" not in probe.stdout:
+            raise SystemExit(f"native extension is not linked to bundled OpenBLAS: {probe.stdout}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", type=Path)
@@ -132,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         target = package_file.parent.parent
     if not package_file.is_relative_to(target):
         raise SystemExit(f"wheel verification imported {package_file}, not {target}")
+    _verify_vendored_openblas(mdescriptor)
     names = mdescriptor.list_descriptors()
     if len(names) != 27 or len(set(names)) != 27:
         raise SystemExit(f"unexpected descriptor registry: {names!r}")
