@@ -46,6 +46,30 @@ def format_values(values: Any, *, dtype: str = "float64", sparse: bool = False) 
     return np.asarray(values, dtype=target_dtype)
 
 
+def _snapshot_values(values: Any) -> Any:
+    """Take ownership of dense/CSR values at the result seam."""
+
+    try:
+        scipy_sparse = importlib.import_module("scipy.sparse")
+    except ImportError:
+        scipy_sparse = None
+    if scipy_sparse is not None and scipy_sparse.issparse(values):
+        snapshot = values.tocsr(copy=True)
+        for name in ("data", "indices", "indptr"):
+            array = getattr(snapshot, name, None)
+            if isinstance(array, np.ndarray):
+                array.setflags(write=False)
+        return snapshot
+    try:
+        snapshot = np.array(values, copy=True, order="C")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("descriptor values must be a two-dimensional array") from exc
+    if snapshot.ndim != 2:
+        raise ValueError("descriptor values must be a two-dimensional array")
+    snapshot.setflags(write=False)
+    return snapshot
+
+
 class DescriptorLevel(str, Enum):
     ATOM = "atom"
     STRUCTURE = "structure"
@@ -151,7 +175,7 @@ def pair_samples(
 
 @dataclass(frozen=True, slots=True)
 class DescriptorResult:
-    """Values plus the row and feature metadata needed to interpret them."""
+    """Values plus row/feature metadata, all detached from kernel storage."""
 
     values: Any
     level: DescriptorLevel | str
@@ -178,9 +202,9 @@ class DescriptorResult:
         labels = tuple(str(item) for item in self.labels)
         object.__setattr__(self, "labels", labels)
 
-        shape = tuple(getattr(self.values, "shape", ()))
-        if len(shape) != 2:
-            raise ValueError("descriptor values must be a two-dimensional array")
+        values = _snapshot_values(self.values)
+        object.__setattr__(self, "values", values)
+        shape = tuple(values.shape)
         rows, width = int(shape[0]), int(shape[1])
         if len(labels) != width:
             raise ValueError("labels must contain exactly one entry per feature column")
@@ -198,7 +222,7 @@ class DescriptorResult:
             raw_offsets = np.asarray(offsets)
             if raw_offsets.ndim != 1 or not np.issubdtype(raw_offsets.dtype, np.integer):
                 raise ValueError("row offsets must be a one-dimensional integer array")
-            offsets = np.ascontiguousarray(raw_offsets, dtype=np.int64)
+            offsets = np.array(raw_offsets, dtype=np.int64, order="C", copy=True)
             object.__setattr__(self, "row_offsets", offsets)
 
         atom_offsets = self._atom_row_offsets
@@ -209,13 +233,14 @@ class DescriptorResult:
                 or not np.issubdtype(raw_atom_offsets.dtype, np.integer)
             ):
                 raise ValueError("atom row offsets must be a one-dimensional integer array")
-            atom_offsets = np.ascontiguousarray(raw_atom_offsets, dtype=np.int64)
+            atom_offsets = np.array(raw_atom_offsets, dtype=np.int64, order="C", copy=True)
             if len(atom_offsets) != len(self.structure_ids) + 1:
                 raise ValueError("atom row offsets must contain one entry per structure boundary")
             if len(atom_offsets) == 0 or atom_offsets[0] != 0:
                 raise ValueError("atom row offsets must start at zero")
             if np.any(np.diff(atom_offsets) < 0):
                 raise ValueError("atom row offsets must be non-decreasing")
+            atom_offsets.setflags(write=False)
             object.__setattr__(self, "_atom_row_offsets", atom_offsets)
         self._validate_layout(level, rows, offsets)
 
@@ -243,7 +268,7 @@ class DescriptorResult:
             )
         if not np.issubdtype(samples.dtype, np.integer):
             raise ValueError("samples must contain integer indices")
-        samples = np.ascontiguousarray(samples, dtype=np.int64)
+        samples = np.array(samples, dtype=np.int64, order="C", copy=True)
         index_columns = 3 if level is DescriptorLevel.PAIR else samples.shape[1]
         if np.any(samples[:, :index_columns] < 0):
             raise ValueError("sample indices cannot be negative")
@@ -270,6 +295,9 @@ class DescriptorResult:
                 or np.any(samples[:, 2] >= atom_counts[samples[:, 0]])
             ):
                 raise ValueError("pair samples contain an invalid local atom index")
+        samples.setflags(write=False)
+        if offsets is not None:
+            offsets.setflags(write=False)
         object.__setattr__(self, "samples", samples)
 
         if isinstance(self.metadata, _NormalizedMetadata):
@@ -326,6 +354,7 @@ class DescriptorResult:
 
         if tuple(getattr(values, "shape", ())) != self.shape:
             raise ValueError("formatted descriptor values changed the result shape")
+        values = _snapshot_values(values)
         updated = copy(self)
         metadata = dict(self.metadata)
         metadata["output"] = {

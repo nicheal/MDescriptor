@@ -752,6 +752,9 @@ void MtpCalculator::compute(
         throw std::runtime_error("MTP calculator is closed");
     }
     std::lock_guard<std::mutex> lock(compute_mutex_);
+    if (control) {
+        control->reset(batch.structures);
+    }
     if (official_model_) {
         if (official_model_->native_mlip4) {
             official_model_->native_model->compute(batch, options_.species, options_.num_threads, output, control);

@@ -1,7 +1,8 @@
-MDescriptor 剩余重构收口计划
+MDescriptor GUI 适配收口状态与计划
 1. 结论与边界
 当前已完成 src/ 布局、28 个描述符注册、统一生命周期、_native 拆分、官方 DPA checkpoint 加载、三个默认资产打包及基础 wheel 验证；ACE 现作为独立 C++17 standalone 描述符接入。
-尚未严格达成的部分集中在五处：registry 仍有重复声明、动态 factory 仍接收裸映射、结果索引契约不完整、模型共享层名实不符、数值参考与正式 wheel 验收仍可跳过。
+本轮已收口 GUI 所需的稳定 seam：registry 元数据驱动公共构造器、配置参数结构化校验、模型 JSON 形式、独立结果版本、输入/结果数组快照，以及 ComputeControl 的结构级进度。NEP/MTP 的解析模型由原生层按 digest 共享，DPA 的 CPU 权重由 Python 预加载缓存共享；两者职责不再混用。
+仍需在发布流水线中持续执行的工作是仓外 wheel、固定 reference suite 和多平台硬门禁；这些属于发布验证，不改变 MDescriptor public interface。
 本轮不改数值公式、默认算法值、邻居算法或 DPA 推理核心；不重命名私有 C++ *Calculator，也不强制删除 _kernels 等职责明确的内部 module。
 2. 锁定的公共 interface
 - 根包只导出核心类型、异常、DescriptorConfiguration、registry 类型及 builtin_registry、list_descriptors()、get_descriptor()、create_descriptor()；删除 BUILTIN_REGISTRY、BUILTIN_SPECS、species helper 和其他旧公开名，不提供兼容别名。
@@ -13,7 +14,7 @@ MDescriptor 剩余重构收口计划
   ) -> Descriptor
   factory 不再接受 name+options 或裸映射。调用形状错误保留 Python TypeError；已声明参数的非法值抛 DescriptorConfigError。
 - 所有算法构造器保持真实、显式、keyword-only 签名。公共运行选项只允许 output=OutputOptions(...) 和 execution=ExecutionOptions(...)，删除直接的 dtype/sparse/device/num_threads 及 Mapping coercion。
-- MTP 在有模型和无模型模式下都强制显式 species=；其他固定 species 算法同样禁止首批输入推断。model= 严格限定为 None | PathLike | ModelResource。
+   - MTP 在有模型和无模型模式下都强制显式 species=；其他固定 species 算法同样禁止首批输入推断。model= 接受 None、显式路径字符串/PathLike 或 ModelResource；配置 JSON 中的字符串固定解释为显式路径。
 - DPA4 的公共参数收敛为 model/output/execution；DPA4C 仅保留实际影响推理的 calibrate。checkpoint 中的 cutoff、channels、precision、type map、spin/charge 配置均由 loader 验证和读取，不再要求调用方重复声明。
 - DescriptorResult 强制 len(labels) == values.shape[1]，包括空 labels 情况；samples 固定为二维连续 int64：
   - structure：[structure]
@@ -41,7 +42,7 @@ MDescriptor 剩余重构收口计划
    - 缓存项存在但 hash 错误立即抛 ModelLoadError；只有缓存项不存在时才回退包内资产。解析器使用流式 SHA-256，不实现网络。
    - resolver 产出包含实际 digest 和来源的内部 resolved identity；弱引用缓存按 (loader kind, loader schema, digest) 键控并加锁，失败不缓存。
    - LoadedModel 只保存验证后的不可变配置和 CPU 权重；每个实例创建独立 ModelSession，持有 device、runtime dtype 和运行缓存。关闭 session 后释放 runtime 与强引用，不影响其他 session。
-   - MTP/NEP 在私有 C++ 层拆出可共享的只读模型对象，calculator/session 独立；DPA loader 拆成 CPU checkpoint 解析验证与 per-session runtime 构建。DPA 官方 `.pt` 由受限纯 Python/NumPy reader 解析，不导入 Torch，不实现联网下载。
+   - MTP/NEP 已在私有 C++ 层使用按 model digest 键控的只读模型缓存，calculator/session 独立；Python `LoadedModel` 不再复制不会被 kernel 消费的文本/JSON 权重。DPA loader 拆成 CPU checkpoint 解析验证与 per-session runtime 构建。DPA 官方 `.pt` 由受限纯 Python/NumPy reader 解析，不导入 Torch，不实现联网下载。
 5. 清理与派生材料
    - 删除静态 descriptor 名称表、测试 catalog、旧 inventory marker 和无真实资产的 MLIP2 跳过测试；保留已提交的 MLIP4 hard reference。
    - 文档生成器渲染 registry 的名称、目录组、资产策略、backend、level、capabilities 和 extra，并提供 --check 模式。

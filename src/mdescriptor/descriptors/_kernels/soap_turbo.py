@@ -96,7 +96,7 @@ class SoapTurboKernel:
         if central_species is None:
             self.central_species = None
         elif np.isscalar(central_species):
-            self.central_species = normalize_species([int(central_species)])
+            self.central_species = normalize_species([int(central_species)])  # type: ignore[arg-type]
         else:
             self.central_species = normalize_species(central_species)
         if self.dtype not in {"float32", "float64"}:

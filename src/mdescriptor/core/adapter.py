@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from copy import copy
 from typing import Any, ClassVar
 
+from ..registry.info import LEGACY_PARAMETER_ALIASES
 from .control import ComputeControl
 from .descriptor import Descriptor
 from .errors import (
@@ -24,74 +25,24 @@ from .options import (
 )
 from .result import DescriptorResult, _json_safe, format_values
 
-# The kernel option names are kept in one declaration so every public class
-# gets the same explicit keyword-only boundary.  Kernels are private
-# implementation details; callers never pass a config mapping or an open
-# ``**kwargs`` bag.
-_PUBLIC_OPTION_NAMES: dict[str, frozenset[str]] = {
-    "SOAP": frozenset({
-        "species", "rbf", "n_max", "l_max", "sigma", "average",
-        "weighting", "r_cut", "compression",
-    }),
-    "ACSF": frozenset({
-        "species", "r_cut",
-        "g2_params", "G2", "g2", "g3_params", "G3", "g3",
-        "g4_params", "G4", "g4", "g5_params", "G5", "g5",
-    }),
-    "ACE": frozenset({
-        "species", "N", "r0", "trans", "wL", "maxdeg", "D",
-        "rcut", "rin", "pcut", "pin", "constants",
-    }),
-    "SOAPTurbo": frozenset({
-        "species", "alpha_max", "l_max", "rcut_hard", "rcut_soft",
-        "nf", "radial_enhancement", "basis", "compression", "compress_mode",
-        "atom_sigma_r", "atom_sigma_r_scaling",
-        "atom_sigma_t", "atom_sigma_t_scaling", "amplitude_scaling",
-        "central_weight", "central_species",
-    }),
-    "C00PSMLFF": frozenset({
-        "species", "r_cut", "cutoff", "n_radial", "n_max", "l_max",
-        "cutoff_function", "radial_sigma", "include_radial", "include_angular", "normalize_radial",
-        "normalize_angular", "super_vector", "radial_weight", "angular_weight",
-        "exclude_self_interaction",
-    }),
-    "SortedDistances": frozenset({
-        "species", "cutoff", "max_neighbors", "separate_neighbor_types",
-    }),
-    "SphericalExpansion": frozenset({
-        "species", "cutoff", "density_width", "max_radial", "max_angular",
-    }),
-    "SphericalExpansionByPair": frozenset({
-        "species", "cutoff", "density_width", "max_radial", "max_angular",
-    }),
-    "SoapRadialSpectrum": frozenset({
-        "species", "cutoff", "density_width", "max_radial", "max_angular",
-    }),
-    "SoapPowerSpectrum": frozenset({
-        "species", "cutoff", "density_width", "max_radial", "max_angular",
-    }),
-    "MTP": frozenset({
-        "species", "model", "min_dist",
-        "max_dist", "r_cut", "cutoff", "radial_basis_size", "radial_funcs_count",
-        "max_rank", "l_max", "max_level", "level", "radial_basis_type",
-    }),
-    "NEP": frozenset(),
-    "DPA4": frozenset(),
-    "DPA4C": frozenset({"calibrate"}),
-    "SNAP": frozenset({"weights", "lmax", "rcut", "normalize_U"}),
-    "LBispectrum": frozenset({
-        "twojmax", "diagonal", "rfac0", "rmin0", "rcutfac", "element_profile",
-        "element_radii", "weights", "rcut", "normalize_U",
-    }),
-    "LodeSphericalExpansion": frozenset({
-        "species", "cutoff", "density_width", "max_radial", "max_angular",
-        "k_cutoff", "exponent", "radial_radius",
-    }),
-    "ValleOganov": frozenset({
-        "species", "function", "n", "sigma", "r_cut", "geometry", "grid", "weighting",
-        "periodic", "normalize_gaussians", "normalization",
-    }),
-}
+# The registry is the canonical declaration of constructor options.  The
+# aliases below are only a Python compatibility layer; they are not exposed
+# as GUI schema fields or emitted in canonical configurations.  Kernels remain
+# private implementation details, so their signatures are never used as the
+# public option source for built-ins.
+_IMPLEMENTATION_ONLY_OPTIONS = frozenset(
+    {
+        "config",
+        "dtype",
+        "sparse",
+        "device",
+        "num_threads",
+        "model_path",
+        "model_file",
+        "model_digest",
+        "_checkpoint",
+    }
+)
 
 
 def adapt_result(result: Any) -> DescriptorResult:
@@ -131,6 +82,46 @@ def _constructor_parameters(kernel_type: type[Any]) -> dict[str, inspect.Paramet
         for name, parameter in signature.parameters.items()
         if name != "self"
     }
+
+
+def _builtin_parameter_names(name: str) -> frozenset[str] | None:
+    """Read canonical constructor names without importing a descriptor class."""
+
+    try:
+        # Import lazily: the registry must not import descriptor implementations
+        # while it is being assembled, and static metadata must stay lightweight.
+        from ..registry.builtins import builtin_registry
+
+        spec = builtin_registry.get(name)
+    except (ImportError, KeyError):
+        return None
+    if spec.info is None:
+        return None
+    return frozenset(str(option) for option in spec.info.parameters)
+
+
+def _legacy_parameter_names(name: str) -> frozenset[str]:
+    return frozenset(LEGACY_PARAMETER_ALIASES.get(name, {}))
+
+
+def _canonicalize_legacy_options(options: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """Translate direct-Python aliases before taking a config snapshot."""
+
+    canonical = dict(options)
+    for alias, target in LEGACY_PARAMETER_ALIASES.get(name, {}).items():
+        alias_value = canonical.get(alias)
+        target_value = canonical.get(target)
+        if alias_value is not None and target_value is not None:
+            raise DescriptorConfigError(
+                f"{name} received both {alias}= and {target}=",
+                code="conflicting_options",
+                path=["parameters", alias],
+                details={"canonical": target},
+            )
+        if alias_value is not None:
+            canonical[target] = alias_value
+        canonical.pop(alias, None)
+    return canonical
 
 
 def _accepts_keyword(parameters: Mapping[str, inspect.Parameter], name: str) -> bool:
@@ -177,6 +168,7 @@ class DescriptorAdapter(Descriptor):
         """Initialize a kernel from already-bound public options."""
 
         super().__init__()
+        options = _canonicalize_legacy_options(options, self.name)
         kwargs = dict(options)
         output_value = kwargs.pop("output", None)
         execution_value = kwargs.pop("execution", None)
@@ -580,14 +572,20 @@ def adapter_class(
 
     resolved_allowed = allowed_options
     if resolved_allowed is None:
-        resolved_allowed = _PUBLIC_OPTION_NAMES.get(name)
+        resolved_allowed = _builtin_parameter_names(name)
     if resolved_allowed is None:
         resolved_allowed = frozenset(
             parameter.name
             for parameter in _constructor_parameters(kernel_type).values()
             if parameter.kind
-            not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
+                not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
+            and parameter.name not in _IMPLEMENTATION_ONLY_OPTIONS
         )
+    resolved_allowed = frozenset(resolved_allowed) | _legacy_parameter_names(name)
+    if hasattr(base, "model_keyword"):
+        # Model-backed adapters expose one stable ``model=`` entry even if a
+        # custom registry entry predates the model schema field.
+        resolved_allowed = resolved_allowed | {"model"}
 
     signature = _public_signature(kernel_type, base, resolved_allowed)
     resolved_requires_species = (

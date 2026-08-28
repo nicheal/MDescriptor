@@ -128,7 +128,7 @@ class C00PSMlffKernel:
     def _labels(self) -> tuple[str, ...]:
         if not self.species or self._native is None:
             return ()
-        labels = []
+        labels: list[str] = []
         radial_counts = [int(count) for count in self._native.radial_counts]
         radial_channels = [(z, n) for z in self.species for n in range(radial_counts[0])]
         if self.include_radial:

@@ -10,10 +10,15 @@ except ImportError:  # pragma: no cover - source tree before native build
 
         def __init__(self) -> None:
             self._cancelled = False
+            self._completed = 0
+            self._total = 0
 
         def reset(self, total: int) -> None:
-            del total
+            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+                raise ValueError("control total must be a non-negative integer")
             self._cancelled = False
+            self._completed = 0
+            self._total = total
 
         def cancel(self) -> None:
             self._cancelled = True
@@ -22,13 +27,13 @@ except ImportError:  # pragma: no cover - source tree before native build
             return self._cancelled
 
         def completed(self) -> int:
-            return 0
+            return self._completed
 
         def total(self) -> int:
-            return 0
+            return self._total
 
         def mark_completed(self) -> None:
-            return None
+            self._completed += 1
 
 
 __all__ = ["ComputeControl"]

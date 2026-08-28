@@ -3,6 +3,7 @@ import inspect
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -19,7 +20,7 @@ from mdescriptor.core import (
     OutputOptions,
     StructureBatch,
 )
-from mdescriptor.descriptors import NEP, SOAP, AtomicComposition, CoulombMatrix
+from mdescriptor.descriptors import MTP, NEP, SOAP, AtomicComposition, CoulombMatrix
 from mdescriptor.models import NEP_MODEL, ModelResolver, ModelResource
 
 
@@ -69,6 +70,23 @@ def test_every_registered_descriptor_uses_the_single_compute_boundary():
             parameter.kind is inspect.Parameter.VAR_KEYWORD
             for parameter in signature.parameters.values()
         ), name
+
+
+def test_registry_schema_hides_private_runtime_options_from_every_constructor():
+    private_options = {
+        "dtype",
+        "sparse",
+        "device",
+        "num_threads",
+        "model_path",
+        "model_file",
+        "model_digest",
+        "_checkpoint",
+    }
+    for spec in mdescriptor.builtin_registry:
+        parameters = set(inspect.signature(spec.load_class()).parameters)
+        assert not parameters & private_options, spec.name
+        assert set(mdescriptor.describe_descriptor(spec.name)["parameters"]) <= parameters
 
 
 def test_builtin_registry_is_immutable_and_children_are_extendable():
@@ -175,6 +193,43 @@ def test_public_adapters_reject_unknown_and_legacy_model_options():
         NEP(config={"model_path": "not-a-public-entry-point.txt"})
 
 
+def test_rebuilding_a_configuration_reports_unknown_parameters_structurally():
+    with pytest.raises(DescriptorConfigError) as caught:
+        mdescriptor.create_descriptor(
+            DescriptorConfiguration(1, "SOAP", {"unknown": True})
+        )
+    assert caught.value.code == "unknown_option"
+    assert caught.value.to_dict()["path"] == ["parameters", "unknown"]
+
+    with pytest.raises(DescriptorConfigError) as missing:
+        mdescriptor.create_descriptor(
+            DescriptorConfiguration(1, "SOAP", {"species": None})
+        )
+    assert missing.value.code == "missing_required_parameter"
+    assert missing.value.to_dict()["path"] == ["parameters", "species"]
+
+
+def test_model_path_string_is_a_supported_json_configuration_form(tmp_path):
+    source = tmp_path / "model.json"
+    source.write_text(
+        (Path(__file__).parents[1] / "data" / "mlip4_test_mtp.json").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    configuration = DescriptorConfiguration(
+        1,
+        "MTP",
+        {"species": [13, 14], "model": str(source)},
+    )
+    descriptor = mdescriptor.create_descriptor(configuration)
+    try:
+        assert descriptor.model_resource is not None
+        assert descriptor.model_resource.path == source
+    finally:
+        descriptor.close()
+
+
 def test_dpa_public_options_do_not_expose_torch_runtime_controls():
     from mdescriptor.descriptors import DPA4, DPA4C
 
@@ -197,6 +252,21 @@ def test_common_options_are_applied_or_rejected_at_the_core_boundary():
         assert threaded_result.values.shape == (1, 2)
     finally:
         threaded.close()
+
+
+def test_cooperative_compute_reports_structure_progress():
+    for descriptor in (
+        AtomicComposition(species=[1, 8]),
+        MTP(species=[1, 8]),
+        NEP(),
+    ):
+        control = mdescriptor.ComputeControl()
+        try:
+            descriptor.compute(_batch(), control=control)
+            assert control.total() == 1
+            assert control.completed() == 1
+        finally:
+            descriptor.close()
 
 
 def test_result_validates_row_offsets_and_structure_rows():

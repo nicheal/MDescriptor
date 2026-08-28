@@ -8,7 +8,13 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from mdescriptor import DescriptorConfigError, OutputOptions, StructureBatch
+from mdescriptor import (
+    DescriptorConfigError,
+    DescriptorConfiguration,
+    OutputOptions,
+    StructureBatch,
+    create_descriptor,
+)
 from mdescriptor.descriptors import ACE
 
 
@@ -75,6 +81,29 @@ def test_ace_supports_explicit_sparse_degree_and_order_vectors():
     broadcast = ACE(species=[14], N=2, maxdeg=[4.0, 1.0], wL=1.25, rcut=3.0, rin=0.0)
     assert broadcast.configuration.parameters["wL"] == (1.25, 1.25)
     broadcast.close()
+
+
+def test_ace_order_vectors_round_trip_through_configuration():
+    descriptor = ACE(
+        species=[14],
+        N=2,
+        maxdeg=[4.0, 1.0],
+        wL=[1.25, 1.0],
+        rcut=3.0,
+        rin=0.0,
+    )
+    try:
+        configuration = DescriptorConfiguration.from_dict(
+            descriptor.configuration.to_dict()
+        )
+    finally:
+        descriptor.close()
+
+    rebuilt = create_descriptor(configuration)
+    try:
+        assert rebuilt.configuration.to_dict() == configuration.to_dict()
+    finally:
+        rebuilt.close()
 
 
 def test_ace_output_options_and_configuration_round_trip():

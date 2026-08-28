@@ -9,7 +9,11 @@ from ..core.descriptor import Descriptor
 from ..core.errors import DescriptorConfigError
 from ..core.options import DescriptorConfiguration, ExecutionOptions, OutputOptions
 from .builtins import builtin_registry
-from .info import DESCRIPTOR_INFO_SCHEMA_VERSION, DescriptorInfo
+from .info import (
+    DESCRIPTOR_INFO_SCHEMA_VERSION,
+    DescriptorInfo,
+    validate_descriptor_parameters,
+)
 from .registry import DescriptorRegistry
 from .spec import CAPABILITIES, AssetPolicy, DescriptorSpec
 
@@ -87,24 +91,101 @@ def create_descriptor(
         raise TypeError("create_descriptor expects a DescriptorConfiguration")
     if configuration.descriptor not in registry:
         raise KeyError(f"unknown descriptor {configuration.descriptor!r}")
+    spec = registry.get(configuration.descriptor)
+    if spec.info is not None:
+        validate_descriptor_parameters(
+            configuration.descriptor,
+            configuration.parameters,
+            spec.info.parameters,
+        )
     values = _restore_parameters(configuration.parameters)
-    return registry.get(configuration.descriptor).load_class()(**values)
+    return spec.load_class()(**values)
 
 
 def _restore_parameters(parameters: Any) -> dict[str, Any]:
     values = {str(key): value for key, value in parameters.items()}
     output = values.get("output")
     if isinstance(output, Mapping):
-        values["output"] = OutputOptions(**dict(output))
+        values["output"] = _restore_option(
+            output,
+            OutputOptions,
+            "output",
+            {"dtype", "sparse"},
+        )
     execution = values.get("execution")
     if isinstance(execution, Mapping):
-        values["execution"] = ExecutionOptions(**dict(execution))
+        values["execution"] = _restore_option(
+            execution,
+            ExecutionOptions,
+            "execution",
+            {"device", "num_threads"},
+        )
     model = values.get("model")
-    if isinstance(model, Mapping) and model.get("__type__") == "ModelResource":
+    if isinstance(model, str):
         from ..models import ModelResource
 
-        values["model"] = ModelResource.from_dict(dict(model))
+        # A plain JSON string is the GUI file-picker form: it is always an
+        # explicit local path. Named/bundled resources use ModelResource's
+        # tagged object form so the two meanings cannot be confused.
+        try:
+            values["model"] = ModelResource.explicit(model)
+        except DescriptorConfigError as exc:
+            raise DescriptorConfigError(
+                str(exc),
+                code=exc.code,
+                path=["parameters", "model"],
+                details=exc.details,
+            ) from exc
+    elif isinstance(model, Mapping) and model.get("__type__") == "ModelResource":
+        from ..models import ModelResource
+
+        try:
+            values["model"] = ModelResource.from_dict(dict(model))
+        except DescriptorConfigError as exc:
+            raise DescriptorConfigError(
+                str(exc),
+                code=exc.code,
+                path=["parameters", "model"],
+                details=exc.details,
+            ) from exc
+    elif isinstance(model, Mapping):
+        raise DescriptorConfigError(
+            "serialized model must be a path string or a ModelResource object",
+            code="invalid_parameter",
+            path=["parameters", "model"],
+        )
     return values
+
+
+def _restore_option(
+    value: Mapping[str, Any],
+    option_type: type[Any],
+    name: str,
+    allowed: set[str],
+) -> Any:
+    unknown = set(value) - allowed
+    if unknown:
+        field = sorted(str(item) for item in unknown)[0]
+        raise DescriptorConfigError(
+            f"unsupported {name} option {field!r}",
+            code="unknown_option",
+            path=["parameters", name, field],
+        )
+    try:
+        return option_type(**dict(value))
+    except DescriptorConfigError as exc:
+        raise DescriptorConfigError(
+            str(exc),
+            code=exc.code,
+            path=["parameters", name],
+            details=exc.details,
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        raise DescriptorConfigError(
+            f"invalid {name} options: {exc}",
+            code="invalid_option",
+            path=["parameters", name],
+        ) from exc
 
 
 __all__ = [
@@ -120,4 +201,5 @@ __all__ = [
     "describe_descriptor",
     "get_descriptor",
     "list_descriptors",
+    "validate_descriptor_parameters",
 ]

@@ -111,18 +111,31 @@ class ModelBackedAdapter(DescriptorAdapter):
     def _coerce_model_resource(model: Any) -> ModelResource:
         if isinstance(model, ModelResource):
             return model
-        if isinstance(model, (str, bytes)):
+        if isinstance(model, str):
+            # Strings are the canonical JSON/file-picker representation of an
+            # explicit path. Named resources use ModelResource's tagged object
+            # form and therefore remain unambiguous.
+            return ModelResource.explicit(model)
+        if isinstance(model, bytes):
             raise DescriptorConfigError(
-                "model must be None, a PathLike, or a ModelResource; use Path(...) for paths"
+                "model must be None, a path string, a PathLike, or a ModelResource"
             )
         if isinstance(model, PathLike):
             return ModelResource.explicit(model)
         raise DescriptorConfigError(
-            "model must be None, a PathLike, or a ModelResource"
+            "model must be None, a path string, a PathLike, or a ModelResource"
         )
 
     def _load_shared_artifact(self, resolved: ResolvedModel) -> tuple[Any, Any]:
-        """Load immutable CPU-side artifact data using the safe checkpoint path."""
+        """Load only artifacts consumed by a Python-side model implementation.
+
+        The NEP and MTP native calculators parse and cache their read-only model
+        objects in C++ using ``resolved.digest``. Reading the whole text/JSON
+        file into the Python ``LoadedModel`` cache would duplicate memory while
+        never reaching the kernel. DPA4/DPA4C are different: their restricted
+        Python checkpoint reader produces the preloaded weights consumed by the
+        NumPy adapter, so those weights remain in the shared artifact cache.
+        """
 
         if resolved.path.suffix.lower() == ".pt":
             if self.name not in {"DPA4", "DPA4C"}:
@@ -140,12 +153,9 @@ class ModelBackedAdapter(DescriptorAdapter):
                 expected_descriptor=expected_descriptor,
             )
             return info, weights
-        try:
-            return MappingProxyType(
-                {"format": resolved.path.suffix.lower().lstrip("."), "digest": resolved.digest}
-            ), resolved.path.read_bytes()
-        except OSError as exc:
-            raise ModelLoadError(f"cannot read model resource {resolved.path}") from exc
+        return MappingProxyType(
+            {"format": resolved.path.suffix.lower().lstrip("."), "digest": resolved.digest}
+        ), None
 
     @property
     def model_path(self) -> str | None:

@@ -66,7 +66,13 @@ class MtpKernel:
         self.radial_funcs_count = int(radial_funcs_count)
         rank = max_rank if max_rank is not None else l_max
         if rank is None:
-            rank = 2 if (max_level if max_level is not None else level) is None else min(5, max(0, int(max_level if max_level is not None else level) - 2))
+            level_value = max_level if max_level is not None else level
+            rank = (
+                2
+                if level_value is None
+                else min(5, max(0, int(level_value) - 2))
+            )
+        assert rank is not None
         self.max_rank = int(rank)
         self.radial_basis_type = str(radial_basis_type)
         self.dtype = str(dtype)

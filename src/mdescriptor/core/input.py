@@ -12,7 +12,7 @@ import numpy as np
 
 @dataclass(frozen=True)
 class StructureBatch:
-    """A contiguous snapshot of periodic or isolated structures.
+    """An owned, read-only snapshot of periodic or isolated structures.
 
     Fully periodic structures carry a nonsingular cell and ``pbc=(1, 1, 1)``.
     Isolated structures use ``pbc=(0, 0, 0)`` and may carry ASE's zero cell.
@@ -30,14 +30,27 @@ class StructureBatch:
     charge_spin: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        numbers = np.ascontiguousarray(self.numbers, dtype=np.int32)
-        positions = np.ascontiguousarray(self.positions, dtype=np.float64)
-        cells = np.ascontiguousarray(self.cells, dtype=np.float64)
-        pbc = np.ascontiguousarray(self.pbc, dtype=np.int32)
-        offsets = np.ascontiguousarray(self.offsets, dtype=np.int64)
+        # ``StructureBatch`` is a value object at the public seam.  Always
+        # copy before validation so caller-owned arrays cannot mutate a batch
+        # while a worker or native kernel is consuming it.  Integer arrays are
+        # checked before narrowing; NumPy's direct cast would silently turn
+        # values such as 1.5 into 1.
+        numbers = _integer_snapshot(self.numbers, np.int32, "numbers")
+        positions = _array_snapshot(self.positions, np.float64, "positions")
+        cells = _array_snapshot(self.cells, np.float64, "cells")
+        pbc = _integer_snapshot(self.pbc, np.int32, "pbc", allow_bool=True)
+        offsets = _integer_snapshot(self.offsets, np.int64, "offsets")
         ids = tuple(str(value) for value in self.ids)
-        spins = None if self.spins is None else np.ascontiguousarray(self.spins, dtype=np.float64)
-        charge_spin = None if self.charge_spin is None else np.ascontiguousarray(self.charge_spin, dtype=np.float64)
+        spins = (
+            None
+            if self.spins is None
+            else _array_snapshot(self.spins, np.float64, "spins")
+        )
+        charge_spin = (
+            None
+            if self.charge_spin is None
+            else _array_snapshot(self.charge_spin, np.float64, "charge_spin")
+        )
 
         if numbers.ndim != 1 or np.any(numbers <= 0):
             raise ValueError("numbers must be a one-dimensional array of positive atomic numbers")
@@ -85,6 +98,8 @@ class StructureBatch:
             "spins": spins,
             "charge_spin": charge_spin,
         }.items():
+            if isinstance(value, np.ndarray):
+                value.setflags(write=False)
             object.__setattr__(self, name, value)
 
     @property
@@ -176,5 +191,46 @@ def coerce_batch(value: StructureInput) -> StructureBatch:
 
 
 StructureInput: TypeAlias = StructureBatch | Sequence[Any] | Any
+
+
+def _array_snapshot(value: Any, dtype: Any, name: str) -> np.ndarray:
+    try:
+        array = np.array(value, dtype=dtype, order="C", copy=True)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a numeric array") from exc
+    if not np.isfinite(array).all():
+        raise ValueError(f"{name} must be finite")
+    return array
+
+
+def _integer_snapshot(
+    value: Any,
+    dtype: Any,
+    name: str,
+    *,
+    allow_bool: bool = False,
+) -> np.ndarray:
+    try:
+        raw = np.asarray(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be an integer array") from exc
+    if raw.dtype.kind == "b":
+        if not allow_bool:
+            raise ValueError(f"{name} must contain integers, not booleans")
+    elif raw.dtype.kind in "iu":
+        pass
+    elif raw.dtype.kind == "f":
+        if not np.isfinite(raw).all() or not np.equal(raw, np.trunc(raw)).all():
+            raise ValueError(f"{name} must contain finite integers")
+    else:
+        raise ValueError(f"{name} must contain integers")
+
+    limits = np.iinfo(dtype)
+    if raw.size and (np.any(raw < limits.min) or np.any(raw > limits.max)):
+        raise ValueError(f"{name} contains values outside {dtype} range")
+    try:
+        return np.array(raw, dtype=dtype, order="C", copy=True)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be an integer array") from exc
 
 __all__ = ["StructureBatch", "StructureInput", "batch_from_ase", "coerce_batch"]

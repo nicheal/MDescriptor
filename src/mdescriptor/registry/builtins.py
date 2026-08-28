@@ -48,6 +48,16 @@ def _species() -> dict[str, Any]:
     )
 
 
+def _model() -> dict[str, Any]:
+    return _parameter(
+        "model",
+        description=(
+            "Optional model resource. A JSON string is an explicit local path; "
+            "a serialized ModelResource selects a named or checked resource."
+        ),
+    )
+
+
 def _array(
     item_type: str,
     *,
@@ -206,11 +216,15 @@ _DESCRIPTOR_INFO = {
             "N": _parameter("integer", default=3, minimum=1),
             "r0": _parameter("number", default=2.5, exclusiveMinimum=0.0, unit="Å"),
             "trans": _object(default=None),
-            "wL": _parameter("number", default=1.5, exclusiveMinimum=0.0),
-            "maxdeg": _parameter("integer", default=8, minimum=0),
+            # ACE accepts either one scalar or one value per correlation
+            # order. The schema uses the canonical array form; the config
+            # validator retains scalar broadcast compatibility for old
+            # Python configurations.
+            "wL": _array("number", default=[1.5]),
+            "maxdeg": _array("number", default=[8.0]),
             "D": _object(default=None),
             "rcut": _parameter("number", default=5.0, exclusiveMinimum=0.0, unit="Å"),
-            "rin": _parameter("number", exclusiveMinimum=0.0, unit="Å"),
+            "rin": _parameter("number", minimum=0.0, unit="Å"),
             "pcut": _parameter("integer", default=2, minimum=0),
             "pin": _parameter("integer", default=2, minimum=0),
             "constants": _parameter("boolean", default=False),
@@ -460,6 +474,7 @@ _DESCRIPTOR_INFO = {
         "local",
         {
             "species": _species(),
+            "model": _model(),
             "min_dist": _parameter("number", default=0.0, minimum=0.0, unit="Å"),
             "max_dist": _parameter("number", default=5.0, exclusiveMinimum=0.0, unit="Å"),
             "r_cut": _parameter("number", exclusiveMinimum=0.0, unit="Å"),
@@ -497,7 +512,7 @@ _DESCRIPTOR_INFO = {
         "NEP",
         "Neuroevolution potential descriptor backed by a local model.",
         "model_backed",
-        {},
+        {"model": _model()},
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("nep89_20250409.txt",),
@@ -508,7 +523,7 @@ _DESCRIPTOR_INFO = {
         "DPA4",
         "Deep potential atom descriptor backed by a local checkpoint.",
         "model_backed",
-        {},
+        {"model": _model()},
         spin=True,
         charge_spin=True,
         cooperative_cancel=False,
@@ -522,7 +537,7 @@ _DESCRIPTOR_INFO = {
         "DPA4C",
         "Calibrated deep potential atom descriptor backed by a local checkpoint.",
         "model_backed",
-        {"calibrate": _parameter("boolean", default=False)},
+        {"model": _model(), "calibrate": _parameter("boolean", default=True)},
         spin=True,
         charge_spin=True,
         cooperative_cancel=False,

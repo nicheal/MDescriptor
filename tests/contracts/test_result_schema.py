@@ -9,8 +9,9 @@ from mdescriptor.core.result import DescriptorResult, pair_samples
 
 
 def test_empty_feature_labels_are_still_exactly_width_zero():
+    values = np.empty((2, 0))
     result = DescriptorResult(
-        np.empty((2, 0)),
+        values,
         "structure",
         ("a", "b"),
         None,
@@ -21,6 +22,27 @@ def test_empty_feature_labels_are_still_exactly_width_zero():
     assert result.samples.shape == (2, 1)
     assert result.samples.dtype == np.int64
     assert result.metadata["schema_version"] == 1
+    assert result.values.flags.writeable is False
+    values.resize((2, 0))
+
+
+def test_result_is_a_snapshot_and_exposes_read_only_arrays():
+    values = np.arange(4.0).reshape(2, 2)
+    result = DescriptorResult(
+        values,
+        "structure",
+        ("a", "b"),
+        None,
+        ("x", "y"),
+        {},
+    )
+    values[0, 0] = 99.0
+    assert result.values[0, 0] == 0.0
+    assert result.samples.flags.writeable is False
+    with pytest.raises(ValueError):
+        result.values[0, 0] = 4.0
+    with pytest.raises(ValueError):
+        result.samples[0, 0] = 4
 
 
 def test_atom_and_pair_samples_use_local_indices_and_are_contiguous():

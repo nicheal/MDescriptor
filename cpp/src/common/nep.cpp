@@ -693,6 +693,9 @@ void compute_nep(
     int num_threads,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
+    if (control) {
+        control->reset(batch.structures);
+    }
     const std::size_t radial_basis = static_cast<std::size_t>(model.basis_size_radial + 1);
     const std::size_t angular_basis = static_cast<std::size_t>(model.basis_size_angular + 1);
     const std::size_t radial_n = static_cast<std::size_t>(model.n_max_radial + 1);
@@ -858,6 +861,9 @@ void compute_nep(
         for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
             if (control && control->cancelled()) break;
             compute_structure(structure, radial, sums, angular, basis);
+            if (control && !control->cancelled()) {
+                control->mark_completed();
+            }
         }
         if (control && control->cancelled()) throw CancelledError();
         return;
@@ -883,6 +889,9 @@ void compute_nep(
                 if (control && control->cancelled()) continue;
                 try {
                     compute_structure(structure, radial, sums, angular, basis);
+                    if (control && !control->cancelled()) {
+                        control->mark_completed();
+                    }
                 } catch (...) {
                     record_error(std::current_exception());
                 }
@@ -897,6 +906,9 @@ void compute_nep(
             if (control && control->cancelled()) break;
             try {
                 compute_structure(structure, radial, sums, angular, basis);
+                if (control && !control->cancelled()) {
+                    control->mark_completed();
+                }
             } catch (...) {
                 record_error(std::current_exception());
                 break;
@@ -935,6 +947,9 @@ void compute_nep(
     }
 #endif
     if (control && control->cancelled()) throw CancelledError();
+    if (control) {
+        control->mark_completed();
+    }
 }
 
 NepCalculator::NepCalculator(NepOptions options)

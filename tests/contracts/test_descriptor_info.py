@@ -26,6 +26,7 @@ def test_runtime_info_exposes_independent_contract_versions():
     assert runtime["api_version"] == mdescriptor.API_VERSION
     assert runtime["configuration_schema_version"] == 1
     assert runtime["descriptor_info_schema_version"] == 1
+    assert runtime["result_schema_version"] == mdescriptor.RESULT_SCHEMA_VERSION
     json.dumps(runtime, allow_nan=False)
 
 
@@ -55,10 +56,15 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
         assert metadata["capabilities"] == sorted(spec.capabilities)
         assert metadata["asset"]["policy"] == spec.asset_policy.value
         assert metadata["execution"]["devices"] == ["cpu"]
+        assert all("type" in schema for schema in metadata["parameters"].values())
         assert set(metadata["parameters"]) <= set(
             inspect.signature(spec.load_class()).parameters
         )
         json.dumps(metadata, allow_nan=False)
+
+
+def test_dpa4c_static_default_matches_the_runtime_default():
+    assert describe_descriptor("DPA4C")["parameters"]["calibrate"]["default"] is True
 
 
 def test_static_model_description_does_not_load_model_modules_or_torch():
@@ -108,3 +114,16 @@ def test_descriptor_info_freezes_nested_schema_and_returns_json_copy():
     value["parameters"]["cutoff"]["description"] = "changed"
     assert "description" not in info.to_dict()["parameters"]["cutoff"]
     json.dumps(info.to_dict(), allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"required": False},
+        {"type": "integer", "default": 1.5},
+        {"type": "enum", "enum": [], "default": "x"},
+    ],
+)
+def test_descriptor_info_rejects_incomplete_or_inconsistent_schemas(schema):
+    with pytest.raises(DescriptorConfigError):
+        DescriptorInfo("Example", "Example descriptor.", "local", {"value": schema})

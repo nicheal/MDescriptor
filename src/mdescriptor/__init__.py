@@ -5,6 +5,7 @@ from importlib.metadata import version as package_version
 
 from .core import (
     CONFIGURATION_SCHEMA_VERSION,
+    RESULT_SCHEMA_VERSION,
     CancelledError,
     ClosedDescriptorError,
     ComputeControl,
@@ -52,6 +53,7 @@ def get_runtime_info() -> dict[str, str | int]:
         "api_version": API_VERSION,
         "configuration_schema_version": CONFIGURATION_SCHEMA_VERSION,
         "descriptor_info_schema_version": DESCRIPTOR_INFO_SCHEMA_VERSION,
+        "result_schema_version": RESULT_SCHEMA_VERSION,
     }
 
 __all__ = [
@@ -69,10 +71,12 @@ __all__ = [
     "DescriptorResult",
     "DescriptorSpec",
     "DESCRIPTOR_INFO_SCHEMA_VERSION",
+    "CONFIGURATION_SCHEMA_VERSION",
     "ExecutionOptions",
     "MDescriptorError",
     "ModelLoadError",
     "OutputOptions",
+    "RESULT_SCHEMA_VERSION",
     "StructureBatch",
     "StructureInput",
     "builtin_registry",

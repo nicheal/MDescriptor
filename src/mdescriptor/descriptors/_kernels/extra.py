@@ -9,7 +9,7 @@ input packing.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -31,15 +31,20 @@ def _periodic_neighbors(
     offsets, atoms, shifts, displacements, distance2 = _cpp.build_neighbor_graph(
         batch.numbers[start:stop], batch.positions[start:stop], batch.cells[structure], batch.pbc[structure], float(cutoff)
     )
-    result = []
+    result: list[list[tuple[int, np.ndarray[Any, Any], float, tuple[int, int, int]]]] = []
     for center in range(stop - start):
         neighbors = []
         for index in range(int(offsets[center]), int(offsets[center + 1])):
-            shift = tuple(int(value) for value in shifts[index])
+            shift: tuple[int, int, int] = tuple(int(value) for value in shifts[index])  # type: ignore[assignment]
             atom = int(atoms[index])
             if not include_self and atom == center and shift == (0, 0, 0):
                 continue
-            neighbors.append((atom, np.asarray(displacements[index], dtype=np.float64), sqrt(max(float(distance2[index]), 0.0)), shift))
+            neighbors.append((
+                atom,
+                cast(np.ndarray[Any, Any], np.asarray(displacements[index], dtype=np.float64)),
+                sqrt(max(float(distance2[index]), 0.0)),
+                shift,
+            ))
         result.append(neighbors)
     return result
 
@@ -79,6 +84,7 @@ class _MatrixKernel(_StructureKernel):
         counts = np.diff(batch.offsets)
         max_atoms = int(self.n_atoms_max or (counts.max() if len(counts) else 0))
         columns = max_atoms if self.permutation == "eigenspectrum" else max_atoms * max_atoms
+        values: Any
         if not len(counts):
             values = np.empty((0, columns), dtype=np.float64)
         else:

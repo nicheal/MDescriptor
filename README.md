@@ -89,7 +89,8 @@ batch = StructureBatch(
 )
 ```
 
-`StructureBatch` validates contiguous arrays, finite positions/cells,
+`StructureBatch` takes an owned, read-only snapshot of its contiguous arrays
+and validates integer fields before narrowing, finite positions/cells,
 nonsingular cells, positive atomic numbers, monotonic offsets and fully
 periodic `pbc == (1, 1, 1)`. ASE conversion is available through
 `StructureBatch.from_ase(...)`.
@@ -134,7 +135,51 @@ Instances are synchronous and not promised to be thread-safe.
 `structure_ids`, row offsets, stable `labels`, JSON-safe `metadata`, per-row
 `samples`, and `feature_count`. The descriptor itself also retains the latest
 JSON-safe `metadata` and its `configuration` after `close()`. The standard shapes are `(N, F)`, `(S, F)`,
-and `(P, F)` for atom, structure and pair outputs respectively.
+and `(P, F)` for atom, structure and pair outputs respectively. Result arrays
+are owned snapshots and exposed read-only.
+
+## Supported descriptors / 支持的描述符
+
+The built-in registry currently provides 28 descriptors. `None` means no model
+file is needed; `Optional` means a model can be supplied (as with MTP); and
+`Required` means the descriptor always resolves a local model resource. See
+the [full descriptor inventory](docs/descriptor-inventory.md) for parameters,
+capabilities and backend details.
+
+内置注册表目前提供 28 个描述符。`None` 表示不需要模型文件；`Optional` 表示
+可以提供模型（例如 MTP）；`Required` 表示描述符始终解析本地模型资源。参数、
+能力和后端详情请参阅[完整描述符清单](docs/descriptor-inventory.md)。
+
+| Descriptor / 描述符 | Category / 类型 | Output / 输出 | Model / 模型 |
+|---|---|---|---|
+| `SOAP` | Local / 局部 | Structure / 结构 | `None` |
+| `SOAPTurbo` | Local / 局部 | Atom / 原子 | `None` |
+| `ACSF` | Local / 局部 | Atom / 原子 | `None` |
+| `ACE` | Local / 局部 | Atom / 原子 | `None` |
+| `CoulombMatrix` | Matrix / 矩阵 | Structure / 结构 | `None` |
+| `SineMatrix` | Matrix / 矩阵 | Structure / 结构 | `None` |
+| `EwaldSumMatrix` | Matrix / 矩阵 | Structure / 结构 | `None` |
+| `MBTR` | Many-body / 多体 | Structure / 结构 | `None` |
+| `LMBTR` | Many-body / 多体 | Atom / 原子 | `None` |
+| `ValleOganov` | Many-body / 多体 | Structure / 结构 | `None` |
+| `AtomicComposition` | Local / 局部 | Structure / 结构 | `None` |
+| `NeighborList` | Local / 局部 | Pair / 原子对 | `None` |
+| `SortedDistances` | Local / 局部 | Atom / 原子 | `None` |
+| `SphericalExpansion` | Local / 局部 | Atom / 原子 | `None` |
+| `SphericalExpansionByPair` | Local / 局部 | Pair / 原子对 | `None` |
+| `SoapRadialSpectrum` | Local / 局部 | Atom / 原子 | `None` |
+| `SoapPowerSpectrum` | Local / 局部 | Atom / 原子 | `None` |
+| `LodeSphericalExpansion` | Local / 局部 | Atom / 原子 | `None` |
+| `EAD` | Rotational / 旋转 | Atom / 原子 | `None` |
+| `SO3` | Rotational / 旋转 | Atom / 原子 | `None` |
+| `SO4` | Rotational / 旋转 | Atom / 原子 | `None` |
+| `SNAP` | Rotational / 旋转 | Atom / 原子 | `None` |
+| `LBispectrum` | Rotational / 旋转 | Atom / 原子 | `None` |
+| `MTP` | Local / 局部 | Atom / 原子 | `Optional` |
+| `C00PSMLFF` | Local / 局部 | Atom / 原子 | `None` |
+| `NEP` | Model-backed / 模型 | Atom / 原子 | `Required` |
+| `DPA4` | Model-backed / 模型 | Atom / 原子 | `Required` |
+| `DPA4C` | Model-backed / 模型 | Atom / 原子 | `Required` |
 
 ## Registry / 注册表
 
@@ -161,7 +206,7 @@ contracts, registry functions and errors only; algorithm implementations are
 not re-exported from the root. `describe_descriptor(name)` reads static,
 JSON-safe GUI metadata from the registry without constructing a descriptor or
 resolving a model. `get_runtime_info()` reports the package and contract
-schema versions.
+schema versions, including `result_schema_version`.
 
 ## Model resources / 模型资源
 
@@ -179,6 +224,10 @@ dpa4 = DPA4(
 )
 result = dpa4.compute(batch)
 ```
+
+For GUI configuration JSON, a model parameter may be an explicit path string
+or the tagged object returned by `ModelResource.to_dict()`; the latter is used
+for named/checksummed resources.
 
 The DPA4/DPA4C checkpoint readers and NumPy reference path remain isolated
 vendor adapters. The default inference graphs are lowered into the private

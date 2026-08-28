@@ -41,7 +41,9 @@ mdescriptor.describe_descriptor(name)
 mdescriptor.get_runtime_info()
 
 mdescriptor.API_VERSION
+mdescriptor.CONFIGURATION_SCHEMA_VERSION
 mdescriptor.DESCRIPTOR_INFO_SCHEMA_VERSION
+mdescriptor.RESULT_SCHEMA_VERSION
 ~~~
 
 describe_descriptor(name) 返回 JSON-safe dict。查询必须是静态操作，不得实例化描述符、加载模型、初始化 native kernel 或导入重型 runtime。
@@ -160,6 +162,15 @@ Schema 只表达计算语义，不包含 React、Ant Design 或其他 GUI 组件
 
 Schema 只暴露 canonical 参数名。历史别名可以继续保留给直接 Python 调用，但不进入默认 GUI 表单。
 
+``type: "model"`` 参数的 JSON 形式固定为两种：文件选择器直接提交路径字符串
+（表示显式本地路径），或提交 ``ModelResource.to_dict()`` 产生的带
+``"__type__": "ModelResource"`` 标记的对象（表示命名/带摘要资源）。其它对象
+形式拒绝解析。历史构造器对部分 per-species 数组接受的标量广播写法只用于兼容旧
+配置；GUI 和新的持久化配置使用数组形式。
+
+ACE 的 ``maxdeg`` 和 ``wL`` 同样以数组 schema 表达按 correlation order 的
+值；直接 Python 调用和旧配置仍可提交单个数值作为广播简写。
+
 确定性的默认值写入 default。依赖其他参数的值或运行时才能确定的值不伪造静态默认值；跨字段约束仍由描述符构造阶段验证。
 
 ## 4. Registry 与元数据来源
@@ -252,6 +263,10 @@ source: explicit / cache / package
 
 绝对路径只能作为诊断信息，不能作为缓存匹配的唯一依据。
 
+NEP/MTP 的只读解析模型由原生层按 digest 共享；Python ``LoadedModel`` 只向声明
+接收预加载权重的实现（当前为 DPA4/DPA4C）提供 CPU 权重，不把不会被 kernel 消费
+的文本/JSON 副本放入 Python 权重缓存。
+
 ## 7. 版本与错误契约
 
 使用独立版本号：
@@ -260,6 +275,7 @@ source: explicit / cache / package
 api_version
 configuration_schema_version
 descriptor_info_schema_version
+result_schema_version
 ~~~
 
 配置 Schema 和结果 Schema 继续使用现有版本机制。新增可选字段不改变既有字段含义；未知的 descriptor-info Schema 版本必须拒绝解析。
@@ -317,6 +333,14 @@ selection/chunk identity
 
 StructureBatch.ids 必须由 DatasetAdapter 提供稳定、唯一、可复现的 dataset-scoped ID。MDescriptor 不理解 DeepMD frame 或 extxyz 行号。
 
+``StructureBatch`` 和 ``DescriptorResult`` 都在构造时复制并冻结 NumPy 数组；
+调用方修改输入或结果之前持有的数组不会改变正在执行或已经完成的任务。结果的
+``values``、``samples`` 和 offsets 数组对外只读。
+
+对支持 cooperative cancel 的描述符，``ComputeControl.total()`` 和
+``completed()`` 以结构数为单位；取消以 ``CancelledError`` 结束，backend 应以
+``execution.cooperative_cancel`` 决定是否展示软取消，超时仍由 worker 管理器兜底。
+
 ## 9. 实施顺序
 
 1. 实现独立 DescriptorInfo、版本常量和 describe_descriptor()。
@@ -349,4 +373,3 @@ StructureBatch.ids 必须由 DatasetAdapter 提供稳定、唯一、可复现的
 - C++/NumPy backend 的内部实现
 - DeepMD/extxyz 解析职责
 - 打包、wheel 和 CI 发布体系
-

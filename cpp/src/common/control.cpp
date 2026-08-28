@@ -1,8 +1,13 @@
 #include "mdescriptor/descriptor.hpp"
 
+#include <stdexcept>
+
 namespace mdescriptor {
 
 void ComputeControl::reset(std::int64_t total) {
+    if (total < 0) {
+        throw std::invalid_argument("control total must be non-negative");
+    }
     cancelled_.store(false, std::memory_order_release);
     completed_.store(0, std::memory_order_release);
     total_.store(total, std::memory_order_release);

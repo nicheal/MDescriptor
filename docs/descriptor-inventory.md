@@ -31,11 +31,11 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 | SO4 | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | lmax, rcut, normalize_U | `—` |
 | SNAP | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | weights, lmax, rcut, normalize_U | `—` |
 | LBispectrum | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | twojmax, diagonal, rfac0, rmin0, rcutfac, element_profile, element_radii, weights, rcut, normalize_U | `—` |
-| MTP | `standalone` | `local` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | species, min_dist, max_dist, r_cut, radial_basis_size, radial_funcs_count, max_rank, radial_basis_type | `—` |
+| MTP | `standalone` | `local` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | species, model, min_dist, max_dist, r_cut, radial_basis_size, radial_funcs_count, max_rank, radial_basis_type | `—` |
 | C00PSMLFF | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, r_cut, n_radial, l_max, cutoff_function, radial_sigma, include_radial, include_angular, normalize_radial, normalize_angular, super_vector, radial_weight, angular_weight, exclude_self_interaction | `—` |
-| NEP | `model_backed` | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | — | `—` |
-| DPA4 | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | — | `—` |
-| DPA4C | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | calibrate | `—` |
+| NEP | `model_backed` | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | model | `—` |
+| DPA4 | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | model | `—` |
+| DPA4C | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | model, calibrate | `—` |
 
 ## Static descriptor metadata
 
