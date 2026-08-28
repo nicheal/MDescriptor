@@ -97,7 +97,7 @@ ignore = ["E501"]
 # the interpreter used for the quality gate; the package itself still supports
 # CPython 3.10 at runtime.
 python_version = "3.12"
-files = ["src/mdescriptor/core", "src/mdescriptor/registry", "src/mdescriptor/models"]
+files = ["src/mdescriptor"]
 check_untyped_defs = true
 disallow_any_generics = false
 no_implicit_optional = true

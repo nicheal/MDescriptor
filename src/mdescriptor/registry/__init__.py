@@ -12,6 +12,7 @@ from .builtins import builtin_registry
 from .info import (
     DESCRIPTOR_INFO_SCHEMA_VERSION,
     DescriptorInfo,
+    parse_descriptor_info,
     validate_descriptor_parameters,
 )
 from .registry import DescriptorRegistry
@@ -67,8 +68,6 @@ def describe_descriptor(
         "output": payload["output"],
         "asset": asset,
     }
-    if spec.optional_extra is not None:
-        result["optional_extra"] = spec.optional_extra
     return result
 
 
@@ -98,7 +97,10 @@ def create_descriptor(
             configuration.parameters,
             spec.info.parameters,
         )
-    values = _restore_parameters(configuration.parameters)
+    # ``DescriptorConfiguration`` freezes nested JSON values for immutability.
+    # Rebuild through its public JSON view so descriptor constructors receive
+    # ordinary dict/list values rather than mappingproxy/tuple implementations.
+    values = _restore_parameters(configuration.to_dict()["parameters"])
     return spec.load_class()(**values)
 
 
@@ -201,5 +203,6 @@ __all__ = [
     "describe_descriptor",
     "get_descriptor",
     "list_descriptors",
+    "parse_descriptor_info",
     "validate_descriptor_parameters",
 ]

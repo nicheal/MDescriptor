@@ -25,6 +25,7 @@ from .registry import (
     DESCRIPTOR_INFO_SCHEMA_VERSION,
     AssetPolicy,
     DescriptorConfiguration,
+    DescriptorInfo,
     DescriptorRegistry,
     DescriptorSpec,
     builtin_registry,
@@ -32,6 +33,7 @@ from .registry import (
     describe_descriptor,
     get_descriptor,
     list_descriptors,
+    parse_descriptor_info,
 )
 
 API_VERSION = 1
@@ -66,6 +68,7 @@ __all__ = [
     "DescriptorConfigError",
     "DescriptorConfiguration",
     "DescriptorInputError",
+    "DescriptorInfo",
     "DescriptorLevel",
     "DescriptorRegistry",
     "DescriptorResult",
@@ -85,5 +88,6 @@ __all__ = [
     "get_descriptor",
     "get_runtime_info",
     "list_descriptors",
+    "parse_descriptor_info",
     "__version__",
 ]

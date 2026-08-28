@@ -73,22 +73,65 @@ class DescriptorInputError(ValueError, MDescriptorError):
 class ModelLoadError(RuntimeError, MDescriptorError):
     """A model resource could not be resolved, validated, or loaded."""
 
+    default_code = "model_load_error"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        code: str | None = None,
+        path: Any = None,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
+
 
 class ClosedDescriptorError(RuntimeError, MDescriptorError):
     """An operation was attempted after a descriptor was closed."""
+
+    default_code = "closed_descriptor"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        code: str | None = None,
+        path: Any = None,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
 
 
 class CancelledError(RuntimeError, MDescriptorError):
     """A cooperative descriptor computation was cancelled."""
 
+    default_code = "cancelled"
 
-NativeCancelledError: type[Exception]
-try:  # Native kernels raise their own registered exception type.
-    _native_module = importlib.import_module("mdescriptor._native")
-except ImportError:  # pragma: no cover - before native build
-    NativeCancelledError = Exception
-else:
-    NativeCancelledError = getattr(_native_module, "CancelledError", Exception)
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        code: str | None = None,
+        path: Any = None,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
+
+
+def is_native_cancelled_error(value: BaseException) -> bool:
+    """Return whether ``value`` is the native cancellation exception.
+
+    Native is deliberately resolved only while handling an exception. Importing
+    the public package and querying static metadata must remain independent of
+    the optional compiled runtime.
+    """
+
+    try:
+        native_module = importlib.import_module("mdescriptor._native")
+    except ImportError:
+        return False
+    native_type = getattr(native_module, "CancelledError", None)
+    return isinstance(native_type, type) and isinstance(value, native_type)
 
 
 def _error_path(value: Any) -> tuple[str | int, ...] | None:

@@ -191,10 +191,18 @@ class SoapKernel:
             raise ValueError("num_threads must be a positive integer or None")
         if self.rbf not in {"gto", "polynomial"}:
             raise ValueError("rbf must be 'gto' or 'polynomial'")
-        if self.r_cut <= 0 or self.n_max < 1 or self.l_max < 0 or self.l_max > 20 or self.sigma <= 0:
-            raise ValueError("invalid SOAP parameters")
-        if not np.isfinite([self.r_cut, self.sigma]).all():
-            raise ValueError("SOAP parameters must be finite")
+        if not np.isfinite(self.r_cut):
+            raise ValueError("r_cut must be finite")
+        if not np.isfinite(self.sigma):
+            raise ValueError("sigma must be finite")
+        if self.r_cut <= 0:
+            raise ValueError("r_cut must be positive")
+        if self.n_max < 1:
+            raise ValueError("n_max must be positive")
+        if self.l_max < 0 or self.l_max > 20:
+            raise ValueError("l_max must be between 0 and 20")
+        if self.sigma <= 0:
+            raise ValueError("sigma must be positive")
         if self.rbf == "gto" and self.r_cut <= 1.0:
             raise ValueError("SOAP GTO radial basis requires r_cut > 1")
         if self.average not in {"off", "inner", "outer"}:

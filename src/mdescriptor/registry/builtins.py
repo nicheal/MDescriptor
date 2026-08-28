@@ -215,14 +215,35 @@ _DESCRIPTOR_INFO = {
             "species": _species(),
             "N": _parameter("integer", default=3, minimum=1),
             "r0": _parameter("number", default=2.5, exclusiveMinimum=0.0, unit="Å"),
-            "trans": _object(default=None),
+            "trans": _object(
+                default=None,
+                properties={
+                    "type": _enum(("PolyTransform",), default="PolyTransform"),
+                    "p": _parameter("number", default=2.0, exclusiveMinimum=0.0),
+                    "r0": _parameter("number", exclusiveMinimum=0.0),
+                    "a": _parameter("number", default=1.0, minimum=0.0),
+                },
+            ),
             # ACE accepts either one scalar or one value per correlation
             # order. The schema uses the canonical array form; the config
             # validator retains scalar broadcast compatibility for old
             # Python configurations.
-            "wL": _array("number", default=[1.5]),
-            "maxdeg": _array("number", default=[8.0]),
-            "D": _object(default=None),
+            # These arrays depend on N, so they intentionally have no static
+            # defaults. The constructor's scalar defaults remain the valid
+            # broadcast form for a newly created descriptor.
+            "wL": _array("number"),
+            "maxdeg": _array("number"),
+            "D": _object(
+                default=None,
+                properties={
+                    "type": _enum(("SparsePSHDegree",), default="SparsePSHDegree"),
+                    "wL": _parameter("number", default=1.5, exclusiveMinimum=0.0),
+                    "csp": _parameter("number", default=1.0, minimum=0.0),
+                    "chc": _parameter("number", default=0.0, minimum=0.0),
+                    "ahc": _parameter("number", default=0.0, minimum=0.0),
+                    "bhc": _parameter("number", default=0.0, minimum=0.0),
+                },
+            ),
             "rcut": _parameter("number", default=5.0, exclusiveMinimum=0.0, unit="Å"),
             "rin": _parameter("number", minimum=0.0, unit="Å"),
             "pcut": _parameter("integer", default=2, minimum=0),

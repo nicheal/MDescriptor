@@ -41,6 +41,25 @@ _SCHEMA_FIELDS = frozenset(
         "properties",
     }
 )
+_DESCRIPTOR_INFO_PAYLOAD_FIELDS = frozenset(
+    {
+        "display_name",
+        "description",
+        "category",
+        "parameters",
+        "execution",
+        "input",
+        "output",
+        "asset",
+    }
+)
+_DESCRIPTOR_INFO_FIELDS = _DESCRIPTOR_INFO_PAYLOAD_FIELDS | {
+    "schema_version",
+    "name",
+    "level",
+    "backend",
+    "capabilities",
+}
 
 # These names are accepted only by the direct Python constructor for
 # backwards compatibility.  They are deliberately not part of DescriptorInfo
@@ -151,6 +170,91 @@ class DescriptorInfo:
             "output": _thaw_json(self.output),
             "asset": _thaw_json(self.asset),
         }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> DescriptorInfo:
+        """Parse a descriptive payload or a full ``describe_descriptor`` response.
+
+        ``DescriptorInfo`` stores only the implementation-independent payload.
+        When given the full public response, this method validates the identity
+        envelope and its schema version before retaining that payload.
+        """
+
+        if not isinstance(value, Mapping):
+            raise DescriptorConfigError(
+                "descriptor info must be a JSON object",
+                code="invalid_descriptor_info",
+                path=["descriptor_info"],
+            )
+        if "schema_version" in value:
+            _validate_descriptor_info_envelope(value)
+            payload = {name: value[name] for name in _DESCRIPTOR_INFO_PAYLOAD_FIELDS}
+        else:
+            _validate_exact_fields(value, _DESCRIPTOR_INFO_PAYLOAD_FIELDS, ["descriptor_info"])
+            payload = dict(value)
+        return cls(
+            payload["display_name"],
+            payload["description"],
+            payload["category"],
+            payload["parameters"],
+            payload["execution"],
+            payload["input"],
+            payload["output"],
+            payload["asset"],
+        )
+
+
+def _validate_descriptor_info_envelope(value: Mapping[str, Any]) -> None:
+    _validate_exact_fields(value, _DESCRIPTOR_INFO_FIELDS, ["descriptor_info"])
+    version = value["schema_version"]
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != DESCRIPTOR_INFO_SCHEMA_VERSION
+    ):
+        raise DescriptorConfigError(
+            f"unsupported descriptor-info schema {version!r}",
+            code="unsupported_descriptor_info_schema",
+            path=["schema_version"],
+            details={"supported": DESCRIPTOR_INFO_SCHEMA_VERSION},
+        )
+    for field_name in ("name", "display_name", "description", "category", "level", "backend"):
+        field_value = value[field_name]
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise DescriptorConfigError(
+                f"descriptor info {field_name} must be a non-empty string",
+                code="invalid_descriptor_info",
+                path=[field_name],
+            )
+    capabilities = value["capabilities"]
+    if not isinstance(capabilities, (list, tuple)) or not all(
+        isinstance(item, str) and item.strip() for item in capabilities
+    ):
+        raise DescriptorConfigError(
+            "descriptor info capabilities must be an array of non-empty strings",
+            code="invalid_descriptor_info",
+            path=["capabilities"],
+        )
+
+
+def _validate_exact_fields(
+    value: Mapping[str, Any], expected: frozenset[str], path: list[str]
+) -> None:
+    unknown = set(value) - expected
+    missing = expected - set(value)
+    if unknown or missing:
+        names = ", ".join(sorted(str(item) for item in unknown | missing))
+        raise DescriptorConfigError(
+            f"invalid descriptor info fields: {names}",
+            code="invalid_descriptor_info",
+            path=path,
+        )
+
+
+def parse_descriptor_info(value: Any) -> DescriptorInfo:
+    """Parse one versioned descriptor-info response or payload."""
+
+    return DescriptorInfo.from_dict(value)
 
 
 def _validate_schema(value: Mapping[str, Any], path: list[str]) -> None:
@@ -476,5 +580,6 @@ __all__ = [
     "DESCRIPTOR_INFO_SCHEMA_VERSION",
     "DescriptorInfo",
     "LEGACY_PARAMETER_ALIASES",
+    "parse_descriptor_info",
     "validate_descriptor_parameters",
 ]

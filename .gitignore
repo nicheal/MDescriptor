@@ -4,6 +4,8 @@ dist/
 .venv/
 *.egg-info/
 benchmarks/
+docs/
+research/
 mdescriptor/*.so
 mdescriptor/*.pyd
 src/mdescriptor/*.so

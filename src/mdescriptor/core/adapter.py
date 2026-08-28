@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Mapping
 from copy import copy
 from typing import Any, ClassVar
@@ -14,7 +15,7 @@ from .errors import (
     CancelledError,
     DescriptorConfigError,
     DescriptorInputError,
-    NativeCancelledError,
+    is_native_cancelled_error,
 )
 from .input import StructureBatch
 from .options import (
@@ -102,6 +103,21 @@ def _builtin_parameter_names(name: str) -> frozenset[str] | None:
 
 def _legacy_parameter_names(name: str) -> frozenset[str]:
     return frozenset(LEGACY_PARAMETER_ALIASES.get(name, {}))
+
+
+def _configuration_error_path(
+    message: str, options: Mapping[str, Any]
+) -> list[str] | None:
+    """Extract a public parameter path from a kernel validation message."""
+
+    option_names = {str(name) for name in options if name not in {"output", "execution"}}
+    for root, field in re.findall(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b", message):
+        if root in option_names:
+            return [root, field]
+    for name in sorted(option_names, key=len, reverse=True):
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", message):
+            return [name]
+    return None
 
 
 def _canonicalize_legacy_options(options: Mapping[str, Any], name: str) -> dict[str, Any]:
@@ -254,6 +270,7 @@ class DescriptorAdapter(Descriptor):
             raise DescriptorConfigError(
                 f"invalid {self.name} configuration: {exc}",
                 code="invalid_configuration",
+                path=_configuration_error_path(str(exc), kwargs),
             ) from exc
         except ValueError as exc:
             if not self.wrap_value_errors_as_config:
@@ -261,6 +278,7 @@ class DescriptorAdapter(Descriptor):
             raise DescriptorConfigError(
                 f"invalid {self.name} configuration: {exc}",
                 code="invalid_configuration",
+                path=_configuration_error_path(str(exc), kwargs),
             ) from exc
         self._feature_count: int | None = None
         try:
@@ -445,12 +463,14 @@ class DescriptorAdapter(Descriptor):
     ) -> DescriptorResult:
         try:
             raw_result = self._kernel.compute(batch, control)
-        except NativeCancelledError as exc:
-            raise CancelledError("descriptor computation was cancelled") from exc
         except DescriptorInputError:
             raise
         except ValueError as exc:
             raise DescriptorInputError(str(exc)) from exc
+        except Exception as exc:
+            if is_native_cancelled_error(exc):
+                raise CancelledError("descriptor computation was cancelled") from exc
+            raise
         return self._adapt_result(raw_result)
 
     def close(self) -> None:

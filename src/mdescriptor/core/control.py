@@ -2,38 +2,49 @@
 
 from __future__ import annotations
 
-try:
-    from .._native import ComputeControl
-except ImportError:  # pragma: no cover - source tree before native build
-    class ComputeControl:  # type: ignore[no-redef]
-        """Fallback shape used only when the native extension is unavailable."""
+from typing import Any
 
-        def __init__(self) -> None:
-            self._cancelled = False
-            self._completed = 0
-            self._total = 0
 
-        def reset(self, total: int) -> None:
-            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-                raise ValueError("control total must be a non-negative integer")
-            self._cancelled = False
-            self._completed = 0
-            self._total = total
+class _FallbackComputeControl:
+    """Fallback shape used only when the native extension is unavailable."""
 
-        def cancel(self) -> None:
-            self._cancelled = True
+    def __init__(self) -> None:
+        self._cancelled = False
+        self._completed = 0
+        self._total = 0
 
-        def cancelled(self) -> bool:
-            return self._cancelled
+    def reset(self, total: int) -> None:
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise ValueError("control total must be a non-negative integer")
+        self._cancelled = False
+        self._completed = 0
+        self._total = total
 
-        def completed(self) -> int:
-            return self._completed
+    def cancel(self) -> None:
+        self._cancelled = True
 
-        def total(self) -> int:
-            return self._total
+    def cancelled(self) -> bool:
+        return self._cancelled
 
-        def mark_completed(self) -> None:
-            self._completed += 1
+    def completed(self) -> int:
+        return self._completed
+
+    def total(self) -> int:
+        return self._total
+
+    def mark_completed(self) -> None:
+        self._completed += 1
+
+
+class ComputeControl:
+    """Lazily construct the native control without importing native at package import."""
+
+    def __new__(cls) -> Any:
+        try:
+            from .. import _native
+        except ImportError:
+            return _FallbackComputeControl()
+        return _native.ComputeControl()
 
 
 __all__ = ["ComputeControl"]

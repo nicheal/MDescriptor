@@ -73,6 +73,7 @@ def test_static_model_description_does_not_load_model_modules_or_torch():
             sys.executable,
             "-c",
             "import sys; import mdescriptor; mdescriptor.describe_descriptor('NEP'); "
+            "assert 'mdescriptor._native' not in sys.modules; "
             "assert 'torch' not in sys.modules; "
             "assert not any(name.startswith('mdescriptor.models') for name in sys.modules)",
         ],
@@ -81,6 +82,71 @@ def test_static_model_description_does_not_load_model_modules_or_torch():
         text=True,
     )
     assert probe.returncode == 0
+
+
+@pytest.mark.parametrize("name", ["SOAP", "ACSF", "ACE"])
+def test_metadata_defaults_rebuild_through_the_public_factory(name):
+    metadata = describe_descriptor(name)
+    parameters = {}
+    for parameter_name, schema in metadata["parameters"].items():
+        if parameter_name == "species":
+            parameters[parameter_name] = [1]
+        elif "default" in schema:
+            parameters[parameter_name] = schema["default"]
+
+    descriptor = mdescriptor.create_descriptor(
+        mdescriptor.DescriptorConfiguration(1, name, parameters)
+    )
+    try:
+        assert descriptor.name == name
+    finally:
+        descriptor.close()
+
+
+def test_descriptor_info_parses_full_metadata_and_rejects_unknown_versions():
+    metadata = describe_descriptor("SOAP")
+
+    parsed = DescriptorInfo.from_dict(metadata)
+    assert parsed.to_dict()["parameters"] == metadata["parameters"]
+    assert DescriptorInfo.from_dict(parsed.to_dict()).to_dict() == parsed.to_dict()
+    json.dumps(parsed.to_dict(), allow_nan=False)
+
+    unsupported = dict(metadata)
+    unsupported["schema_version"] = 999
+    with pytest.raises(DescriptorConfigError) as caught:
+        DescriptorInfo.from_dict(unsupported)
+    assert caught.value.code == "unsupported_descriptor_info_schema"
+    assert caught.value.to_dict()["path"] == ["schema_version"]
+
+
+def test_descriptor_info_does_not_leak_registry_only_optional_fields():
+    info = DescriptorInfo("Example", "Example descriptor.", "local")
+    spec = DescriptorSpec(
+        "custom",
+        "mdescriptor.descriptors.standalone.soap:SOAP",
+        mdescriptor.AssetPolicy.NONE,
+        "cpp",
+        "structure",
+        optional_extra="test-only",
+        info=info,
+    )
+    registry = DescriptorRegistry([spec])
+
+    assert set(mdescriptor.describe_descriptor("custom", registry=registry)) == {
+        "schema_version",
+        "name",
+        "display_name",
+        "description",
+        "category",
+        "level",
+        "backend",
+        "capabilities",
+        "parameters",
+        "execution",
+        "input",
+        "output",
+        "asset",
+    }
 
 
 def test_custom_registry_without_info_remains_compute_only():

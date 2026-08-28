@@ -10,6 +10,7 @@ import pytest
 
 import mdescriptor
 from mdescriptor.core import (
+    CancelledError,
     ClosedDescriptorError,
     Descriptor,
     DescriptorConfigError,
@@ -48,6 +49,7 @@ def test_root_import_does_not_load_torch_or_model_modules():
             sys.executable,
             "-c",
             "import sys; import mdescriptor; assert 'torch' not in sys.modules; "
+            "assert 'mdescriptor._native' not in sys.modules; "
             "assert not any(name.startswith('mdescriptor.models') for name in sys.modules)",
         ],
         check=True,
@@ -207,6 +209,74 @@ def test_rebuilding_a_configuration_reports_unknown_parameters_structurally():
         )
     assert missing.value.code == "missing_required_parameter"
     assert missing.value.to_dict()["path"] == ["parameters", "species"]
+
+    with pytest.raises(DescriptorConfigError) as nested:
+        mdescriptor.create_descriptor(
+            DescriptorConfiguration(1, "ACE", {"species": [1], "trans": {"r0": 0}})
+        )
+    assert nested.value.to_dict()["path"] == ["parameters", "trans", "r0"]
+
+
+@pytest.mark.parametrize(
+    ("error_type", "code"),
+    [
+        (ModelLoadError, "model_load_error"),
+        (ClosedDescriptorError, "closed_descriptor"),
+        (CancelledError, "cancelled"),
+    ],
+)
+def test_public_runtime_errors_are_structured(error_type, code):
+    error = error_type("failure", path=["job", "id"], details={"retryable": False})
+
+    assert error.to_dict() == {
+        "code": code,
+        "message": "failure",
+        "path": ["job", "id"],
+        "details": {"retryable": False},
+    }
+
+
+def test_descriptor_errors_keep_parameter_paths():
+    with pytest.raises(DescriptorConfigError) as ace:
+        from mdescriptor.descriptors import ACE
+
+        ACE(species=[1], trans={"r0": 0})
+    assert ace.value.to_dict()["path"] == ["trans", "r0"]
+
+    with pytest.raises(DescriptorConfigError) as soap:
+        from mdescriptor.descriptors import SOAP
+
+        SOAP(species=[1], r_cut=-1)
+    assert soap.value.to_dict()["path"] == ["r_cut"]
+
+
+def test_missing_native_does_not_turn_unrelated_runtime_errors_into_cancelled():
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, numpy as np\n"
+            "sys.modules['mdescriptor._native'] = None\n"
+            "from mdescriptor import Descriptor, StructureBatch\n"
+            "class Failing(Descriptor):\n"
+            "    name = 'failing'\n"
+            "    def _compute_batch(self, batch, *, control=None):\n"
+            "        raise RuntimeError('boom')\n"
+            "batch = StructureBatch(np.array([1], dtype=np.int32),\n"
+            "    np.zeros((1, 3)), np.eye(3)[None], np.ones((1, 3), dtype=np.int32),\n"
+            "    np.array([0, 1], dtype=np.int64), ('one',))\n"
+            "try:\n"
+            "    Failing().compute(batch)\n"
+            "except RuntimeError as exc:\n"
+            "    assert str(exc) == 'boom'\n"
+            "else:\n"
+            "    raise AssertionError('unrelated error was swallowed')\n",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert probe.returncode == 0
 
 
 def test_model_path_string_is_a_supported_json_configuration_form(tmp_path):

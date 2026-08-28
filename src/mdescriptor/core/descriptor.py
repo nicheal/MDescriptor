@@ -13,7 +13,7 @@ from .errors import (
     ClosedDescriptorError,
     DescriptorInputError,
     MDescriptorError,
-    NativeCancelledError,
+    is_native_cancelled_error,
 )
 from .input import StructureBatch, StructureInput, coerce_batch
 from .options import CONFIGURATION_SCHEMA_VERSION, DescriptorConfiguration
@@ -87,8 +87,10 @@ class Descriptor(ABC):
             raise DescriptorInputError(str(exc)) from exc
         try:
             result = self._compute_batch(batch, control=control)
-        except NativeCancelledError as exc:
-            raise CancelledError("descriptor computation was cancelled") from exc
+        except Exception as exc:
+            if is_native_cancelled_error(exc):
+                raise CancelledError("descriptor computation was cancelled") from exc
+            raise
         if _is_cancelled(control):
             raise CancelledError("descriptor computation was cancelled")
         if not isinstance(result, DescriptorResult):

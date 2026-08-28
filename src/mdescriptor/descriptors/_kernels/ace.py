@@ -32,29 +32,45 @@ _PERIODIC_SYMBOLS = (
 _SYMBOL_TO_NUMBER = {symbol: index for index, symbol in enumerate(_PERIODIC_SYMBOLS, 1)}
 
 
+def _ace_path(name: str) -> list[str] | None:
+    label = name.removeprefix("ACE ").strip()
+    if not label:
+        return None
+    parts: list[str] = []
+    for component in label.split("."):
+        if "[" in component and component.endswith("]"):
+            field, index = component[:-1].split("[", 1)
+            parts.extend((field, index))
+        else:
+            parts.append(component)
+    return parts
+
+
 def _number(value: Any, name: str) -> int:
     if isinstance(value, (bool, np.bool_)):
-        raise DescriptorConfigError(f"{name} must be an integer")
+        raise DescriptorConfigError(f"{name} must be an integer", path=_ace_path(name))
     if isinstance(value, (float, np.floating)):
         if not np.isfinite(value) or float(value) != int(value):
-            raise DescriptorConfigError(f"{name} must be an integer")
+            raise DescriptorConfigError(f"{name} must be an integer", path=_ace_path(name))
     try:
         result = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise DescriptorConfigError(f"{name} must be an integer") from exc
+        raise DescriptorConfigError(f"{name} must be an integer", path=_ace_path(name)) from exc
     return result
 
 
 def _positive_float(value: Any, name: str, *, nonnegative: bool = False) -> float:
     if isinstance(value, (bool, np.bool_)):
-        raise DescriptorConfigError(f"{name} must be a finite number")
+        raise DescriptorConfigError(f"{name} must be a finite number", path=_ace_path(name))
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise DescriptorConfigError(f"{name} must be a finite number") from exc
+        raise DescriptorConfigError(f"{name} must be a finite number", path=_ace_path(name)) from exc
     if not np.isfinite(result) or (result < 0.0 if nonnegative else result <= 0.0):
         qualifier = "non-negative" if nonnegative else "positive"
-        raise DescriptorConfigError(f"{name} must be finite and {qualifier}")
+        raise DescriptorConfigError(
+            f"{name} must be finite and {qualifier}", path=_ace_path(name)
+        )
     return result
 
 
@@ -105,7 +121,9 @@ def _scalar_or_vector(value: Any, name: str, length: int) -> float | list[float]
     if raw_values is None:
         return _positive_float(value, name)
     if len(raw_values) != length:
-        raise DescriptorConfigError(f"{name} must have exactly N={length} entries")
+        raise DescriptorConfigError(
+            f"{name} must have exactly N={length} entries", path=_ace_path(name)
+        )
     return [_positive_float(item, f"{name}[{index}]") for index, item in enumerate(raw_values)]
 
 
