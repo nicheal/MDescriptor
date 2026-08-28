@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from copy import deepcopy
@@ -18,6 +19,29 @@ from .errors import (
 from .input import StructureBatch, StructureInput, coerce_batch
 from .options import CONFIGURATION_SCHEMA_VERSION, DescriptorConfiguration
 from .result import DescriptorResult
+
+_INPUT_ERROR_FIELDS = (
+    "numbers",
+    "positions",
+    "cells",
+    "pbc",
+    "offsets",
+    "ids",
+    "spins",
+    "charge_spin",
+    "structures",
+)
+
+
+def _input_error_path(message: str) -> list[str]:
+    """Map common input validation messages to a stable public path."""
+
+    for field in _INPUT_ERROR_FIELDS:
+        if re.search(rf"\b{re.escape(field)}\b", message):
+            return ["input", field]
+    if "species" in message:
+        return ["input", "numbers"]
+    return ["input"]
 
 
 class Descriptor(ABC):
@@ -85,7 +109,9 @@ class Descriptor(ABC):
         except DescriptorInputError:
             raise
         except (ImportError, TypeError, ValueError) as exc:
-            raise DescriptorInputError(str(exc)) from exc
+            raise DescriptorInputError(
+                str(exc), path=_input_error_path(str(exc))
+            ) from exc
         try:
             result = self._compute_batch(batch, control=control)
         except Exception as exc:

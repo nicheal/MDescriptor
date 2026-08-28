@@ -7,13 +7,16 @@ import json
 import subprocess
 import sys
 
+import numpy as np
 import pytest
 
 import mdescriptor
 from mdescriptor import (
     DescriptorConfigError,
+    DescriptorInputError,
     DescriptorRegistry,
     DescriptorSpec,
+    StructureBatch,
     describe_descriptor,
 )
 from mdescriptor.registry import DescriptorInfo, validate_descriptor_parameters
@@ -101,6 +104,42 @@ def test_metadata_defaults_rebuild_through_the_public_factory(name):
         assert descriptor.name == name
     finally:
         descriptor.close()
+
+
+def test_soapturbo_metadata_defaults_rebuild_for_multiple_species():
+    metadata = describe_descriptor("SOAPTurbo")
+    parameters = {"species": [1, 8]}
+    parameters.update(
+        {
+            name: schema["default"]
+            for name, schema in metadata["parameters"].items()
+            if "default" in schema
+        }
+    )
+
+    descriptor = mdescriptor.create_descriptor(
+        mdescriptor.DescriptorConfiguration(1, "SOAPTurbo", parameters)
+    )
+    descriptor.close()
+
+
+@pytest.mark.parametrize("name", ["NEP", "DPA4", "DPA4C"])
+def test_model_backed_metadata_declares_a_rebuildable_bundled_default(name):
+    metadata = describe_descriptor(name)
+    model = metadata["parameters"]["model"].get("default")
+
+    assert isinstance(model, dict)
+    assert model["__type__"] == "ModelResource"
+    assert model["name"] in metadata["asset"]["bundled_resources"]
+
+    parameters = {"model": model}
+    for parameter_name, schema in metadata["parameters"].items():
+        if parameter_name != "model" and "default" in schema:
+            parameters[parameter_name] = schema["default"]
+    descriptor = mdescriptor.create_descriptor(
+        mdescriptor.DescriptorConfiguration(1, name, parameters)
+    )
+    descriptor.close()
 
 
 def test_descriptor_info_parses_full_metadata_and_rejects_unknown_versions():
@@ -191,6 +230,57 @@ def test_custom_registry_without_info_remains_compute_only():
         describe_descriptor("custom", registry=registry)
     assert caught.value.code == "missing_descriptor_info"
     assert caught.value.to_dict()["path"] == ["descriptor", "custom"]
+
+
+def test_factory_binds_custom_registry_input_capabilities():
+    base = describe_descriptor("SOAP")
+    info = DescriptorInfo(
+        base["display_name"],
+        base["description"],
+        base["category"],
+        base["parameters"],
+        base["execution"],
+        {
+            "periodicity": ["fully_periodic"],
+            "mixed_periodicity": False,
+            "spin": False,
+            "charge_spin": False,
+        },
+        base["output"],
+        base["asset"],
+    )
+    registry = DescriptorRegistry(
+        [
+            DescriptorSpec(
+                "custom",
+                "mdescriptor.descriptors.standalone.soap:SOAP",
+                mdescriptor.AssetPolicy.NONE,
+                "cpp",
+                "structure",
+                info=info,
+            )
+        ]
+    )
+    descriptor = mdescriptor.create_descriptor(
+        mdescriptor.DescriptorConfiguration(
+            1, "custom", {"species": [1], "r_cut": 3.0}
+        ),
+        registry=registry,
+    )
+    isolated = StructureBatch(
+        np.array([1], dtype=np.int32),
+        np.zeros((1, 3)),
+        np.zeros((1, 3, 3)),
+        np.zeros((1, 3), dtype=np.int32),
+        np.array([0, 1], dtype=np.int64),
+        ("one",),
+    )
+    try:
+        with pytest.raises(DescriptorInputError) as caught:
+            descriptor.compute(isolated)
+        assert caught.value.to_dict()["path"] == ["input", "periodicity"]
+    finally:
+        descriptor.close()
 
 
 def test_descriptor_info_freezes_nested_schema_and_returns_json_copy():

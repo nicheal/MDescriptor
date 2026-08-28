@@ -40,7 +40,7 @@ class ComputeControl:
     """Stable wrapper for native or pure-Python cooperative control.
 
     The wrapper keeps the public type stable.  Native kernels receive the
-    underlying pybind object through :func:`_native_control`, so the wrapper
+    underlying pybind object through :func:`_unwrap_native_control`, so the wrapper
     never crosses the C++ ABI boundary.
     """
 
@@ -77,7 +77,7 @@ class ComputeControl:
         return self._implementation
 
 
-def _native_control(value: Any) -> Any:
+def _unwrap_native_control(value: Any) -> Any:
     """Unwrap the public control while accepting legacy native instances."""
 
     if isinstance(value, ComputeControl):

@@ -9,8 +9,8 @@ from copy import copy
 from typing import Any, ClassVar
 
 from ..registry.info import LEGACY_PARAMETER_ALIASES
-from .control import ComputeControl, _native_control
-from .descriptor import Descriptor
+from .control import ComputeControl, _unwrap_native_control
+from .descriptor import Descriptor, _input_error_path
 from .errors import (
     DescriptorConfigError,
     DescriptorInputError,
@@ -208,6 +208,12 @@ class DescriptorAdapter(Descriptor):
     allowed_options: ClassVar[frozenset[str] | None] = None
     requires_species: ClassVar[bool] = False
     supported_devices: ClassVar[tuple[str, ...]] = ("cpu",)
+    input_capabilities: ClassVar[Mapping[str, Any] | None] = None
+
+    def _bind_input_capabilities(self, capabilities: Mapping[str, Any]) -> None:
+        """Bind input metadata supplied by a non-built-in registry."""
+
+        self._registry_input_capabilities = capabilities
 
     def _initialize(self, options: Mapping[str, Any]) -> None:
         """Initialize a kernel from already-bound public options."""
@@ -319,7 +325,15 @@ class DescriptorAdapter(Descriptor):
             resolved_features = 0
         if resolved_features > 0:
             self._feature_count = resolved_features
-        self._snapshot_kernel_metadata()
+        try:
+            self._snapshot_kernel_metadata()
+        except (TypeError, ValueError) as exc:
+            raise DescriptorConfigError(
+                f"invalid {self.name} configuration: {exc}",
+                code="invalid_configuration",
+                path=getattr(exc, "path", None)
+                or _configuration_error_path(str(exc), kwargs),
+            ) from exc
 
     def _validate_public_call(self, kwargs: Mapping[str, Any]) -> None:
         signature = getattr(type(self), "__signature__", None)
@@ -380,9 +394,11 @@ class DescriptorAdapter(Descriptor):
     def _validate_batch(self, batch: StructureBatch) -> None:
         """Enforce the registry-declared input capability before kernel entry."""
 
-        capabilities = _builtin_input_capabilities(self.name)
+        capabilities = getattr(self, "_registry_input_capabilities", None)
         if capabilities is None:
-            # Custom compute-only descriptors do not have GUI input metadata.
+            capabilities = self.input_capabilities
+        if capabilities is None:
+            # Compute-only descriptors do not have an input capability schema.
             return
 
         periodicity = tuple(
@@ -522,11 +538,13 @@ class DescriptorAdapter(Descriptor):
         control: ComputeControl | None = None,
     ) -> DescriptorResult:
         try:
-            raw_result = self._kernel.compute(batch, _native_control(control))
+            raw_result = self._kernel.compute(batch, _unwrap_native_control(control))
         except DescriptorInputError:
             raise
         except ValueError as exc:
-            raise DescriptorInputError(str(exc)) from exc
+            raise DescriptorInputError(
+                str(exc), path=_input_error_path(str(exc))
+            ) from exc
         return self._adapt_result(raw_result)
 
     def close(self) -> None:
@@ -643,6 +661,7 @@ def adapter_class(
     allowed_options: frozenset[str] | None = None,
     requires_species: bool | None = None,
     supported_devices: tuple[str, ...] | None = None,
+    input_capabilities: Mapping[str, Any] | None = None,
 ) -> type[DescriptorAdapter]:
     """Create a named public adapter without repeating lifecycle boilerplate."""
 
@@ -677,6 +696,11 @@ def adapter_class(
     )
     if not resolved_supported_devices:
         raise ValueError("supported_devices must contain at least one device")
+    resolved_input_capabilities = (
+        input_capabilities
+        if input_capabilities is not None
+        else _builtin_input_capabilities(name)
+    )
 
     # Generate a real keyword-only ``__init__`` rather than relying solely on
     # ``__signature__``.  This makes positional calls and unknown options fail
@@ -706,6 +730,7 @@ def adapter_class(
             "allowed_options": resolved_allowed,
             "requires_species": resolved_requires_species,
             "supported_devices": resolved_supported_devices,
+            "input_capabilities": resolved_input_capabilities,
             "__module__": module,
             "__doc__": kernel_type.__doc__ or f"{name} descriptor.",
             "__signature__": signature,

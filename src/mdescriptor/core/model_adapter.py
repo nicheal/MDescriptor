@@ -50,23 +50,38 @@ class ModelBackedAdapter(DescriptorAdapter):
 
         if self.model_keyword in options:
             raise DescriptorConfigError(
-                f"{self.name} accepts a model resource through model=, not {self.model_keyword}="
+                f"{self.name} accepts a model resource through model=, not {self.model_keyword}=",
+                path=["model"],
             )
         if model is None and self.default_model is not None:
             model = self.default_model
         if model is not None:
-            self.model_resource = self._coerce_model_resource(model)
-            self.resolved_model = ModelResolver().resolve(self.model_resource)
-            self.loaded_model = shared_loaded_model(
-                self.resolved_model,
-                loader_kind=self.loader_kind or self.name,
-                loader_schema=self.loader_schema,
-                loader=self._load_shared_artifact,
-            )
-            self._preloaded_model_weights = self.loaded_model.materialize_weights()
-            options[self.model_keyword] = self.resolved_model.path
-            self._resolved_model_path = True
-            self._resolved_model_digest = self.resolved_model.digest
+            try:
+                self.model_resource = self._coerce_model_resource(model)
+                self.resolved_model = ModelResolver().resolve(self.model_resource)
+                self.loaded_model = shared_loaded_model(
+                    self.resolved_model,
+                    loader_kind=self.loader_kind or self.name,
+                    loader_schema=self.loader_schema,
+                    loader=self._load_shared_artifact,
+                )
+                self._preloaded_model_weights = self.loaded_model.materialize_weights()
+                options[self.model_keyword] = self.resolved_model.path
+                self._resolved_model_path = True
+                self._resolved_model_digest = self.resolved_model.digest
+            except DescriptorConfigError as exc:
+                raise DescriptorConfigError(
+                    str(exc),
+                    code=exc.code,
+                    path=exc.path or ["model"],
+                    details=exc.details,
+                ) from exc
+            except ModelLoadError as exc:
+                raise ModelLoadError(
+                    str(exc),
+                    path=exc.path or ["model"],
+                    details=exc.details,
+                ) from exc
 
         try:
             super()._initialize(options)
@@ -109,22 +124,30 @@ class ModelBackedAdapter(DescriptorAdapter):
 
     @staticmethod
     def _coerce_model_resource(model: Any) -> ModelResource:
-        if isinstance(model, ModelResource):
-            return model
-        if isinstance(model, str):
-            # Strings are the canonical JSON/file-picker representation of an
-            # explicit path. Named resources use ModelResource's tagged object
-            # form and therefore remain unambiguous.
-            return ModelResource.explicit(model)
-        if isinstance(model, bytes):
+        try:
+            if isinstance(model, ModelResource):
+                return model
+            if isinstance(model, str):
+                # Strings are the canonical JSON/file-picker representation of an
+                # explicit path. Named resources use ModelResource's tagged object
+                # form and therefore remain unambiguous.
+                return ModelResource.explicit(model)
+            if isinstance(model, bytes):
+                raise DescriptorConfigError(
+                    "model must be None, a path string, a PathLike, or a ModelResource"
+                )
+            if isinstance(model, PathLike):
+                return ModelResource.explicit(model)
             raise DescriptorConfigError(
                 "model must be None, a path string, a PathLike, or a ModelResource"
             )
-        if isinstance(model, PathLike):
-            return ModelResource.explicit(model)
-        raise DescriptorConfigError(
-            "model must be None, a path string, a PathLike, or a ModelResource"
-        )
+        except DescriptorConfigError as exc:
+            raise DescriptorConfigError(
+                str(exc),
+                code=exc.code,
+                path=exc.path or ["model"],
+                details=exc.details,
+            ) from exc
 
     def _load_shared_artifact(self, resolved: ResolvedModel) -> tuple[Any, Any]:
         """Load only artifacts consumed by a Python-side model implementation.

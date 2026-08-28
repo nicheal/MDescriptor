@@ -100,7 +100,12 @@ def create_descriptor(
     # Rebuild through its public JSON view so descriptor constructors receive
     # ordinary dict/list values rather than mappingproxy/tuple implementations.
     values = _restore_parameters(configuration.to_dict()["parameters"])
-    return spec.load_class()(**values)
+    descriptor = spec.load_class()(**values)
+    if spec.info is not None:
+        bind_input = getattr(descriptor, "_bind_input_capabilities", None)
+        if callable(bind_input):
+            bind_input(spec.info.input)
+    return descriptor
 
 
 def _restore_parameters(parameters: Any) -> dict[str, Any]:

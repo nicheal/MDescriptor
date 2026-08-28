@@ -4,7 +4,9 @@ dist/
 .venv/
 *.egg-info/
 benchmarks/
-docs/
+docs/*
+!docs/
+!docs/descriptor-inventory.md
 research/
 mdescriptor/*.so
 mdescriptor/*.pyd

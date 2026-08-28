@@ -272,6 +272,20 @@ def test_descriptor_errors_keep_parameter_paths():
         SOAP(species=[1], r_cut=-1)
     assert soap.value.to_dict()["path"] == ["r_cut"]
 
+    with pytest.raises(DescriptorConfigError) as species:
+        SOAP(species=[])
+    assert species.value.to_dict()["path"] == ["species"]
+
+    with pytest.raises(ModelLoadError) as model:
+        NEP(model="/definitely/missing/model.txt")
+    assert model.value.to_dict()["path"] == ["model"]
+
+    with pytest.raises(DescriptorConfigError) as soapturbo:
+        from mdescriptor.descriptors import SOAPTurbo
+
+        SOAPTurbo(species=[1, 8], alpha_max=[8])
+    assert soapturbo.value.to_dict()["path"] == ["alpha_max"]
+
 
 @pytest.mark.parametrize(
     ("kwargs", "message", "path"),

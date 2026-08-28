@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .info import DescriptorInfo
+from .model_defaults import bundled_model_default
 from .registry import DescriptorRegistry
 from .spec import AssetPolicy, DescriptorSpec
 
@@ -48,13 +49,14 @@ def _species() -> dict[str, Any]:
     )
 
 
-def _model() -> dict[str, Any]:
+def _model(*, default: str | None = None) -> dict[str, Any]:
     return _parameter(
         "model",
         description=(
             "Optional model resource. A JSON string is an explicit local path; "
             "a serialized ModelResource selects a named or checked resource."
         ),
+        default=_MISSING if default is None else bundled_model_default(default),
     )
 
 
@@ -174,7 +176,10 @@ _DESCRIPTOR_INFO = {
         "local",
         {
             "species": _species(),
-            "alpha_max": _array("integer", default=[8]),
+            # These values are per-species. Their defaults cannot be expressed
+            # statically because the species declaration determines the length.
+            # The kernel keeps scalar broadcast defaults for direct Python use.
+            "alpha_max": _array("integer"),
             "l_max": _parameter("integer", default=6, minimum=0, maximum=20),
             "rcut_hard": _parameter("number", default=5.0, exclusiveMinimum=0.0, unit="Å"),
             "rcut_soft": _parameter("number", exclusiveMinimum=0.0, unit="Å"),
@@ -185,12 +190,12 @@ _DESCRIPTOR_INFO = {
                 ("off", "trivial", "0_0", "0_1", "0_2", "1_0", "1_1", "1_2", "2_0", "2_1", "2_2"),
                 default="off",
             ),
-            "atom_sigma_r": _array("number", default=[0.5]),
-            "atom_sigma_r_scaling": _array("number", default=[0.0]),
-            "atom_sigma_t": _array("number", default=[0.5]),
-            "atom_sigma_t_scaling": _array("number", default=[0.0]),
-            "amplitude_scaling": _array("number", default=[0.0]),
-            "central_weight": _array("number", default=[1.0]),
+            "atom_sigma_r": _array("number"),
+            "atom_sigma_r_scaling": _array("number"),
+            "atom_sigma_t": _array("number"),
+            "atom_sigma_t_scaling": _array("number"),
+            "amplitude_scaling": _array("number"),
+            "central_weight": _array("number"),
             "central_species": _array("integer"),
         },
     ),
@@ -533,7 +538,7 @@ _DESCRIPTOR_INFO = {
         "NEP",
         "Neuroevolution potential descriptor backed by a local model.",
         "model_backed",
-        {"model": _model()},
+        {"model": _model(default="NEP")},
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("nep89_20250409.txt",),
@@ -544,7 +549,7 @@ _DESCRIPTOR_INFO = {
         "DPA4",
         "Deep potential atom descriptor backed by a local checkpoint.",
         "model_backed",
-        {"model": _model()},
+        {"model": _model(default="DPA4")},
         spin=True,
         charge_spin=True,
         cooperative_cancel=False,
@@ -558,7 +563,10 @@ _DESCRIPTOR_INFO = {
         "DPA4C",
         "Calibrated deep potential atom descriptor backed by a local checkpoint.",
         "model_backed",
-        {"model": _model(), "calibrate": _parameter("boolean", default=True)},
+        {
+            "model": _model(default="DPA4C"),
+            "calibrate": _parameter("boolean", default=True),
+        },
         spin=True,
         charge_spin=True,
         cooperative_cancel=False,

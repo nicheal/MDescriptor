@@ -73,6 +73,8 @@ class ModelResource:
         raw = fspath(path)
         if isinstance(raw, bytes):
             raw = raw.decode()
+        if not str(raw).strip():
+            raise DescriptorConfigError("model resource path cannot be empty")
         return cls(
             path=Path(raw).expanduser(),
             expected_sha256=expected_sha256,

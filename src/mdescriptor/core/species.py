@@ -21,23 +21,39 @@ def normalize_species(species: Iterable[int] | None) -> tuple[int, ...] | None:
     try:
         raw_values = tuple(species)
     except TypeError as exc:
-        raise DescriptorConfigError("species must be a sequence of atomic numbers") from exc
+        raise DescriptorConfigError(
+            "species must be a sequence of atomic numbers", path=["species"]
+        ) from exc
     if any(isinstance(value, (bool, np.bool_)) for value in raw_values):
-        raise DescriptorConfigError("species must contain integer atomic numbers")
+        raise DescriptorConfigError(
+            "species must contain integer atomic numbers", path=["species"]
+        )
     try:
         values = tuple(int(value) for value in raw_values)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise DescriptorConfigError("species must contain integer atomic numbers") from exc
+        raise DescriptorConfigError(
+            "species must contain integer atomic numbers", path=["species"]
+        ) from exc
     for raw, normalized in zip(raw_values, values, strict=True):
         if isinstance(raw, (float, np.floating)):
             if not np.isfinite(raw):
-                raise DescriptorConfigError("species must contain finite integer atomic numbers")
+                raise DescriptorConfigError(
+                    "species must contain finite integer atomic numbers",
+                    path=["species"],
+                )
             if float(raw) != normalized:
-                raise DescriptorConfigError("species must contain integer atomic numbers")
+                raise DescriptorConfigError(
+                    "species must contain integer atomic numbers", path=["species"]
+                )
     if not values or len(set(values)) != len(values):
-        raise DescriptorConfigError("species must be a non-empty sequence of unique atomic numbers")
+        raise DescriptorConfigError(
+            "species must be a non-empty sequence of unique atomic numbers",
+            path=["species"],
+        )
     if any(value <= 0 for value in values):
-        raise DescriptorConfigError("species must contain positive atomic numbers")
+        raise DescriptorConfigError(
+            "species must contain positive atomic numbers", path=["species"]
+        )
     return values
 
 
@@ -47,7 +63,8 @@ def require_species(species: Iterable[int] | None, *, descriptor: str) -> tuple[
     normalized = normalize_species(species)
     if normalized is None:
         raise DescriptorConfigError(
-            f"{descriptor} requires an explicit species declaration at construction"
+            f"{descriptor} requires an explicit species declaration at construction",
+            path=["species"],
         )
     return normalized
 
@@ -57,7 +74,9 @@ def species_from_batch(batch: StructureBatch) -> tuple[int, ...]:
 
     values = tuple(int(value) for value in np.unique(batch.numbers))
     if not values:
-        raise DescriptorInputError("the input batch contains no atoms")
+        raise DescriptorInputError(
+            "the input batch contains no atoms", path=["input", "numbers"]
+        )
     return values
 
 
@@ -70,7 +89,8 @@ def validate_batch_species(
     missing = set(np.unique(batch.numbers)) - set(normalized)
     if missing:
         raise DescriptorInputError(
-            f"{descriptor} input contains species outside its declaration: {sorted(missing)}"
+            f"{descriptor} input contains species outside its declaration: {sorted(missing)}",
+            path=["input", "numbers"],
         )
     return normalized
 
