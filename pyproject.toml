@@ -67,6 +67,11 @@ test-requires = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
 test-sources = ["tests", "scripts"]
 test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py"
 
+[tool.cibuildwheel.windows]
+# OpenBLAS is already installed beside _native.pyd, where the Windows loader
+# can resolve it.  Avoid asking delvewheel to vendor the same DLL a second time.
+repair-wheel-command = "delvewheel repair --ignore-existing -w {dest_dir} -v {wheel}"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not reference'"
