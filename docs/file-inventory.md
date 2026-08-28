@@ -232,8 +232,9 @@
 | `src/mdescriptor/models/resolver.py` | 按显式路径/缓存/包内资源解析模型，并进行流式 SHA-256 校验。 |
 | `src/mdescriptor/models/resource.py` | 定义命名或显式路径模型资源及其严格 JSON 序列化格式。 |
 | `src/mdescriptor/models/session.py` | 实现共享已加载模型、不可变权重快照、独立 runtime session 和弱缓存。 |
-| `src/mdescriptor/registry/__init__.py` | 提供内置 registry 查询、描述符类加载和配置 factory。 |
-| `src/mdescriptor/registry/builtins.py` | 唯一声明内置 28 个描述符的名称、导入路径、后端、级别、能力和资产策略。 |
+| `src/mdescriptor/registry/__init__.py` | 提供内置 registry 查询、静态 GUI 元数据查询、描述符类加载和配置 factory。 |
+| `src/mdescriptor/registry/builtins.py` | 唯一声明内置 28 个描述符的名称、导入路径、后端、级别、能力、资产策略和静态元数据。 |
+| `src/mdescriptor/registry/info.py` | 定义不可变、JSON-safe 的 `DescriptorInfo` schema。 |
 | `src/mdescriptor/registry/registry.py` | 实现可冻结、可继承、按名称查询的描述符 registry。 |
 | `src/mdescriptor/registry/spec.py` | 定义 `AssetPolicy`、`DescriptorSpec` 和懒加载描述符类的规范。 |
 
@@ -244,6 +245,7 @@
 | `tests/__init__.py` | 测试包入口。 |
 | `tests/_public.py` | 测试统一导入的公共 API、描述符类、异常和配置类型。 |
 | `tests/contracts/test_capabilities.py` | 检查 registry capability 声明与构造器实际行为一致，并验证 registry 扩展规则。 |
+| `tests/contracts/test_descriptor_info.py` | 检查静态 GUI 元数据、版本、懒加载和 schema 不可变契约。 |
 | `tests/contracts/test_model_resources.py` | 检查模型解析优先级、hash、缓存、不可变快照、session 隔离和失败重试。 |
 | `tests/contracts/test_public_api.py` | 检查根包导出、懒加载、显式签名、统一 compute 边界、生命周期和 factory。 |
 | `tests/contracts/test_result_schema.py` | 检查结果 labels、metadata、sample 索引、row offsets 和 JSON-safe 契约。 |

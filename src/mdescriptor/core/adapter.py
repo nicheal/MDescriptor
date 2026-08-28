@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
+from copy import copy
 from typing import Any, ClassVar
 
 from .control import ComputeControl
@@ -113,7 +114,11 @@ def adapt_result(result: Any) -> DescriptorResult:
 def _coerce_options(value: Any, option_type: type[Any], name: str) -> Any:
     if isinstance(value, option_type):
         return value
-    raise DescriptorConfigError(f"{name} must be {option_type.__name__}")
+    raise DescriptorConfigError(
+        f"{name} must be {option_type.__name__}",
+        code="invalid_option_type",
+        path=[name],
+    )
 
 
 def _constructor_parameters(kernel_type: type[Any]) -> dict[str, inspect.Parameter]:
@@ -166,6 +171,7 @@ class DescriptorAdapter(Descriptor):
     wrap_value_errors_as_config: ClassVar[bool] = True
     allowed_options: ClassVar[frozenset[str] | None] = None
     requires_species: ClassVar[bool] = False
+    supported_devices: ClassVar[tuple[str, ...]] = ("cpu",)
 
     def _initialize(self, options: Mapping[str, Any]) -> None:
         """Initialize a kernel from already-bound public options."""
@@ -187,12 +193,24 @@ class DescriptorAdapter(Descriptor):
             if execution_value is None
             else _coerce_options(execution_value, ExecutionOptions, "execution")
         )
+        supported_devices = tuple(self.supported_devices)
+        if self._execution_options.device not in supported_devices:
+            supported = ", ".join(supported_devices) or "none"
+            raise DescriptorConfigError(
+                f"{self.name} does not support execution.device={self._execution_options.device!r}; "
+                f"supported devices: {supported}",
+                code="unsupported_device",
+                path=["execution", "device"],
+                details={"supported": list(supported_devices)},
+            )
         if self._output_options.sparse:
             try:
                 import scipy.sparse  # noqa: F401
             except ImportError as exc:  # pragma: no cover - optional extra
                 raise DescriptorConfigError(
-                    "output.sparse requires the optional 'sparse' extra"
+                    "output.sparse requires the optional 'sparse' extra",
+                    code="missing_optional_dependency",
+                    path=["output", "sparse"],
                 ) from exc
         self._validate_public_call(kwargs)
         preloaded = getattr(self, "_preloaded_model_weights", None)
@@ -209,13 +227,18 @@ class DescriptorAdapter(Descriptor):
         if self._execution_options.num_threads is not None:
             if not _accepts_keyword(parameters, "num_threads"):
                 raise DescriptorConfigError(
-                    f"{self.name} does not support execution.num_threads"
+                    f"{self.name} does not support execution.num_threads",
+                    code="unsupported_option",
+                    path=["execution", "num_threads"],
                 )
             kwargs["num_threads"] = self._execution_options.num_threads
         if self._execution_options.device != "cpu":
             if not _has_explicit_keyword(parameters, "device"):
                 raise DescriptorConfigError(
-                    f"{self.name} does not support execution.device={self._execution_options.device!r}"
+                    f"{self.name} does not support execution.device={self._execution_options.device!r}",
+                    code="unsupported_device",
+                    path=["execution", "device"],
+                    details={"supported": list(supported_devices)},
                 )
             kwargs["device"] = self._execution_options.device
 
@@ -237,13 +260,15 @@ class DescriptorAdapter(Descriptor):
             raise
         except TypeError as exc:
             raise DescriptorConfigError(
-                f"invalid {self.name} configuration: {exc}"
+                f"invalid {self.name} configuration: {exc}",
+                code="invalid_configuration",
             ) from exc
         except ValueError as exc:
             if not self.wrap_value_errors_as_config:
                 raise
             raise DescriptorConfigError(
-                f"invalid {self.name} configuration: {exc}"
+                f"invalid {self.name} configuration: {exc}",
+                code="invalid_configuration",
             ) from exc
         self._feature_count: int | None = None
         try:
@@ -268,7 +293,8 @@ class DescriptorAdapter(Descriptor):
                 signature.bind(**bind_kwargs)
             except TypeError as exc:
                 raise DescriptorConfigError(
-                    f"invalid {self.name} constructor arguments: {exc}"
+                    f"invalid {self.name} constructor arguments: {exc}",
+                    code="invalid_configuration",
                 ) from exc
         allowed = self.allowed_options
         if allowed is None:
@@ -281,14 +307,18 @@ class DescriptorAdapter(Descriptor):
         if unknown:
             names = ", ".join(sorted(str(item) for item in unknown))
             raise DescriptorConfigError(
-                f"{self.name} received unsupported option(s): {names}"
+                f"{self.name} received unsupported option(s): {names}",
+                code="unknown_option",
+                path=["parameters"],
             )
     # Kept as a narrow hook for model-backed adapters.  It is deliberately
     # not a public constructor and therefore cannot become another API path.
     def _initialize_public(self, options: Mapping[str, Any]) -> None:
         if self.requires_species and options.get("species") is None:
             raise DescriptorConfigError(
-                f"{self.name} requires species= at construction time"
+                f"{self.name} requires species= at construction time",
+                code="missing_required_parameter",
+                path=["species"],
             )
         self._initialize(options)
 
@@ -307,9 +337,31 @@ class DescriptorAdapter(Descriptor):
 
     def _adapt_result(self, result: Any) -> DescriptorResult:
         adapted = adapt_result(result)
+        adapted = self._add_model_identity(adapted)
         adapted = _apply_output(adapted, self._output_options)
         self._metadata_snapshot = dict(adapted.metadata)
         return adapted
+
+    def _add_model_identity(self, result: DescriptorResult) -> DescriptorResult:
+        """Attach resolved model identity without changing the result schema."""
+
+        resolved = getattr(self, "resolved_model", None)
+        if resolved is None:
+            return result
+        model = result.metadata.get("model")
+        if not isinstance(model, Mapping):
+            resource = getattr(self, "model_resource", None)
+            model = resource.to_dict() if resource is not None else {}
+        model = dict(model)
+        model["resolved"] = {
+            "digest": resolved.digest,
+            "source": resolved.source,
+        }
+        metadata = dict(result.metadata)
+        metadata["model"] = model
+        updated = copy(result)
+        object.__setattr__(updated, "metadata", _json_safe(metadata))
+        return updated
 
     def _snapshot_kernel_metadata(self) -> None:
         """Capture diagnostic metadata before a native runtime can disappear."""
@@ -351,6 +403,15 @@ class DescriptorAdapter(Descriptor):
         resource = getattr(self, "model_resource", None)
         if resource is not None:
             model = resource.to_dict()
+        resolved = getattr(self, "resolved_model", None)
+        if resolved is not None:
+            if not isinstance(model, Mapping):
+                model = {}
+            model = dict(model)
+            model["resolved"] = {
+                "digest": resolved.digest,
+                "source": resolved.source,
+            }
         if level is None:
             try:
                 from ..registry.builtins import builtin_registry
@@ -513,6 +574,7 @@ def adapter_class(
     default_model: Any = None,
     allowed_options: frozenset[str] | None = None,
     requires_species: bool | None = None,
+    supported_devices: tuple[str, ...] | None = None,
 ) -> type[DescriptorAdapter]:
     """Create a named public adapter without repeating lifecycle boilerplate."""
 
@@ -533,6 +595,14 @@ def adapter_class(
         if requires_species is None
         else bool(requires_species)
     )
+    resolved_supported_devices = tuple(
+        str(item)
+        for item in (
+            supported_devices if supported_devices is not None else ("cpu",)
+        )
+    )
+    if not resolved_supported_devices:
+        raise ValueError("supported_devices must contain at least one device")
 
     # Generate a real keyword-only ``__init__`` rather than relying solely on
     # ``__signature__``.  This makes positional calls and unknown options fail
@@ -561,6 +631,7 @@ def adapter_class(
             "loader_kind": name if hasattr(base, "model_keyword") else getattr(base, "loader_kind", "generic"),
             "allowed_options": resolved_allowed,
             "requires_species": resolved_requires_species,
+            "supported_devices": resolved_supported_devices,
             "__module__": module,
             "__doc__": kernel_type.__doc__ or f"{name} descriptor.",
             "__signature__": signature,

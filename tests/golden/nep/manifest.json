@@ -85,6 +85,16 @@
     "metadata": {
       "backend": "mdescriptor-cpp",
       "descriptor": "NEP",
+      "model": {
+        "__type__": "ModelResource",
+        "expected_sha256": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+        "identifier": "nep89_20250409",
+        "name": "nep89_20250409.txt",
+        "resolved": {
+          "digest": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+          "source": "package"
+        }
+      },
       "details": {
         "angular_cutoff": 5.0,
         "l_max": 4,

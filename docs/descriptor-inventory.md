@@ -6,36 +6,53 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 
 <!-- registry-names: SOAP, SOAPTurbo, ACSF, ACE, CoulombMatrix, SineMatrix, EwaldSumMatrix, MBTR, LMBTR, ValleOganov, AtomicComposition, NeighborList, SortedDistances, SphericalExpansion, SphericalExpansionByPair, SoapRadialSpectrum, SoapPowerSpectrum, LodeSphericalExpansion, EAD, SO3, SO4, SNAP, LBispectrum, MTP, C00PSMLFF, NEP, DPA4, DPA4C -->
 
-| Name | Directory group | Asset policy | Backend | Level | Capabilities | Extra |
-|---|---|---|---|---|---|---|
-| SOAP | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| SOAPTurbo | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| ACSF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| ACE | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| CoulombMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| SineMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| EwaldSumMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| MBTR | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| LMBTR | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| ValleOganov | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| AtomicComposition | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
-| NeighborList | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | `—` |
-| SortedDistances | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| SphericalExpansion | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| SphericalExpansionByPair | `standalone` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | `—` |
-| SoapRadialSpectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| SoapPowerSpectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| LodeSphericalExpansion | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| EAD | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| SO3 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| SO4 | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| SNAP | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| LBispectrum | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| MTP | `standalone` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
-| C00PSMLFF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
-| NEP | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | `—` |
-| DPA4 | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | `—` |
-| DPA4C | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | `—` |
+| Name | Directory group | Category | Asset policy | Backend | Level | Capabilities | Parameters | Extra |
+|---|---|---|---|---|---|---|---|---|
+| SOAP | `standalone` | `local` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | species, rbf, n_max, l_max, sigma, average, weighting, r_cut, compression | `—` |
+| SOAPTurbo | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, alpha_max, l_max, rcut_hard, rcut_soft, nf, radial_enhancement, basis, compression, atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, amplitude_scaling, central_weight, central_species | `—` |
+| ACSF | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, r_cut, g2_params, g3_params, g4_params, g5_params | `—` |
+| ACE | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, N, r0, trans, wL, maxdeg, D, rcut, rin, pcut, pin, constants | `—` |
+| CoulombMatrix | `standalone` | `matrix` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | n_atoms_max, permutation, exponent | `—` |
+| SineMatrix | `standalone` | `matrix` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | n_atoms_max, permutation, exponent | `—` |
+| EwaldSumMatrix | `standalone` | `matrix` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | n_atoms_max, permutation, accuracy, w, r_cut, g_cut, a | `—` |
+| MBTR | `standalone` | `many_body` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | species, geometry, grid, weighting, periodic, normalize_gaussians, normalization | `—` |
+| LMBTR | `standalone` | `many_body` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, geometry, grid, weighting, periodic, normalize_gaussians, normalization | `—` |
+| ValleOganov | `standalone` | `many_body` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | species, function, n, sigma, r_cut, geometry, grid, weighting, periodic, normalize_gaussians, normalization | `—` |
+| AtomicComposition | `standalone` | `local` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | species, per_system | `—` |
+| NeighborList | `standalone` | `local` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | cutoff, full_neighbor_list, self_pairs | `—` |
+| SortedDistances | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, cutoff, max_neighbors, separate_neighbor_types | `—` |
+| SphericalExpansion | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, cutoff, density_width, max_radial, max_angular | `—` |
+| SphericalExpansionByPair | `standalone` | `local` | `NONE` | `cpp` | `pair` | cooperative_cancel, num_threads, sparse | species, cutoff, density_width, max_radial, max_angular | `—` |
+| SoapRadialSpectrum | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, cutoff, density_width, max_radial, max_angular | `—` |
+| SoapPowerSpectrum | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, cutoff, density_width, max_radial, max_angular | `—` |
+| LodeSphericalExpansion | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, cutoff, density_width, max_radial, max_angular, k_cutoff, exponent, radial_radius | `—` |
+| EAD | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | parameters, Rc, cutoff | `—` |
+| SO3 | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | nmax, lmax, rcut, alpha, weight_on | `—` |
+| SO4 | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | lmax, rcut, normalize_U | `—` |
+| SNAP | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | weights, lmax, rcut, normalize_U | `—` |
+| LBispectrum | `standalone` | `rotational` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | twojmax, diagonal, rfac0, rmin0, rcutfac, element_profile, element_radii, weights, rcut, normalize_U | `—` |
+| MTP | `standalone` | `local` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | species, min_dist, max_dist, r_cut, radial_basis_size, radial_funcs_count, max_rank, radial_basis_type | `—` |
+| C00PSMLFF | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, r_cut, n_radial, l_max, cutoff_function, radial_sigma, include_radial, include_angular, normalize_radial, normalize_angular, super_vector, radial_weight, angular_weight, exclude_self_interaction | `—` |
+| NEP | `model_backed` | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | — | `—` |
+| DPA4 | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | — | `—` |
+| DPA4C | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | calibrate | `—` |
+
+## Static descriptor metadata
+
+Each built-in entry carries `DescriptorInfo` schema version
+`1`.  Query it without importing an algorithm
+implementation or resolving a model:
+
+```python
+import mdescriptor
+
+metadata = mdescriptor.describe_descriptor("SOAP")
+```
+
+The returned object is JSON-safe and contains the canonical parameter schema,
+execution devices, input periodicity, output representation, and model asset
+policy.  Historical Python constructor aliases remain available to direct
+callers but are intentionally omitted from the canonical GUI parameter list.
 
 The canonical algorithm imports are:
 

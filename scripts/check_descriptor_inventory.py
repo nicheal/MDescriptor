@@ -12,7 +12,11 @@ import argparse
 import re
 from pathlib import Path
 
-from mdescriptor import builtin_registry, list_descriptors
+from mdescriptor import (
+    DESCRIPTOR_INFO_SCHEMA_VERSION,
+    builtin_registry,
+    list_descriptors,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "descriptor-inventory.md"
@@ -26,9 +30,15 @@ def render() -> str:
         group = "standalone" if ".standalone." in spec.import_path else "model_backed"
         capabilities = ", ".join(sorted(spec.capabilities)) or "—"
         extra = spec.optional_extra or "—"
+        category = "—" if spec.info is None else spec.info.category
+        parameters = (
+            "—"
+            if spec.info is None or not spec.info.parameters
+            else ", ".join(spec.info.parameters)
+        )
         rows.append(
-            f"| {spec.name} | `{group}` | `{spec.asset_policy.value.upper()}` | "
-            f"`{spec.backend}` | `{spec.level}` | {capabilities} | `{extra}` |"
+            f"| {spec.name} | `{group}` | `{category}` | `{spec.asset_policy.value.upper()}` | "
+            f"`{spec.backend}` | `{spec.level}` | {capabilities} | {parameters} | `{extra}` |"
         )
     return """# Descriptor inventory / 描述符清单
 
@@ -38,9 +48,26 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 
 <!-- registry-names: {names} -->
 
-| Name | Directory group | Asset policy | Backend | Level | Capabilities | Extra |
-|---|---|---|---|---|---|---|
+| Name | Directory group | Category | Asset policy | Backend | Level | Capabilities | Parameters | Extra |
+|---|---|---|---|---|---|---|---|---|
 {rows}
+
+## Static descriptor metadata
+
+Each built-in entry carries `DescriptorInfo` schema version
+`{DESCRIPTOR_INFO_SCHEMA_VERSION}`.  Query it without importing an algorithm
+implementation or resolving a model:
+
+```python
+import mdescriptor
+
+metadata = mdescriptor.describe_descriptor("SOAP")
+```
+
+The returned object is JSON-safe and contains the canonical parameter schema,
+execution devices, input periodicity, output representation, and model asset
+policy.  Historical Python constructor aliases remain available to direct
+callers but are intentionally omitted from the canonical GUI parameter list.
 
 The canonical algorithm imports are:
 
@@ -96,7 +123,11 @@ network downloads are not implemented.
 
 Algorithm numerical behavior is frozen during this layout refactor.  Formula
 changes require a separate reference/golden update.
-""".format(names=names, rows="\n".join(rows)).rstrip() + "\n"
+""".format(
+        names=names,
+        rows="\n".join(rows),
+        DESCRIPTOR_INFO_SCHEMA_VERSION=DESCRIPTOR_INFO_SCHEMA_VERSION,
+    ).rstrip() + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:

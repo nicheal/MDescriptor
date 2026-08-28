@@ -111,6 +111,16 @@
     "metadata": {
       "backend": "mdescriptor-dpa4-cpp",
       "descriptor": "DPA4",
+      "model": {
+        "__type__": "ModelResource",
+        "expected_sha256": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23",
+        "identifier": "DPA4-Air-OMat24-v20260704",
+        "name": "DPA4-Air-OMat24-v20260704.pt",
+        "resolved": {
+          "digest": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23",
+          "source": "package"
+        }
+      },
       "details": {
         "add_chg_spin_ebd": false,
         "basis_type": "bessel",

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, TypeAlias
 
+from .info import DescriptorInfo
+
 
 class AssetPolicy(str, Enum):
     NONE = "none"
@@ -29,6 +31,7 @@ class DescriptorSpec:
     level: str
     capabilities: frozenset[str] = field(default_factory=frozenset)
     optional_extra: str | None = None
+    info: DescriptorInfo | None = None
 
     def __post_init__(self) -> None:
         name = str(self.name).strip()
@@ -56,6 +59,8 @@ class DescriptorSpec:
         object.__setattr__(self, "capabilities", capabilities)
         if self.optional_extra is not None:
             object.__setattr__(self, "optional_extra", str(self.optional_extra))
+        if self.info is not None and not isinstance(self.info, DescriptorInfo):
+            raise TypeError("descriptor spec info must be a DescriptorInfo or None")
 
     def load_class(self) -> DescriptorClass:
         module_name, separator, attribute = self.import_path.partition(":")

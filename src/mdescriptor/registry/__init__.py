@@ -6,14 +6,66 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..core.descriptor import Descriptor
+from ..core.errors import DescriptorConfigError
 from ..core.options import DescriptorConfiguration, ExecutionOptions, OutputOptions
 from .builtins import builtin_registry
+from .info import DESCRIPTOR_INFO_SCHEMA_VERSION, DescriptorInfo
 from .registry import DescriptorRegistry
 from .spec import CAPABILITIES, AssetPolicy, DescriptorSpec
 
 
 def list_descriptors(*, registry: DescriptorRegistry = builtin_registry) -> tuple[str, ...]:
     return registry.names()
+
+
+def describe_descriptor(
+    name: str,
+    *,
+    registry: DescriptorRegistry = builtin_registry,
+) -> dict[str, Any]:
+    """Return static, JSON-safe metadata for one registered descriptor.
+
+    This function deliberately reads only the registry entry.  It does not
+    import or instantiate the descriptor class, resolve model assets, or
+    initialize a native runtime.
+    """
+
+    spec = registry.get(name)
+    if spec.info is None:
+        raise DescriptorConfigError(
+            f"descriptor {spec.name!r} has no static DescriptorInfo",
+            code="missing_descriptor_info",
+            path=["descriptor", spec.name],
+        )
+    payload = spec.info.to_dict()
+    asset = dict(payload.get("asset", {}))
+    asset["policy"] = spec.asset_policy.value
+    if "model" in spec.capabilities:
+        asset.setdefault("parameter", "model")
+    else:
+        asset.setdefault("parameter", None)
+    asset.setdefault("allow_external", spec.asset_policy is not AssetPolicy.NONE)
+    asset.setdefault("bundled_resources", [])
+    asset.setdefault("file_extensions", [])
+
+    result: dict[str, Any] = {
+        "schema_version": DESCRIPTOR_INFO_SCHEMA_VERSION,
+        "name": spec.name,
+        "display_name": payload["display_name"],
+        "description": payload["description"],
+        "category": payload["category"],
+        "level": spec.level,
+        "backend": spec.backend,
+        "capabilities": sorted(spec.capabilities),
+        "parameters": payload["parameters"],
+        "execution": payload["execution"],
+        "input": payload["input"],
+        "output": payload["output"],
+        "asset": asset,
+    }
+    if spec.optional_extra is not None:
+        result["optional_extra"] = spec.optional_extra
+    return result
 
 
 def get_descriptor(
@@ -58,11 +110,14 @@ def _restore_parameters(parameters: Any) -> dict[str, Any]:
 __all__ = [
     "AssetPolicy",
     "CAPABILITIES",
+    "DESCRIPTOR_INFO_SCHEMA_VERSION",
     "builtin_registry",
     "DescriptorConfiguration",
+    "DescriptorInfo",
     "DescriptorRegistry",
     "DescriptorSpec",
     "create_descriptor",
+    "describe_descriptor",
     "get_descriptor",
     "list_descriptors",
 ]

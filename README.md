@@ -146,6 +146,8 @@ import mdescriptor
 from mdescriptor.descriptors import SOAP
 
 print(mdescriptor.list_descriptors())
+metadata = mdescriptor.describe_descriptor("SOAP")
+runtime = mdescriptor.get_runtime_info()
 soap = SOAP(species=[1, 8], r_cut=4.5, n_max=2, l_max=2)
 rebuilt = mdescriptor.create_descriptor(soap.configuration)
 
@@ -156,7 +158,10 @@ child.register(my_spec)
 The built-in list separates `AssetPolicy.NONE`, `OPTIONAL` (for example MTP
 potentials), and `REQUIRED` (NEP/DPA4/DPA4C). The root package exposes stable
 contracts, registry functions and errors only; algorithm implementations are
-not re-exported from the root.
+not re-exported from the root. `describe_descriptor(name)` reads static,
+JSON-safe GUI metadata from the registry without constructing a descriptor or
+resolving a model. `get_runtime_info()` reports the package and contract
+schema versions.
 
 ## Model resources / 模型资源
 
