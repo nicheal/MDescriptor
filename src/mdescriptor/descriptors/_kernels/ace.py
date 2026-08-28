@@ -86,27 +86,41 @@ def normalize_ace_species(species: Iterable[Any] | Any | None) -> tuple[int, ...
             raw_values = tuple(species)
         except TypeError as exc:
             raise DescriptorConfigError(
-                "ACE species must be a sequence of atomic numbers or symbols"
+                "ACE species must be a sequence of atomic numbers or symbols",
+                path=["species"],
             ) from exc
     normalized: list[int] = []
     for value in raw_values:
         if isinstance(value, (bool, np.bool_)):
-            raise DescriptorConfigError("ACE species must contain atomic numbers or symbols")
+            raise DescriptorConfigError(
+                "ACE species must contain atomic numbers or symbols",
+                path=["species"],
+            )
         if isinstance(value, str):
             symbol = value.strip()
             try:
                 number = _SYMBOL_TO_NUMBER[symbol]
             except KeyError as exc:
-                raise DescriptorConfigError(f"unknown ACE chemical symbol: {value!r}") from exc
+                raise DescriptorConfigError(
+                    f"unknown ACE chemical symbol: {value!r}",
+                    path=["species"],
+                ) from exc
         else:
             number = _number(value, "ACE species")
         if number <= 0:
-            raise DescriptorConfigError("ACE species must contain positive atomic numbers")
+            raise DescriptorConfigError(
+                "ACE species must contain positive atomic numbers",
+                path=["species"],
+            )
         normalized.append(number)
     if not normalized:
-        raise DescriptorConfigError("ACE species must be a non-empty sequence")
+        raise DescriptorConfigError(
+            "ACE species must be a non-empty sequence", path=["species"]
+        )
     if len(set(normalized)) != len(normalized):
-        raise DescriptorConfigError("ACE species must contain unique entries")
+        raise DescriptorConfigError(
+            "ACE species must contain unique entries", path=["species"]
+        )
     return tuple(normalized)
 
 
@@ -131,19 +145,27 @@ def _normalize_transform(value: Any, r0: float) -> dict[str, float | str]:
     if value is None:
         return {"type": "PolyTransform", "p": 2.0, "r0": r0, "a": 1.0}
     if not isinstance(value, Mapping):
-        raise DescriptorConfigError("ACE trans must be a JSON object")
+        raise DescriptorConfigError("ACE trans must be a JSON object", path=["trans"])
     unknown = set(value) - {"type", "p", "r0", "a"}
     if unknown:
         names = ", ".join(sorted(str(item) for item in unknown))
-        raise DescriptorConfigError(f"ACE trans has unsupported field(s): {names}")
+        first = sorted(str(item) for item in unknown)[0]
+        raise DescriptorConfigError(
+            f"ACE trans has unsupported field(s): {names}",
+            path=["trans", first],
+        )
     transform_type = value.get("type", "PolyTransform")
     if transform_type != "PolyTransform":
-        raise DescriptorConfigError("ACE trans.type must be 'PolyTransform'")
+        raise DescriptorConfigError(
+            "ACE trans.type must be 'PolyTransform'", path=["trans", "type"]
+        )
     transform_r0 = _positive_float(value.get("r0", r0), "ACE trans.r0")
     power = _positive_float(value.get("p", 2.0), "ACE trans.p")
     shift = _positive_float(value.get("a", 1.0), "ACE trans.a", nonnegative=True)
     if shift + transform_r0 <= 0.0:  # defensive; both validated above
-        raise DescriptorConfigError("ACE trans requires trans.a + trans.r0 > 0")
+        raise DescriptorConfigError(
+            "ACE trans requires trans.a + trans.r0 > 0", path=["trans"]
+        )
     return {"type": "PolyTransform", "p": power, "r0": transform_r0, "a": shift}
 
 
@@ -151,14 +173,19 @@ def _normalize_degree_mapping(value: Any) -> dict[str, float | str] | None:
     if value is None:
         return None
     if not isinstance(value, Mapping):
-        raise DescriptorConfigError("ACE D must be a JSON object")
+        raise DescriptorConfigError("ACE D must be a JSON object", path=["D"])
     unknown = set(value) - {"type", "wL", "csp", "chc", "ahc", "bhc"}
     if unknown:
         names = ", ".join(sorted(str(item) for item in unknown))
-        raise DescriptorConfigError(f"ACE D has unsupported field(s): {names}")
+        first = sorted(str(item) for item in unknown)[0]
+        raise DescriptorConfigError(
+            f"ACE D has unsupported field(s): {names}", path=["D", first]
+        )
     degree_type = value.get("type", "SparsePSHDegree")
     if degree_type != "SparsePSHDegree":
-        raise DescriptorConfigError("ACE D.type must be 'SparsePSHDegree'")
+        raise DescriptorConfigError(
+            "ACE D.type must be 'SparsePSHDegree'", path=["D", "type"]
+        )
     return {
         "type": "SparsePSHDegree",
         "wL": _positive_float(value.get("wL", 1.5), "ACE D.wL"),
@@ -180,7 +207,10 @@ def normalize_ace_options(options: Mapping[str, Any]) -> dict[str, Any]:
     result = dict(options)
     result["species"] = normalize_ace_species(result.get("species"))
     if result["species"] is None:
-        raise DescriptorConfigError("ACE requires an explicit species declaration at construction")
+        raise DescriptorConfigError(
+            "ACE requires an explicit species declaration at construction",
+            path=["species"],
+        )
 
     N = _number(result.get("N", 3), "ACE N")
     if N < 1:
@@ -196,14 +226,19 @@ def normalize_ace_options(options: Mapping[str, Any]) -> dict[str, Any]:
         0.5 * r0 if rin_value is None else _positive_float(rin_value, "ACE rin", nonnegative=True)
     )
     if result["rin"] >= result["rcut"]:
-        raise DescriptorConfigError("ACE requires 0 <= rin < rcut")
+        raise DescriptorConfigError(
+            "ACE requires 0 <= rin < rcut", path=["rin"]
+        )
     result["pcut"] = _number(result.get("pcut", 2), "ACE pcut")
     result["pin"] = _number(result.get("pin", 2), "ACE pin")
     if result["pcut"] < 0 or result["pin"] < 0:
-        raise DescriptorConfigError("ACE pcut and pin must be non-negative")
+        path = ["pcut"] if result["pcut"] < 0 else ["pin"]
+        raise DescriptorConfigError(
+            "ACE pcut and pin must be non-negative", path=path
+        )
     constants = result.get("constants", False)
     if not isinstance(constants, (bool, np.bool_)):
-        raise DescriptorConfigError("ACE constants must be a boolean")
+        raise DescriptorConfigError("ACE constants must be a boolean", path=["constants"])
     result["constants"] = bool(constants)
 
     maxdeg = _scalar_or_vector(result.get("maxdeg", 8.0), "ACE maxdeg", N)
@@ -211,7 +246,10 @@ def normalize_ace_options(options: Mapping[str, Any]) -> dict[str, Any]:
     degree = _normalize_degree_mapping(result.get("D"))
     if degree is not None:
         if isinstance(maxdeg, list) or isinstance(wL, list):
-            raise DescriptorConfigError("ACE explicit D cannot be combined with vector maxdeg or wL")
+            raise DescriptorConfigError(
+                "ACE explicit D cannot be combined with vector maxdeg or wL",
+                path=["D"],
+            )
         result["maxdeg"] = float(maxdeg)
         result["wL"] = float(degree["wL"])
         result["D"] = degree
@@ -223,7 +261,9 @@ def normalize_ace_options(options: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(maxdeg, list) and not isinstance(wL, list):
             wL = [float(wL)] * N
         elif not isinstance(maxdeg, list) and isinstance(wL, list):
-            raise DescriptorConfigError("ACE vector wL requires vector maxdeg")
+            raise DescriptorConfigError(
+                "ACE vector wL requires vector maxdeg", path=["wL"]
+            )
         result["maxdeg"] = maxdeg
         result["wL"] = wL
         result["D"] = None
@@ -278,7 +318,9 @@ class AceKernel:
         self.constants = bool(canonical["constants"])
         self.num_threads = 0 if num_threads is None else _number(num_threads, "ACE num_threads")
         if self.num_threads < 0:
-            raise DescriptorConfigError("ACE num_threads must be non-negative")
+            raise DescriptorConfigError(
+                "ACE num_threads must be non-negative", path=["num_threads"]
+            )
         if self.pcut < 2:
             warnings.warn(
                 "ACE pcut < 2 may reduce radial smoothness relative to ACE1 defaults",

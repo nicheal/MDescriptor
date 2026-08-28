@@ -158,6 +158,9 @@ def test_model_schema_requires_path_string_or_tagged_resource_object():
             {"species": [13, 14], "model": {"name": "untagged"}},
             schemas,
         )
+    assert str(caught.value) == (
+        "serialized model must be a path string or a ModelResource object"
+    )
     assert caught.value.code == "invalid_parameter"
     assert caught.value.to_dict()["path"] == ["parameters", "model"]
 

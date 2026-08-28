@@ -37,14 +37,52 @@ class _FallbackComputeControl:
 
 
 class ComputeControl:
-    """Lazily construct the native control without importing native at package import."""
+    """Stable wrapper for native or pure-Python cooperative control.
 
-    def __new__(cls) -> Any:
+    The wrapper keeps the public type stable.  Native kernels receive the
+    underlying pybind object through :func:`_native_control`, so the wrapper
+    never crosses the C++ ABI boundary.
+    """
+
+    def __init__(self) -> None:
         try:
             from .. import _native
         except ImportError:
-            return _FallbackComputeControl()
-        return _native.ComputeControl()
+            self._implementation: Any = _FallbackComputeControl()
+        else:
+            self._implementation = _native.ComputeControl()
+
+    def reset(self, total: int) -> None:
+        self._implementation.reset(total)
+
+    def cancel(self) -> None:
+        self._implementation.cancel()
+
+    def cancelled(self) -> bool:
+        return bool(self._implementation.cancelled())
+
+    def completed(self) -> int:
+        return int(self._implementation.completed())
+
+    def total(self) -> int:
+        return int(self._implementation.total())
+
+    def mark_completed(self) -> None:
+        self._implementation.mark_completed()
+
+    @property
+    def _native_control(self) -> Any:
+        """Return the implementation object expected by native kernels."""
+
+        return self._implementation
+
+
+def _native_control(value: Any) -> Any:
+    """Unwrap the public control while accepting legacy native instances."""
+
+    if isinstance(value, ComputeControl):
+        return value._native_control
+    return value
 
 
 __all__ = ["ComputeControl"]

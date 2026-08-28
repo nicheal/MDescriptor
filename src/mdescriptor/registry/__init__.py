@@ -12,7 +12,6 @@ from .builtins import builtin_registry
 from .info import (
     DESCRIPTOR_INFO_SCHEMA_VERSION,
     DescriptorInfo,
-    parse_descriptor_info,
     validate_descriptor_parameters,
 )
 from .registry import DescriptorRegistry
@@ -203,6 +202,5 @@ __all__ = [
     "describe_descriptor",
     "get_descriptor",
     "list_descriptors",
-    "parse_descriptor_info",
     "validate_descriptor_parameters",
 ]

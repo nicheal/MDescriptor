@@ -42,6 +42,8 @@ def test_root_exposes_contracts_and_not_historical_algorithm_aliases():
     assert hasattr(mdescriptor, "Descriptor")
     assert hasattr(mdescriptor, "create_descriptor")
     assert "SoapCalculator" not in mdescriptor.__all__
+    assert "DescriptorInfo" not in mdescriptor.__all__
+    assert "parse_descriptor_info" not in mdescriptor.__all__
     assert "SOAP" in mdescriptor.list_descriptors()
 
 
@@ -53,6 +55,25 @@ def test_root_import_does_not_load_torch_or_model_modules():
             "import sys; import mdescriptor; assert 'torch' not in sys.modules; "
             "assert 'mdescriptor._native' not in sys.modules; "
             "assert not any(name.startswith('mdescriptor.models') for name in sys.modules)",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert probe.returncode == 0
+
+
+def test_compute_control_fallback_keeps_the_public_control_surface():
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import mdescriptor; sys.modules['mdescriptor._native'] = None; "
+            "control = mdescriptor.ComputeControl(); assert isinstance(control, mdescriptor.ComputeControl); "
+            "control.reset(2); "
+            "assert control.total() == 2; assert control.completed() == 0; "
+            "control.mark_completed(); assert control.completed() == 1; "
+            "control.cancel(); assert control.cancelled()",
         ],
         check=True,
         capture_output=True,
@@ -418,6 +439,7 @@ def test_cooperative_compute_reports_structure_progress():
         NEP(),
     ):
         control = mdescriptor.ComputeControl()
+        assert isinstance(control, mdescriptor.ComputeControl)
         try:
             descriptor.compute(_batch(), control=control)
             assert control.total() == 1

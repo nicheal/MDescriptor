@@ -53,6 +53,14 @@ _as_batch = coerce_batch
 batch_from_ase = StructureBatch.from_ase
 
 
+class _KernelValueError(ValueError):
+    """Keep legacy kernel text while carrying a public parameter path."""
+
+    def __init__(self, message: str, path: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.path = path
+
+
 def _basis_gto(r_cut: float, n_max: int, l_max: int) -> tuple[np.ndarray, np.ndarray]:
     """Construct reference implementation's orthonormalized GTO radial basis."""
 
@@ -191,18 +199,21 @@ class SoapKernel:
             raise ValueError("num_threads must be a positive integer or None")
         if self.rbf not in {"gto", "polynomial"}:
             raise ValueError("rbf must be 'gto' or 'polynomial'")
-        if not np.isfinite(self.r_cut):
-            raise ValueError("r_cut must be finite")
-        if not np.isfinite(self.sigma):
-            raise ValueError("sigma must be finite")
+        invalid_path: list[str] | None = None
         if self.r_cut <= 0:
-            raise ValueError("r_cut must be positive")
-        if self.n_max < 1:
-            raise ValueError("n_max must be positive")
-        if self.l_max < 0 or self.l_max > 20:
-            raise ValueError("l_max must be between 0 and 20")
-        if self.sigma <= 0:
-            raise ValueError("sigma must be positive")
+            invalid_path = ["r_cut"]
+        elif self.n_max < 1:
+            invalid_path = ["n_max"]
+        elif self.l_max < 0 or self.l_max > 20:
+            invalid_path = ["l_max"]
+        elif self.sigma <= 0:
+            invalid_path = ["sigma"]
+        if invalid_path is not None:
+            raise _KernelValueError("invalid SOAP parameters", invalid_path)
+        if not np.isfinite(self.r_cut):
+            raise _KernelValueError("SOAP parameters must be finite", ["r_cut"])
+        if not np.isfinite(self.sigma):
+            raise _KernelValueError("SOAP parameters must be finite", ["sigma"])
         if self.rbf == "gto" and self.r_cut <= 1.0:
             raise ValueError("SOAP GTO radial basis requires r_cut > 1")
         if self.average not in {"off", "inner", "outer"}:

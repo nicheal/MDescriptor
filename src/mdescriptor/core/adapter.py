@@ -9,13 +9,11 @@ from copy import copy
 from typing import Any, ClassVar
 
 from ..registry.info import LEGACY_PARAMETER_ALIASES
-from .control import ComputeControl
+from .control import ComputeControl, _native_control
 from .descriptor import Descriptor
 from .errors import (
-    CancelledError,
     DescriptorConfigError,
     DescriptorInputError,
-    is_native_cancelled_error,
 )
 from .input import StructureBatch
 from .options import (
@@ -99,6 +97,37 @@ def _builtin_parameter_names(name: str) -> frozenset[str] | None:
     if spec.info is None:
         return None
     return frozenset(str(option) for option in spec.info.parameters)
+
+
+def _builtin_input_capabilities(name: str) -> Mapping[str, Any] | None:
+    """Read input capabilities from the registry without importing kernels."""
+
+    try:
+        from ..registry.builtins import builtin_registry
+
+        spec = builtin_registry.get(name)
+    except (ImportError, KeyError):
+        return None
+    if spec.info is None:
+        return None
+    return spec.info.input
+
+
+def _unsupported_input(
+    descriptor: str,
+    field: str,
+    value: Any,
+    supported: Any,
+) -> DescriptorInputError:
+    details: dict[str, Any] = {"provided": value}
+    if supported is not None:
+        details["supported"] = list(supported)
+    return DescriptorInputError(
+        f"{descriptor} does not support input field {field!r}",
+        code="unsupported_input",
+        path=["input", field],
+        details=details,
+    )
 
 
 def _legacy_parameter_names(name: str) -> frozenset[str]:
@@ -250,6 +279,27 @@ class DescriptorAdapter(Descriptor):
                 )
             kwargs["device"] = self._execution_options.device
 
+        try:
+            self._kernel = self.kernel_type(**kwargs)
+        except (DescriptorConfigError, DescriptorInputError):
+            raise
+        except TypeError as exc:
+            raise DescriptorConfigError(
+                f"invalid {self.name} configuration: {exc}",
+                code="invalid_configuration",
+                path=getattr(exc, "path", None)
+                or _configuration_error_path(str(exc), kwargs),
+            ) from exc
+        except ValueError as exc:
+            if not self.wrap_value_errors_as_config:
+                raise
+            raise DescriptorConfigError(
+                f"invalid {self.name} configuration: {exc}",
+                code="invalid_configuration",
+                path=getattr(exc, "path", None)
+                or _configuration_error_path(str(exc), kwargs),
+            ) from exc
+
         snapshot = dict(options)
         snapshot["output"] = self._output_options
         snapshot["execution"] = self._execution_options
@@ -262,24 +312,6 @@ class DescriptorAdapter(Descriptor):
             _json_safe(snapshot),
         )
 
-        try:
-            self._kernel = self.kernel_type(**kwargs)
-        except (DescriptorConfigError, DescriptorInputError):
-            raise
-        except TypeError as exc:
-            raise DescriptorConfigError(
-                f"invalid {self.name} configuration: {exc}",
-                code="invalid_configuration",
-                path=_configuration_error_path(str(exc), kwargs),
-            ) from exc
-        except ValueError as exc:
-            if not self.wrap_value_errors_as_config:
-                raise
-            raise DescriptorConfigError(
-                f"invalid {self.name} configuration: {exc}",
-                code="invalid_configuration",
-                path=_configuration_error_path(str(exc), kwargs),
-            ) from exc
         self._feature_count: int | None = None
         try:
             resolved_features = int(self._kernel.feature_count)
@@ -344,6 +376,34 @@ class DescriptorAdapter(Descriptor):
             self._feature_count = value
             return value
         return None
+
+    def _validate_batch(self, batch: StructureBatch) -> None:
+        """Enforce the registry-declared input capability before kernel entry."""
+
+        capabilities = _builtin_input_capabilities(self.name)
+        if capabilities is None:
+            # Custom compute-only descriptors do not have GUI input metadata.
+            return
+
+        periodicity = tuple(
+            str(value) for value in capabilities.get("periodicity", ())
+        )
+        for flags in batch.pbc:
+            if all(bool(flag) for flag in flags):
+                kind = "fully_periodic"
+            elif not any(bool(flag) for flag in flags):
+                kind = "isolated"
+            else:  # StructureBatch normally rejects this during construction.
+                kind = "mixed"
+            if kind not in periodicity:
+                raise _unsupported_input(self.name, "periodicity", kind, periodicity)
+
+        if batch.spins is not None and not bool(capabilities.get("spin", False)):
+            raise _unsupported_input(self.name, "spins", True, None)
+        if batch.charge_spin is not None and not bool(
+            capabilities.get("charge_spin", False)
+        ):
+            raise _unsupported_input(self.name, "charge_spin", True, None)
 
     def _adapt_result(self, result: Any) -> DescriptorResult:
         adapted = adapt_result(result)
@@ -462,15 +522,11 @@ class DescriptorAdapter(Descriptor):
         control: ComputeControl | None = None,
     ) -> DescriptorResult:
         try:
-            raw_result = self._kernel.compute(batch, control)
+            raw_result = self._kernel.compute(batch, _native_control(control))
         except DescriptorInputError:
             raise
         except ValueError as exc:
             raise DescriptorInputError(str(exc)) from exc
-        except Exception as exc:
-            if is_native_cancelled_error(exc):
-                raise CancelledError("descriptor computation was cancelled") from exc
-            raise
         return self._adapt_result(raw_result)
 
     def close(self) -> None:

@@ -61,6 +61,15 @@ _DESCRIPTOR_INFO_FIELDS = _DESCRIPTOR_INFO_PAYLOAD_FIELDS | {
     "capabilities",
 }
 
+
+def _require_info_string(value: Any, field_name: str, path: list[str]) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise DescriptorConfigError(
+            f"descriptor info {field_name} must be a non-empty string",
+            code="invalid_descriptor_info",
+            path=path,
+        )
+
 # These names are accepted only by the direct Python constructor for
 # backwards compatibility.  They are deliberately not part of DescriptorInfo
 # and therefore can never become GUI fields or persisted canonical keys.
@@ -108,13 +117,7 @@ class DescriptorInfo:
 
     def __post_init__(self) -> None:
         for field_name in ("display_name", "description", "category"):
-            value = getattr(self, field_name)
-            if not isinstance(value, str) or not value.strip():
-                raise DescriptorConfigError(
-                    f"descriptor info {field_name} must be a non-empty string",
-                    code="invalid_descriptor_info",
-                    path=[field_name],
-                )
+            _require_info_string(getattr(self, field_name), field_name, [field_name])
 
         for field_name in ("parameters", "execution", "input", "output", "asset"):
             value = getattr(self, field_name)
@@ -219,13 +222,7 @@ def _validate_descriptor_info_envelope(value: Mapping[str, Any]) -> None:
             details={"supported": DESCRIPTOR_INFO_SCHEMA_VERSION},
         )
     for field_name in ("name", "display_name", "description", "category", "level", "backend"):
-        field_value = value[field_name]
-        if not isinstance(field_value, str) or not field_value.strip():
-            raise DescriptorConfigError(
-                f"descriptor info {field_name} must be a non-empty string",
-                code="invalid_descriptor_info",
-                path=[field_name],
-            )
+        _require_info_string(value[field_name], field_name, [field_name])
     capabilities = value["capabilities"]
     if not isinstance(capabilities, (list, tuple)) or not all(
         isinstance(item, str) and item.strip() for item in capabilities
@@ -249,12 +246,6 @@ def _validate_exact_fields(
             code="invalid_descriptor_info",
             path=path,
         )
-
-
-def parse_descriptor_info(value: Any) -> DescriptorInfo:
-    """Parse one versioned descriptor-info response or payload."""
-
-    return DescriptorInfo.from_dict(value)
 
 
 def _validate_schema(value: Mapping[str, Any], path: list[str]) -> None:
@@ -497,7 +488,17 @@ def _validate_parameter_value(value: Any, schema: Mapping[str, Any], path: list[
             isinstance(item, int) and not isinstance(item, bool) for item in value
         )
     elif schema_type == "model":
-        valid = isinstance(value, str) or isinstance(value, Mapping)
+        if isinstance(value, str) or (
+            isinstance(value, Mapping)
+            and value.get("__type__") == "ModelResource"
+        ):
+            valid = True
+        else:
+            raise DescriptorConfigError(
+                "serialized model must be a path string or a ModelResource object",
+                code="invalid_parameter",
+                path=path,
+            )
     elif schema_type == "array":
         # A few historical constructors use a scalar as a broadcast shorthand
         # for a per-species array. The GUI schema still emits the canonical
@@ -580,6 +581,5 @@ __all__ = [
     "DESCRIPTOR_INFO_SCHEMA_VERSION",
     "DescriptorInfo",
     "LEGACY_PARAMETER_ALIASES",
-    "parse_descriptor_info",
     "validate_descriptor_parameters",
 ]

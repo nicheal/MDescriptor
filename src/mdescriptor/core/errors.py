@@ -38,84 +38,30 @@ class MDescriptorError(Exception):
         return result
 
 
-class DescriptorConfigError(ValueError, MDescriptorError):
+class DescriptorConfigError(MDescriptorError, ValueError):
     """A descriptor option or capability declaration is invalid."""
 
     default_code = "invalid_configuration"
 
-    def __init__(
-        self,
-        message: str = "",
-        *,
-        code: str | None = None,
-        path: Any = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
-
-
-class DescriptorInputError(ValueError, MDescriptorError):
+class DescriptorInputError(MDescriptorError, ValueError):
     """An input batch does not satisfy the descriptor input contract."""
 
     default_code = "invalid_input"
 
-    def __init__(
-        self,
-        message: str = "",
-        *,
-        code: str | None = None,
-        path: Any = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
-
-
-class ModelLoadError(RuntimeError, MDescriptorError):
+class ModelLoadError(MDescriptorError, RuntimeError):
     """A model resource could not be resolved, validated, or loaded."""
 
     default_code = "model_load_error"
 
-    def __init__(
-        self,
-        message: str = "",
-        *,
-        code: str | None = None,
-        path: Any = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
-
-
-class ClosedDescriptorError(RuntimeError, MDescriptorError):
+class ClosedDescriptorError(MDescriptorError, RuntimeError):
     """An operation was attempted after a descriptor was closed."""
 
     default_code = "closed_descriptor"
 
-    def __init__(
-        self,
-        message: str = "",
-        *,
-        code: str | None = None,
-        path: Any = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
-
-
-class CancelledError(RuntimeError, MDescriptorError):
+class CancelledError(MDescriptorError, RuntimeError):
     """A cooperative descriptor computation was cancelled."""
 
     default_code = "cancelled"
-
-    def __init__(
-        self,
-        message: str = "",
-        *,
-        code: str | None = None,
-        path: Any = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        MDescriptorError.__init__(self, message, code=code, path=path, details=details)
 
 
 def is_native_cancelled_error(value: BaseException) -> bool:

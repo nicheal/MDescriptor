@@ -81,6 +81,7 @@ class Descriptor(ABC):
             raise CancelledError("descriptor computation was cancelled")
         try:
             batch = self._as_batch(value)
+            self._validate_batch(batch)
         except DescriptorInputError:
             raise
         except (ImportError, TypeError, ValueError) as exc:
@@ -128,6 +129,11 @@ class Descriptor(ABC):
     @staticmethod
     def _as_batch(value: StructureInput) -> StructureBatch:
         return coerce_batch(value)
+
+    def _validate_batch(self, batch: StructureBatch) -> None:
+        """Validate descriptor-specific input capabilities at the public seam."""
+
+        del batch
 
 
 def _is_cancelled(control: Any) -> bool:
