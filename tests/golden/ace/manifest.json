@@ -49,9 +49,26 @@
     "mode": "output"
   },
   "reference": {
-    "kind": "project_commit",
-    "source_commit": "HEAD",
-    "source": "ACE1.jl 0.12.5 Utils.rpi_basis compatibility path"
+    "kind": "ace1_julia_source",
+    "source": "ACE1.Utils.rpi_basis + ACE1.Descriptors.descriptors",
+    "source_archive": ".deps/ACE1.jl-main.zip",
+    "source_archive_sha256": "e0247ad250aeb6fc9cfa9b326441392da91b5d25bf01cfe5b0f8d1e273a2232a",
+    "ace1_version": "0.12.5",
+    "runtime_versions": {
+      "ACE1": "0.12.5",
+      "JuLIP": "0.16.0",
+      "Julia": "1.12.7"
+    },
+    "generator": "scripts/generate_ace1_reference.py",
+    "generator_sha256": "b374ff78069d7a51243b745ea043087d905bcfd48b11d5acf018eb78f98b296b",
+    "evaluator": "scripts/ace1_reference.jl",
+    "evaluator_sha256": "8b566af9eb8ebcce562d65fd02800d86c0813f16eeafd432488c4887000cea51",
+    "verification": {
+      "rtol": 1e-10,
+      "atol": 1e-12,
+      "max_abs": 1.554312234475219e-14,
+      "mae": 6.74807432154978e-16
+    }
   },
   "result": {
     "feature_count": 32,

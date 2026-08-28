@@ -86,7 +86,7 @@ struct C00PSMlffOptions {
     int n_radial = 8;
     int l_max = 4;
     int cutoff_function = 0; // 0: BP, 1: MO, 2: RJ, 3: WMC
-    // Gaussian width sigma_atom in the VASP MLFF theory (Angstrom).  A
+    // Gaussian width sigma_atom in the reference MLFF convention (Angstrom).  A
     // positive value enables the Gaussian atomic distribution; zero keeps
     // the unsmoothed delta-distribution limit.
     double radial_sigma = 0.5;
@@ -97,7 +97,7 @@ struct C00PSMlffOptions {
     bool super_vector = false;
     double radial_weight = 1.0;
     double angular_weight = 1.0;
-    // VASP 6.6.0 MLFF LSIC semantics: subtract self terms only from PS
+    // Reference MLFF LSIC semantics: subtract self terms only from PS
     // channels whose neighbour species is the centre species.
     bool exclude_self_interaction = true;
     int num_threads = 0;

@@ -65,7 +65,7 @@ def test_c00ps_mlff_radial_or_angular_only_modes():
     assert angular.values.shape == (3, 8 * 9 // 2 + 6 * 7 // 2)
 
 
-def test_c00ps_mlff_uses_vasp_gaussian_radial_basis():
+def test_c00ps_mlff_uses_reference_gaussian_radial_basis():
     batch = StructureBatch.from_ase([
         Atoms(
             "H2",
@@ -84,7 +84,7 @@ def test_c00ps_mlff_uses_vasp_gaussian_radial_basis():
         normalize_radial=False,
     ).compute(batch)
 
-    # VASP 6.6.0's default ML_SION=0.5 gives WION=2 in RAD_FUNC.
+    # The reference Gaussian convention uses WION=2 in RAD_FUNC.
     np.testing.assert_allclose(
         result.values[0],
         [0.13044015615446913, 0.086458272123694155],
@@ -93,7 +93,7 @@ def test_c00ps_mlff_uses_vasp_gaussian_radial_basis():
     )
 
 
-def test_c00ps_mlff_uses_vasp_off_diagonal_power_spectrum_weight():
+def test_c00ps_mlff_uses_reference_off_diagonal_power_spectrum_weight():
     batch = StructureBatch.from_ase([
         Atoms(
             "H2",
@@ -118,7 +118,7 @@ def test_c00ps_mlff_uses_vasp_off_diagonal_power_spectrum_weight():
     )
 
 
-def test_c00ps_mlff_angular_descriptor_uses_vasp_self_terms():
+def test_c00ps_mlff_angular_descriptor_uses_reference_self_terms():
     batch = StructureBatch.from_ase([
         Atoms(
             "HO",
@@ -143,7 +143,7 @@ def test_c00ps_mlff_angular_descriptor_uses_vasp_self_terms():
         exclude_self_interaction=False,
     ).compute(batch)
 
-    # VASP LSIC only removes self terms for neighbours matching the centre
+    # The reference LSIC only removes self terms for neighbours matching the centre
     # species.  In a heteronuclear dimer neither centre has such a neighbour.
     np.testing.assert_allclose(result.values, without_self_interaction.values, rtol=0.0, atol=1e-12)
 
@@ -174,7 +174,7 @@ def test_c00ps_mlff_angular_descriptor_uses_vasp_self_terms():
     assert np.max(homonuclear_without_self.values) > 1e-8
 
 
-def test_c00ps_mlff_vasp_cross_species_equal_radial_weight():
+def test_c00ps_mlff_cross_species_equal_radial_weight():
     batch = StructureBatch.from_ase([
         Atoms(
             "OHO",

@@ -21,10 +21,10 @@ using detail::run_parallel_structures;
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
 constexpr double kSqrtFourPi = 3.544907701811032054596334966682290365;
-// VASP 6.6.0 constructs the radial basis on NR equally spaced points and
+// The reference MLFF constructs the radial basis on NR equally spaced points and
 // normalizes it with the corresponding right-endpoint sum.  The same grid is
 // used here for the one-time basis setup.
-constexpr int kVaspRadialGridPoints = 10000;
+constexpr int kReferenceRadialGridPoints = 10000;
 constexpr int kRadialQuadraturePoints = 240;
 
 double spherical_bessel(int l, double x) {
@@ -136,7 +136,7 @@ double double_factorial_odd(int l) {
     return value;
 }
 
-// VASP's IL0 returns i_l(x) multiplied by exp(-W*s^2-W*r^2), evaluated in a
+// The reference radial integral returns i_l(x) multiplied by exp(-W*s^2-W*r^2), evaluated in a
 // form that remains finite for the Gaussian broadening integral.
 double scaled_modified_spherical_bessel(int l, double x, double w, double sample, double radius) {
     const double gaussian = std::exp(-w * (sample * sample + radius * radius));
@@ -280,8 +280,8 @@ void prepare_basis(
         for (int n = 0; n < radial_counts[static_cast<std::size_t>(l)]; ++n) {
             const double root = zeros[static_cast<std::size_t>(l)][static_cast<std::size_t>(n)];
             double norm2 = 0.0;
-            const double dr = options.r_cut / static_cast<double>(kVaspRadialGridPoints);
-            for (int point = 1; point <= kVaspRadialGridPoints; ++point) {
+            const double dr = options.r_cut / static_cast<double>(kReferenceRadialGridPoints);
+            for (int point = 1; point <= kReferenceRadialGridPoints; ++point) {
                 const double radius = static_cast<double>(point) * dr;
                 const double basis = spherical_bessel(l, root * radius / options.r_cut);
                 norm2 += radius * radius * basis * basis * dr;
@@ -294,11 +294,11 @@ void prepare_basis(
         return;
     }
 
-    // RAD_FUNC in VASP first convolves every normalized spherical Bessel
+    // The reference radial routine first convolves every normalized spherical Bessel
     // function with the Gaussian atom distribution and then tabulates the
     // result on the same radial mesh.  The integrand vanishes at both mesh
     // endpoints for the Bessel basis, so high-order Gauss integration matches
-    // VASP's right-endpoint grid sum to the precision needed here while
+    // The right-endpoint grid sum is retained to the precision needed here while
     // avoiding an O(NR^2) setup.
     std::vector<double> nodes;
     std::vector<double> weights;
@@ -306,7 +306,7 @@ void prepare_basis(
     const double width_parameter = 0.5 / (options.radial_sigma * options.radial_sigma);
     const double prefactor = 4.0 * kPi * std::pow(width_parameter / kPi, 1.5);
     const double quadrature_scale = 0.5 * options.r_cut;
-    const std::size_t table_width = static_cast<std::size_t>(kVaspRadialGridPoints + 1);
+    const std::size_t table_width = static_cast<std::size_t>(kReferenceRadialGridPoints + 1);
     for (int l = 0; l <= options.l_max; ++l) {
         const std::int32_t count = radial_counts[static_cast<std::size_t>(l)];
         auto& table = radial_values[static_cast<std::size_t>(l)];
@@ -323,9 +323,9 @@ void prepare_basis(
                     = spherical_bessel(l, root * radius / options.r_cut) / norm;
             }
         }
-        for (int point = 0; point <= kVaspRadialGridPoints; ++point) {
+        for (int point = 0; point <= kReferenceRadialGridPoints; ++point) {
             const double sample = options.r_cut * static_cast<double>(point)
-                / static_cast<double>(kVaspRadialGridPoints);
+                / static_cast<double>(kReferenceRadialGridPoints);
             const double cutoff = cutoff_value(options.cutoff_function, sample, options.r_cut);
             for (int n = 0; n < count; ++n) {
                 double integral = 0.0;
@@ -353,18 +353,18 @@ double radial_value(
     double distance
 ) {
     if (options.radial_sigma > 0.0) {
-        const std::size_t table_width = static_cast<std::size_t>(kVaspRadialGridPoints + 1);
+        const std::size_t table_width = static_cast<std::size_t>(kReferenceRadialGridPoints + 1);
         const auto& table = radial_values[static_cast<std::size_t>(l)];
         const double coordinate = std::max(0.0, std::min(1.0, distance / options.r_cut))
-            * static_cast<double>(kVaspRadialGridPoints);
-        const int left = std::min(kVaspRadialGridPoints - 1, static_cast<int>(coordinate));
+            * static_cast<double>(kReferenceRadialGridPoints);
+        const int left = std::min(kReferenceRadialGridPoints - 1, static_cast<int>(coordinate));
         const double fraction = coordinate - static_cast<double>(left);
         const auto value = [&](int point) {
-            const int bounded = std::max(0, std::min(kVaspRadialGridPoints, point));
+            const int bounded = std::max(0, std::min(kReferenceRadialGridPoints, point));
             return table[static_cast<std::size_t>(n) * table_width + static_cast<std::size_t>(bounded)];
         };
         // Four-point cubic interpolation keeps the tabulated path smooth and
-        // mirrors the cubic spline evaluation used by VASP's SPLVAL_ML_NEW.
+        // mirrors the reference cubic spline evaluation.
         const double p0 = value(left - 1);
         const double p1 = value(left);
         const double p2 = value(left + 1);
@@ -603,7 +603,7 @@ void C00PSMlffCalculator::compute(
                             * radial_count;
                         const double addition = (2.0 * l + 1.0) / (4.0 * kPi);
                         for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
-                            // Match VASP 6.6.0 MLFF LSIC: only the centre
+                            // Match the reference MLFF LSIC: only the centre
                             // species receives a self-interaction correction.
                             if (types[neighbor] != center_type) {
                                 continue;
@@ -651,7 +651,7 @@ void C00PSMlffCalculator::compute(
                                 total -= self_power[
                                     self_power_offsets[static_cast<std::size_t>(l)] + pair_index];
                             }
-                            // VASP's WVAR distinguishes radial indices, not
+                            // The reference WVAR distinguishes radial indices, not
                             // flattened species/radial channels.  Therefore
                             // cross-species channels with equal radial index
                             // retain weight 1.0.

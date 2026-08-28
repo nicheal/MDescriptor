@@ -53,11 +53,32 @@
     "mode": "output"
   },
   "reference": {
-    "kind": "project_commit",
-    "source_commit": "HEAD",
-    "wheel": {
-      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
-      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
+    "kind": "licensed_external_mlff_source",
+    "source": "licensed external MLFF C00/PS reference routines",
+    "distribution_boundary": "source archive and derived reference library are local-only, user-supplied inputs and are not distributed",
+    "source_archive": "local-only input (path intentionally not recorded)",
+    "source_archive_sha256": "9566f59b0ae2fc60f670a91153655d09dba13fe6cc6c54e9ca6bd03bbcd86384",
+    "library": "local-only input (path intentionally not recorded)",
+    "library_sha256": "3a76b271c87a4c64e81fb4249f1bbb8a8e0dfbae2896887d90127b07d0c51470",
+    "evaluator": "scripts/generate_external_c00ps_reference.py",
+    "evaluator_sha256": "f938408e9a6ff27415a343d3740dd39bcb6094ffd2dc08eb5fb9115c42e1f2d5",
+    "column_mapper": "scripts/external_reference.py",
+    "column_mapper_sha256": "0d4c447f10f33267464e202e428973074627a3e852688bc24a54594d25ef0f92",
+    "raw_output": {
+      "mode": "direct_library_evaluation"
+    },
+    "column_order": "ordered species pair, angular degree, radial upper triangle",
+    "radial_counts": [
+      2,
+      1,
+      1
+    ],
+    "nonperiodic_substitution": "20 Angstrom cubic cell; no image within r_cut",
+    "verification": {
+      "rtol": 1e-08,
+      "atol": 1e-08,
+      "max_abs": 2.7134555713459463e-10,
+      "mae": 1.3119267992676206e-11
     }
   },
   "result": {
@@ -459,7 +480,7 @@
   "schema_version": 1,
   "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
   "tolerance": {
-    "atol": 1e-11,
-    "rtol": 1e-09
+    "rtol": 1e-08,
+    "atol": 1e-08
   }
 }
