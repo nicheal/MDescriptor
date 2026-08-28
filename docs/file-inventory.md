@@ -25,6 +25,7 @@
 | 文件 | 作用简述 |
 |---|---|
 | `cpp/include/mdescriptor/descriptor.hpp` | SOAP、SOAPTurbo、ACSF、C00PSMLFF、MTP 和相关 calculator 的选项、接口与生命周期声明。 |
+| `cpp/include/mdescriptor/ace.hpp` | ACE1-compatible C++17 calculator 的参数 ABI、特征元数据和生命周期接口。 |
 | `cpp/include/mdescriptor/detail/batch.hpp` | 扁平化结构批次视图及原子数、晶胞、周期性和有限值校验。 |
 | `cpp/include/mdescriptor/detail/control.hpp` | 原生计算的取消、完成进度和 `CancelledError` 辅助接口。 |
 | `cpp/include/mdescriptor/detail/math3.hpp` | 不依赖外部线性代数库的三维向量、矩阵、点积、行列式和逆矩阵工具。 |
@@ -52,6 +53,7 @@
 | `cpp/src/model_backed/dpa4c.cpp` | 执行默认无 spin/无 compression DPA4C 的邻居、径向网络、moment 和不变量读出。 |
 | `cpp/src/common/nep.cpp` | 解析 NEP 模型并执行径向/角向基函数、球谐和 NEP 特征累积。 |
 | `cpp/src/standalone/acsf.cpp` | 实现 ACSF 的 G2、G3、G4、G5 原生计算。 |
+| `cpp/src/standalone/ace.cpp` | 实现 ACE1.jl 标准 `Utils.rpi_basis` 路径的径向基、球谐和 RPI 不变量。 |
 | `cpp/src/standalone/atomic_composition.cpp` | 计算按结构或按原子统计的元素组成描述符。 |
 | `cpp/src/standalone/c00ps_mlff.cpp` | 实现 C00PS-MLFF 的径向和角向特征、归一化及 cutoff 变体。 |
 | `cpp/src/standalone/coulomb_matrix.cpp` | 计算 Coulomb matrix 数值。 |
@@ -104,6 +106,7 @@
 | `src/mdescriptor/descriptors/__init__.py` | 描述符公共命名空间，按 registry 懒加载 standalone 和 model-backed 类。 |
 | `src/mdescriptor/descriptors/_kernels/__init__.py` | 私有 kernel 包标记，不作为算法公共 API。 |
 | `src/mdescriptor/descriptors/_kernels/c00ps_mlff.py` | C00PSMLFF kernel 的 Python 参数整理、native 调用、标签和 metadata。 |
+| `src/mdescriptor/descriptors/_kernels/ace.py` | ACE 选项规范化、符号 species 映射、native 调用、标签和 metadata。 |
 | `src/mdescriptor/descriptors/_kernels/core.py` | SOAP、ACSF kernel 以及径向基、权重、native 扩展发现和结果适配逻辑。 |
 | `src/mdescriptor/descriptors/_kernels/dpa4.py` | DPA4 kernel，负责 checkpoint 注入、CPU 推理调用和输出 metadata。 |
 | `src/mdescriptor/descriptors/_kernels/dpa4c.py` | DPA4C kernel，负责带 calibration/线程选项的 checkpoint 推理、C++/NumPy 路由和结果适配。 |
@@ -115,6 +118,7 @@
 | `src/mdescriptor/descriptors/_kernels/soap_turbo.py` | SOAPTurbo kernel 的每元素参数归一化、native 调用和输出描述。 |
 | `src/mdescriptor/descriptors/standalone/__init__.py` | standalone 描述符的懒加载入口和名称到实现的映射。 |
 | `src/mdescriptor/descriptors/standalone/acsf.py` | 将公共 ACSF 类绑定到 `AcsfKernel`。 |
+| `src/mdescriptor/descriptors/standalone/ace.py` | 将公共 ACE 类绑定到 ACE1-compatible kernel。 |
 | `src/mdescriptor/descriptors/standalone/c00ps_mlff.py` | 将公共 C00PSMLFF 类绑定到 `C00PSMlffKernel`。 |
 | `src/mdescriptor/descriptors/standalone/local/__init__.py` | 导出 AtomicComposition、NeighborList、SortedDistances 和球形展开类。 |
 | `src/mdescriptor/descriptors/standalone/many_body/__init__.py` | 导出 MBTR、LMBTR 和 ValleOganov 类。 |
@@ -229,7 +233,7 @@
 | `src/mdescriptor/models/resource.py` | 定义命名或显式路径模型资源及其严格 JSON 序列化格式。 |
 | `src/mdescriptor/models/session.py` | 实现共享已加载模型、不可变权重快照、独立 runtime session 和弱缓存。 |
 | `src/mdescriptor/registry/__init__.py` | 提供内置 registry 查询、描述符类加载和配置 factory。 |
-| `src/mdescriptor/registry/builtins.py` | 唯一声明内置 27 个描述符的名称、导入路径、后端、级别、能力和资产策略。 |
+| `src/mdescriptor/registry/builtins.py` | 唯一声明内置 28 个描述符的名称、导入路径、后端、级别、能力和资产策略。 |
 | `src/mdescriptor/registry/registry.py` | 实现可冻结、可继承、按名称查询的描述符 registry。 |
 | `src/mdescriptor/registry/spec.py` | 定义 `AssetPolicy`、`DescriptorSpec` 和懒加载描述符类的规范。 |
 

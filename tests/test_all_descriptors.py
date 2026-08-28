@@ -23,6 +23,8 @@ def _batch():
 
 
 def _calculator(name, cls):
+    if name == "ACE":
+        return cls(species=[8, 11, 14, 17], N=2, maxdeg=4, rcut=3.5)
     if name == "SOAP":
         return cls(species=[8, 11, 14, 17], r_cut=3.5, n_max=2, l_max=2)
     if name == "ACSF":
@@ -81,7 +83,7 @@ def _registered_descriptors(policy):
 
 def test_every_standalone_descriptor_is_native_and_finite():
     descriptors = _registered_descriptors(AssetPolicy.NONE) + _registered_descriptors(AssetPolicy.OPTIONAL)
-    assert len(descriptors) == 24
+    assert len(descriptors) == 25
     assert len({descriptor_class for _, descriptor_class in descriptors}) == len(descriptors)
     batch = _batch()
     for name, cls in descriptors:

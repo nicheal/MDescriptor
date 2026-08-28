@@ -4,13 +4,14 @@ This page is generated from the immutable built-in registry.  It is a
 controlled artifact: run `python scripts/check_descriptor_inventory.py
 --write` when a registry spec changes, and keep the `--check` gate in CI.
 
-<!-- registry-names: SOAP, SOAPTurbo, ACSF, CoulombMatrix, SineMatrix, EwaldSumMatrix, MBTR, LMBTR, ValleOganov, AtomicComposition, NeighborList, SortedDistances, SphericalExpansion, SphericalExpansionByPair, SoapRadialSpectrum, SoapPowerSpectrum, LodeSphericalExpansion, EAD, SO3, SO4, SNAP, LBispectrum, MTP, C00PSMLFF, NEP, DPA4, DPA4C -->
+<!-- registry-names: SOAP, SOAPTurbo, ACSF, ACE, CoulombMatrix, SineMatrix, EwaldSumMatrix, MBTR, LMBTR, ValleOganov, AtomicComposition, NeighborList, SortedDistances, SphericalExpansion, SphericalExpansionByPair, SoapRadialSpectrum, SoapPowerSpectrum, LodeSphericalExpansion, EAD, SO3, SO4, SNAP, LBispectrum, MTP, C00PSMLFF, NEP, DPA4, DPA4C -->
 
 | Name | Directory group | Asset policy | Backend | Level | Capabilities | Extra |
 |---|---|---|---|---|---|---|
 | SOAP | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
 | SOAPTurbo | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | ACSF | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
+| ACE | `standalone` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | `—` |
 | CoulombMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
 | SineMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
 | EwaldSumMatrix | `standalone` | `NONE` | `cpp` | `structure` | cooperative_cancel, num_threads, sparse | `—` |
@@ -39,7 +40,7 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 The canonical algorithm imports are:
 
 ```python
-from mdescriptor.descriptors import SOAP, ACSF, MTP, NEP, DPA4, DPA4C
+from mdescriptor.descriptors import SOAP, ACSF, ACE, MTP, NEP, DPA4, DPA4C
 ```
 
 The root package exposes contracts, registry queries and the configuration
@@ -81,7 +82,7 @@ network downloads are not implemented.
 
 | Family | Source |
 |---|---|
-| SOAP / ACSF / SOAPTurbo | `cpp/src/standalone/soap.cpp`, `acsf.cpp`, `soap_turbo.cpp` |
+| SOAP / ACSF / ACE / SOAPTurbo | `cpp/src/standalone/soap.cpp`, `acsf.cpp`, `ace.cpp`, `soap_turbo.cpp` |
 | matrices / MBTR | `cpp/src/standalone/*_matrix.cpp`, `matrix_dispatch.cpp`, `mbtr.cpp` |
 | local descriptors | `cpp/src/standalone/atomic_composition.cpp`, `neighbor_list.cpp`, `sorted_distances.cpp`, `spherical_expansion*.cpp` |
 | rotational / MTP / C00PS | `cpp/src/standalone/ead.cpp`, `rotational_descriptors.cpp`, `mtp*.cpp`, `c00ps_mlff.cpp` |

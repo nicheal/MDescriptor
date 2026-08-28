@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"wheel verification imported {package_file}, not {target}")
     _verify_vendored_openblas(mdescriptor)
     names = mdescriptor.list_descriptors()
-    if len(names) != 27 or len(set(names)) != 27:
+    if len(names) != 28 or len(set(names)) != 28:
         raise SystemExit(f"unexpected descriptor registry: {names!r}")
 
     batch = mdescriptor.StructureBatch(

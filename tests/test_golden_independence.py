@@ -9,7 +9,7 @@ from tests._golden import GOLDEN_ROOT
 
 def test_golden_fixtures_are_self_contained() -> None:
     manifests = sorted(GOLDEN_ROOT.glob("*/manifest.json"))
-    assert len(manifests) == 27
+    assert len(manifests) == 28
     for manifest_path in manifests:
         fixture_dir = manifest_path.parent
         manifest_text = manifest_path.read_text(encoding="utf-8")

@@ -1,0 +1,175 @@
+{
+  "configuration": {
+    "descriptor": "ACE",
+    "parameters": {
+      "D": null,
+      "N": 3,
+      "constants": false,
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "maxdeg": 4.0,
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "pcut": 2,
+      "pin": 2,
+      "r0": 2.5,
+      "rcut": 3.5,
+      "rin": 1.25,
+      "species": [
+        1,
+        8
+      ],
+      "trans": {
+        "a": 1.0,
+        "p": 2.0,
+        "r0": 2.5,
+        "type": "PolyTransform"
+      },
+      "wL": 1.5
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "ace-two-structure-v1",
+    "sha256": "6db41bb82f3a7692acf9a6ca83914c583a97fc1c0d98f6f934d6e1a6bdc30a77",
+    "source": "promoted-local-dataset"
+  },
+  "descriptor": "ACE",
+  "expected_output": "expected_output.npz",
+  "input": "input.npz",
+  "input_ids": [
+    "ace-periodic",
+    "ace-isolated"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "kind": "project_commit",
+    "source_commit": "HEAD",
+    "source": "ACE1.jl 0.12.5 Utils.rpi_basis compatibility path"
+  },
+  "result": {
+    "feature_count": 32,
+    "labels": [
+      "ace1:feature=0",
+      "ace1:feature=1",
+      "ace1:feature=2",
+      "ace1:feature=3",
+      "ace1:feature=4",
+      "ace1:feature=5",
+      "ace1:feature=6",
+      "ace1:feature=7",
+      "ace1:feature=8",
+      "ace1:feature=9",
+      "ace1:feature=10",
+      "ace1:feature=11",
+      "ace1:feature=12",
+      "ace1:feature=13",
+      "ace1:feature=14",
+      "ace1:feature=15",
+      "ace1:feature=16",
+      "ace1:feature=17",
+      "ace1:feature=18",
+      "ace1:feature=19",
+      "ace1:feature=20",
+      "ace1:feature=21",
+      "ace1:feature=22",
+      "ace1:feature=23",
+      "ace1:feature=24",
+      "ace1:feature=25",
+      "ace1:feature=26",
+      "ace1:feature=27",
+      "ace1:feature=28",
+      "ace1:feature=29",
+      "ace1:feature=30",
+      "ace1:feature=31"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "ACE",
+      "details": {
+        "D": null,
+        "N": 3,
+        "constants": false,
+        "feature_counts": [
+          32,
+          32
+        ],
+        "max_angular": 2,
+        "max_radial": 4,
+        "maxdeg": 4.0,
+        "pcut": 2,
+        "pin": 2,
+        "r0": 2.5,
+        "rcut": 3.5,
+        "reference": {
+          "implementation": "ACE1.jl",
+          "path": "Utils.rpi_basis",
+          "version": "0.12.5"
+        },
+        "rin": 1.25,
+        "species": [
+          1,
+          8
+        ],
+        "trans": {
+          "a": 1.0,
+          "p": 2.0,
+          "r0": 2.5,
+          "type": "PolyTransform"
+        },
+        "wL": 1.5
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 32,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      2,
+      4
+    ],
+    "samples": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ]
+    ],
+    "structure_ids": [
+      "ace-periodic",
+      "ace-isolated"
+    ]
+  },
+  "schema_version": 1,
+  "source_snapshot": "20260827-ace1-cpp",
+  "tolerance": {
+    "atol": 1e-12,
+    "rtol": 1e-10
+  }
+}

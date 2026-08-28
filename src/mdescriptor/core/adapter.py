@@ -37,6 +37,10 @@ _PUBLIC_OPTION_NAMES: dict[str, frozenset[str]] = {
         "g2_params", "G2", "g2", "g3_params", "G3", "g3",
         "g4_params", "G4", "g4", "g5_params", "G5", "g5",
     }),
+    "ACE": frozenset({
+        "species", "N", "r0", "trans", "wL", "maxdeg", "D",
+        "rcut", "rin", "pcut", "pin", "constants",
+    }),
     "SOAPTurbo": frozenset({
         "species", "alpha_max", "l_max", "rcut_hard", "rcut_soft",
         "nf", "radial_enhancement", "basis", "compression", "compress_mode",

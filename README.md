@@ -15,7 +15,7 @@ The public namespace is intentionally small:
 src/mdescriptor/             installable package
 src/mdescriptor/core/         Descriptor, StructureBatch, DescriptorResult
 src/mdescriptor/descriptors/
-  standalone/                 no model required (matrices/, many_body/, local/, rotational/)
+  standalone/                 no model required (ACE, matrices/, many_body/, local/, rotational/)
   model_backed/               graph seam plus NEP, DPA4, DPA4C
 src/mdescriptor/models/assets/ packaged, hash-verified model resources
 tests/golden/              descriptor-owned, benchmark-independent accuracy fixtures
@@ -110,6 +110,17 @@ assert len(result.labels) == result.values.shape[1]
 
 with SOAP(species=[1, 8], r_cut=4.5, n_max=2, l_max=2) as descriptor:
     result = descriptor.compute(batch)
+```
+
+ACE (Atomic Cluster Expansion) is available as a standalone atom-level
+descriptor.  Its public options mirror the standard ACE1.jl
+`Utils.rpi_basis` path and accept atomic numbers or chemical symbols:
+
+```python
+from mdescriptor.descriptors import ACE
+
+ace = ACE(species=["H", "O"], N=3, maxdeg=8, rcut=5.0)
+result = ace.compute(batch)
 ```
 
 Every descriptor has idempotent `close()`, a `closed` property and synchronous

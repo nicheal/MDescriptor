@@ -1,4 +1,5 @@
 #include "mdescriptor/descriptor.hpp"
+#include "mdescriptor/ace.hpp"
 #include "mdescriptor/dpa4.hpp"
 #include "mdescriptor/dpa4c.hpp"
 #include "mdescriptor/extra.hpp"
@@ -20,6 +21,8 @@
 namespace py = pybind11;
 using mdescriptor::AcsfCalculator;
 using mdescriptor::AcsfOptions;
+using mdescriptor::AceCalculator;
+using mdescriptor::AceOptions;
 using mdescriptor::ComputeControl;
 using mdescriptor::MtpCalculator;
 using mdescriptor::MtpOptions;
@@ -394,6 +397,25 @@ py::array compute_c00ps_mlff_array(
 
 py::array compute_mtp_array(
     const MtpCalculator& calculator,
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const std::shared_ptr<ComputeControl>& control
+) {
+    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
+    py::array_t<double> output({batch.atoms, calculator.feature_count()});
+    auto ctrl = control_or_default(control);
+    {
+        py::gil_scoped_release release;
+        calculator.compute(batch, output.mutable_data(), ctrl);
+    }
+    return output;
+}
+
+py::array compute_ace_array(
+    const AceCalculator& calculator,
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -1057,6 +1079,19 @@ PYBIND11_MODULE(_native, module) {
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
+    py::class_<AceCalculator>(module, "AceCalculator")
+        .def(py::init<AceOptions>())
+        .def_property_readonly("feature_count", &AceCalculator::feature_count)
+        .def_property_readonly("feature_counts", &AceCalculator::feature_counts)
+        .def_property_readonly("species", &AceCalculator::species)
+        .def_property_readonly("max_angular", &AceCalculator::max_angular)
+        .def_property_readonly("max_radial", &AceCalculator::max_radial)
+        .def("close", &AceCalculator::close)
+        .def("closed", &AceCalculator::closed)
+        .def("compute", &compute_ace_array,
+             py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
+             py::arg("offsets"), py::arg("control") = nullptr);
+
     py::class_<NepCalculator>(module, "NepCalculator")
         .def(py::init<NepOptions>())
         .def_property_readonly("feature_count", &NepCalculator::feature_count)
@@ -1190,6 +1225,28 @@ PYBIND11_MODULE(_native, module) {
         .def_readwrite("radial_funcs_count", &MtpOptions::radial_funcs_count)
         .def_readwrite("max_rank", &MtpOptions::max_rank)
         .def_readwrite("num_threads", &MtpOptions::num_threads);
+
+    py::class_<AceOptions>(module, "AceOptions")
+        .def(py::init<>())
+        .def_readwrite("species", &AceOptions::species)
+        .def_readwrite("max_order", &AceOptions::max_order)
+        .def_readwrite("r0", &AceOptions::r0)
+        .def_readwrite("transform_p", &AceOptions::transform_p)
+        .def_readwrite("transform_a", &AceOptions::transform_a)
+        .def_readwrite("w_l", &AceOptions::w_l)
+        .def_readwrite("max_degree", &AceOptions::max_degree)
+        .def_readwrite("degree_csp", &AceOptions::degree_csp)
+        .def_readwrite("degree_chc", &AceOptions::degree_chc)
+        .def_readwrite("degree_ahc", &AceOptions::degree_ahc)
+        .def_readwrite("degree_bhc", &AceOptions::degree_bhc)
+        .def_readwrite("degree_by_order", &AceOptions::degree_by_order)
+        .def_readwrite("angular_weight_by_order", &AceOptions::angular_weight_by_order)
+        .def_readwrite("r_cut", &AceOptions::r_cut)
+        .def_readwrite("r_in", &AceOptions::r_in)
+        .def_readwrite("p_cut", &AceOptions::p_cut)
+        .def_readwrite("p_in", &AceOptions::p_in)
+        .def_readwrite("constants", &AceOptions::constants)
+        .def_readwrite("num_threads", &AceOptions::num_threads);
 
     py::class_<NepOptions>(module, "NepOptions")
         .def(py::init<>())

@@ -77,6 +77,8 @@ def _calculator(name: str, calculator_class: type):
             species=[1, 8], r_cut=3.0,
             g2_params=[[1.0, 0.5]], g3_params=[1.0], g4_params=[[0.1, 1.0, 1.0]],
         )
+    if name == "ACE":
+        return calculator_class(species=[1, 8], N=2, maxdeg=4, rcut=3.0)
     if name in {"CoulombMatrix", "SineMatrix", "EwaldSumMatrix"}:
         return calculator_class(n_atoms_max=3)
     if name in {"MBTR", "LMBTR"}:

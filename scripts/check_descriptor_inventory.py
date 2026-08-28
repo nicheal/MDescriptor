@@ -45,7 +45,7 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 The canonical algorithm imports are:
 
 ```python
-from mdescriptor.descriptors import SOAP, ACSF, MTP, NEP, DPA4, DPA4C
+from mdescriptor.descriptors import SOAP, ACSF, ACE, MTP, NEP, DPA4, DPA4C
 ```
 
 The root package exposes contracts, registry queries and the configuration
@@ -87,7 +87,7 @@ network downloads are not implemented.
 
 | Family | Source |
 |---|---|
-| SOAP / ACSF / SOAPTurbo | `cpp/src/standalone/soap.cpp`, `acsf.cpp`, `soap_turbo.cpp` |
+| SOAP / ACSF / ACE / SOAPTurbo | `cpp/src/standalone/soap.cpp`, `acsf.cpp`, `ace.cpp`, `soap_turbo.cpp` |
 | matrices / MBTR | `cpp/src/standalone/*_matrix.cpp`, `matrix_dispatch.cpp`, `mbtr.cpp` |
 | local descriptors | `cpp/src/standalone/atomic_composition.cpp`, `neighbor_list.cpp`, `sorted_distances.cpp`, `spherical_expansion*.cpp` |
 | rotational / MTP / C00PS | `cpp/src/standalone/ead.cpp`, `rotational_descriptors.cpp`, `mtp*.cpp`, `c00ps_mlff.cpp` |

@@ -29,3 +29,51 @@ class ComputeControl:
     def total(self) -> int: ...
 
     def mark_completed(self) -> None: ...
+
+
+class AceOptions:
+    species: list[int]
+    max_order: int
+    r0: float
+    transform_p: float
+    transform_a: float
+    w_l: float
+    max_degree: float
+    degree_by_order: list[float]
+    angular_weight_by_order: list[float]
+    degree_csp: float
+    degree_chc: float
+    degree_ahc: float
+    degree_bhc: float
+    r_cut: float
+    r_in: float
+    p_cut: int
+    p_in: int
+    constants: bool
+    num_threads: int
+
+    def __init__(self) -> None: ...
+
+
+class AceCalculator:
+    feature_count: int
+    feature_counts: list[int]
+    species: list[int]
+    max_angular: int
+    max_radial: int
+
+    def __init__(self, options: AceOptions) -> None: ...
+
+    def compute(
+        self,
+        numbers: Any,
+        positions: Any,
+        cells: Any,
+        pbc: Any,
+        offsets: Any,
+        control: ComputeControl | None = None,
+    ) -> Any: ...
+
+    def close(self) -> None: ...
+
+    def closed(self) -> bool: ...

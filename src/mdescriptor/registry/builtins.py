@@ -20,6 +20,7 @@ _BUILTIN_SPECS = (
     DescriptorSpec("SOAP", _STANDALONE + "soap:SOAP", AssetPolicy.NONE, "cpp", "structure", capabilities=_CPP_THREAD_CAPABILITIES),
     DescriptorSpec("SOAPTurbo", _STANDALONE + "soap_turbo:SOAPTurbo", AssetPolicy.NONE, "cpp", "atom", capabilities=_CPP_THREAD_CAPABILITIES),
     DescriptorSpec("ACSF", _STANDALONE + "acsf:ACSF", AssetPolicy.NONE, "cpp", "atom", capabilities=_CPP_THREAD_CAPABILITIES),
+    DescriptorSpec("ACE", _STANDALONE + "ace:ACE", AssetPolicy.NONE, "cpp", "atom", capabilities=_CPP_THREAD_CAPABILITIES),
     DescriptorSpec("CoulombMatrix", _MATRICES + "CoulombMatrix", AssetPolicy.NONE, "cpp", "structure", capabilities=_CPP_THREAD_CAPABILITIES),
     DescriptorSpec("SineMatrix", _MATRICES + "SineMatrix", AssetPolicy.NONE, "cpp", "structure", capabilities=_CPP_THREAD_CAPABILITIES),
     DescriptorSpec("EwaldSumMatrix", _MATRICES + "EwaldSumMatrix", AssetPolicy.NONE, "cpp", "structure", capabilities=_CPP_THREAD_CAPABILITIES),

@@ -1,6 +1,6 @@
 MDescriptor 剩余重构收口计划
 1. 结论与边界
-当前已完成 src/ 布局、27 个描述符注册、统一生命周期、_native 拆分、官方 DPA checkpoint 加载、三个默认资产打包及基础 wheel 验证；现有检查为 57 passed、10 skipped，Ruff 与 mypy 已通过。
+当前已完成 src/ 布局、28 个描述符注册、统一生命周期、_native 拆分、官方 DPA checkpoint 加载、三个默认资产打包及基础 wheel 验证；ACE 现作为独立 C++17 standalone 描述符接入。
 尚未严格达成的部分集中在五处：registry 仍有重复声明、动态 factory 仍接收裸映射、结果索引契约不完整、模型共享层名实不符、数值参考与正式 wheel 验收仍可跳过。
 本轮不改数值公式、默认算法值、邻居算法或 DPA 推理核心；不重命名私有 C++ *Calculator，也不强制删除 _kernels 等职责明确的内部 module。
 2. 锁定的公共 interface
@@ -23,7 +23,7 @@ MDescriptor 剩余重构收口计划
 3. 实施顺序
 1. 先冻结数值证据
    - 从固定提交 60dccbb 在临时目录构建隔离 reference wheel。
-   - 使用统一小型周期结构和显式构造参数生成 27 个描述符的 NPZ 基线；MTP 额外覆盖无模型和已提交 MLIP4 模型两种模式。
+   - 使用统一小型周期结构和显式构造参数生成 28 个描述符的 NPZ 基线；MTP 额外覆盖无模型和已提交 MLIP4 模型两种模式。
    - manifest 记录来源提交、输入、构造参数、算法默认值、模型 hash、reference wheel/hash、DPA reference evaluator/hash、labels、level、samples、row offsets 和容差。
    - 新增 DPA4 官方 checkpoint golden，并把现有 DPA4C golden 迁入相同格式。非 DPA 描述符使用固定 reference wheel；DPA wrapper 使用直接 `dpa4desc.DescriptorEvaluator`，并与官方 checkpoint golden 分层校验。生成脚本必须指定 reference wheel/checkpoint 并显式传入 --accept；CI 永不自动更新。
 2. 收口 core 与 registry seam
@@ -52,7 +52,7 @@ MDescriptor 剩余重构收口计划
 - reference CI 在 Linux CPython 3.12 固定安装 dscribe==2.1.2 与 ase==3.26.0，硬性比较其可对应的 SOAP、ACSF、矩阵、MBTR/LMBTR 和 Valle–Oganov 实现；reference/model suite 不得通过 importorskip 静默成功。
 - 模型测试覆盖解析优先级、损坏缓存、hash、受限 checkpoint unpickler/global allowlist、checkpoint schema/tensor shape/dtype/type map、两个活跃 session 共享 LoadedModel 但不共享 runtime、关闭隔离、弱缓存回收及失败后重试；DPA 测试不得导入 Torch。
 - 所有 CPython 3.10–3.14 正式 wheel 在仓库外执行基础 import、契约、standalone baseline、NEP 计算和资产 hash 检查。Linux、Windows x86_64、macOS arm64 的 CPython 3.12 额外执行 DPA4 的 NumPy 路径和 DPA4C 默认 C++/NumPy fallback 计算；publish 必须依赖这些验证任务。
-- 最终验收要求：27 个名称全部通过统一契约与基线；MTP 两种资产模式通过；三个默认模型均在 wheel 中且 hash 正确；registry 是名称、分类和 capability 唯一来源；根导入不加载 Torch 或模型；Ruff、mypy、文档派生检查和仓外 wheel 验收全部通过；硬门禁中不存在意外 skip。
+- 最终验收要求：28 个名称全部通过统一契约与基线；MTP 两种资产模式通过；三个默认模型均在 wheel 中且 hash 正确；registry 是名称、分类和 capability 唯一来源；根导入不加载 Torch 或模型；Ruff、mypy、文档派生检查和仓外 wheel 验收全部通过；硬门禁中不存在意外 skip。
 5. 固定假设
 - 项目未发布，不保留旧名、旧 factory、旧配置映射或过渡 shim。
 - 60dccbb 是本次算法行为与默认值的冻结基准；只有本计划明确列出的 interface 删除不受旧签名约束。

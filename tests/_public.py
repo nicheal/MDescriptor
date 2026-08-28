@@ -11,6 +11,7 @@ from mdescriptor import (
     builtin_registry,
 )
 from mdescriptor.descriptors import (
+    ACE,
     ACSF,
     C00PSMLFF,
     DPA4,
@@ -42,6 +43,7 @@ from mdescriptor.descriptors import (
 
 __all__ = [
     "ACSF",
+    "ACE",
     "AssetPolicy",
     "AtomicComposition",
     "builtin_registry",
