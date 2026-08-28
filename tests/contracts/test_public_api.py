@@ -3,6 +3,7 @@ import inspect
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,7 @@ from mdescriptor.core import (
     Descriptor,
     DescriptorConfigError,
     DescriptorConfiguration,
+    DescriptorInputError,
     DescriptorResult,
     ExecutionOptions,
     ModelLoadError,
@@ -248,6 +250,91 @@ def test_descriptor_errors_keep_parameter_paths():
 
         SOAP(species=[1], r_cut=-1)
     assert soap.value.to_dict()["path"] == ["r_cut"]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message", "path"),
+    [
+        (
+            {"r_cut": -1.0},
+            "invalid SOAP configuration: invalid SOAP parameters",
+            ["r_cut"],
+        ),
+        (
+            {"r_cut": float("nan")},
+            "invalid SOAP configuration: SOAP parameters must be finite",
+            ["r_cut"],
+        ),
+    ],
+)
+def test_soap_validation_preserves_legacy_messages_and_adds_paths(
+    kwargs, message, path
+):
+    with pytest.raises(DescriptorConfigError) as caught:
+        from mdescriptor.descriptors import SOAP
+
+        SOAP(species=[1], **kwargs)
+    assert str(caught.value) == message
+    assert caught.value.to_dict()["path"] == path
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "path"),
+    [
+        ({"trans": 1}, ["trans"]),
+        ({"trans": {"unknown": 1}}, ["trans", "unknown"]),
+        ({"trans": {"type": "NotATransform"}}, ["trans", "type"]),
+        ({"D": 1}, ["D"]),
+        ({"D": {"unknown": 1}}, ["D", "unknown"]),
+        ({"D": {"type": "NotADegree"}}, ["D", "type"]),
+        ({"rin": 5.0, "rcut": 5.0}, ["rin"]),
+        ({"D": {"type": "SparsePSHDegree"}, "maxdeg": [8.0, 8.0, 8.0]}, ["D"]),
+    ],
+)
+def test_ace_validation_locates_nested_configuration_errors(kwargs, path):
+    with pytest.raises(DescriptorConfigError) as caught:
+        from mdescriptor.descriptors import ACE
+
+        ACE(species=[1], **kwargs)
+    assert caught.value.to_dict()["path"] == path
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("spins", np.zeros((2, 3))),
+        ("charge_spin", np.zeros((1, 2))),
+    ],
+)
+def test_descriptor_rejects_input_fields_outside_declared_capabilities(field, value):
+    from mdescriptor.descriptors import AtomicComposition
+
+    descriptor = AtomicComposition(species=[1, 8])
+    try:
+        with pytest.raises(DescriptorInputError) as caught:
+            descriptor.compute(replace(_batch(), **{field: value}))
+        assert caught.value.code == "unsupported_input"
+        assert caught.value.to_dict()["path"] == ["input", field]
+    finally:
+        descriptor.close()
+
+
+def test_descriptor_rejects_unsupported_periodicity_before_kernel_execution():
+    from mdescriptor.descriptors import SineMatrix
+
+    descriptor = SineMatrix(n_atoms_max=2)
+    isolated = replace(
+        _batch(),
+        cells=np.zeros((1, 3, 3)),
+        pbc=np.zeros((1, 3), dtype=np.int32),
+    )
+    try:
+        with pytest.raises(DescriptorInputError) as caught:
+            descriptor.compute(isolated)
+        assert caught.value.code == "unsupported_input"
+        assert caught.value.to_dict()["path"] == ["input", "periodicity"]
+    finally:
+        descriptor.close()
 
 
 def test_missing_native_does_not_turn_unrelated_runtime_errors_into_cancelled():

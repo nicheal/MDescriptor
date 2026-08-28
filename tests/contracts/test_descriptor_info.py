@@ -16,7 +16,7 @@ from mdescriptor import (
     DescriptorSpec,
     describe_descriptor,
 )
-from mdescriptor.registry import DescriptorInfo
+from mdescriptor.registry import DescriptorInfo, validate_descriptor_parameters
 
 
 def test_runtime_info_exposes_independent_contract_versions():
@@ -147,6 +147,28 @@ def test_descriptor_info_does_not_leak_registry_only_optional_fields():
         "output",
         "asset",
     }
+
+
+def test_model_schema_requires_path_string_or_tagged_resource_object():
+    schemas = describe_descriptor("MTP")["parameters"]
+
+    with pytest.raises(DescriptorConfigError) as caught:
+        validate_descriptor_parameters(
+            "MTP",
+            {"species": [13, 14], "model": {"name": "untagged"}},
+            schemas,
+        )
+    assert caught.value.code == "invalid_parameter"
+    assert caught.value.to_dict()["path"] == ["parameters", "model"]
+
+    validate_descriptor_parameters(
+        "MTP",
+        {
+            "species": [13, 14],
+            "model": {"__type__": "ModelResource", "name": "tagged"},
+        },
+        schemas,
+    )
 
 
 def test_custom_registry_without_info_remains_compute_only():
