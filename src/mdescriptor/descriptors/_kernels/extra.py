@@ -9,7 +9,7 @@ input packing.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
@@ -41,7 +41,7 @@ def _periodic_neighbors(
                 continue
             neighbors.append((
                 atom,
-                cast(np.ndarray[Any, Any], np.asarray(displacements[index], dtype=np.float64)),
+                np.asarray(displacements[index], dtype=np.float64),
                 sqrt(max(float(distance2[index]), 0.0)),
                 shift,
             ))
