@@ -23,7 +23,7 @@ from mdescriptor.core import (
     OutputOptions,
     StructureBatch,
 )
-from mdescriptor.descriptors import MTP, NEP, SOAP, AtomicComposition, CoulombMatrix
+from mdescriptor.descriptors import ACE, MTP, NEP, SOAP, AtomicComposition, CoulombMatrix
 from mdescriptor.models import NEP_MODEL, ModelResolver, ModelResource
 
 
@@ -448,6 +448,7 @@ def test_common_options_are_applied_or_rejected_at_the_core_boundary():
 
 def test_cooperative_compute_reports_structure_progress():
     for descriptor in (
+        ACE(species=[1, 8]),
         AtomicComposition(species=[1, 8]),
         MTP(species=[1, 8]),
         NEP(),

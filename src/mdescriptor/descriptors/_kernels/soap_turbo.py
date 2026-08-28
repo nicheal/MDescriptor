@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from ...core.errors import DescriptorConfigError
 from ...core.result import DescriptorLevel, format_values, normalize_metadata
 from ...core.species import normalize_species, require_species, validate_batch_species
 from .core import (
@@ -26,15 +27,18 @@ def _per_species(value: Any, count: int, name: str, default: float, *, integer: 
         else:
             values = array.ravel()
         if len(values) != count:
-            raise ValueError(f"{name} must be a scalar or have one value per species")
+            raise DescriptorConfigError(
+                f"{name} must be a scalar or have one value per species",
+                path=[name],
+            )
     if integer:
         numeric = np.asarray(values, dtype=np.float64)
         if not np.isfinite(numeric).all() or not np.equal(numeric, np.floor(numeric)).all():
-            raise ValueError(f"{name} must contain finite integers")
+            raise DescriptorConfigError(f"{name} must contain finite integers", path=[name])
         return [int(item) for item in numeric]
     numeric = np.asarray(values, dtype=np.float64)
     if not np.isfinite(numeric).all():
-        raise ValueError(f"{name} must contain finite values")
+        raise DescriptorConfigError(f"{name} must contain finite values", path=[name])
     return [float(item) for item in numeric]
 
 
@@ -267,6 +271,35 @@ class SoapTurboKernel:
             "dtype": self.dtype,
             "sparse": self.sparse,
         }
+
+    def _canonical_configuration(self, options: dict[str, Any]) -> dict[str, Any]:
+        """Persist per-species broadcasts in their canonical array form."""
+
+        count = len(self.species)
+        result = dict(options)
+        for name, config_name, default, integer in (
+            ("alpha_max", "_alpha_max_config", 8.0, True),
+            ("atom_sigma_r", "_atom_sigma_r_config", 0.5, False),
+            ("atom_sigma_r_scaling", "_atom_sigma_r_scaling_config", 0.0, False),
+            ("atom_sigma_t", "_atom_sigma_t_config", 0.5, False),
+            ("atom_sigma_t_scaling", "_atom_sigma_t_scaling_config", 0.0, False),
+            ("amplitude_scaling", "_amplitude_scaling_config", 0.0, False),
+            ("central_weight", "_central_weight_config", 1.0, False),
+        ):
+            value = getattr(self, config_name)
+            # SOAPTurbo resolves per-species values lazily. Preserve a
+            # non-scalar vector here so a length error remains attributable to
+            # the kernel's typed validation instead of snapshotting.
+            array = np.asarray(value) if value is not None else np.asarray(default)
+            if array.ndim == 0:
+                result[name] = _per_species(
+                    value, count, name, default, integer=integer
+                )
+            else:
+                result[name] = list(array.ravel())
+        if self.central_species is not None:
+            result["central_species"] = list(self.central_species)
+        return result
 
 
 __all__ = ["SoapTurboKernel"]

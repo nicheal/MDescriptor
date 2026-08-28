@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Any
 
 from ..core.errors import DescriptorConfigError
+from ..core.json_value import freeze_json, thaw_json
 
 DESCRIPTOR_INFO_SCHEMA_VERSION = 1
 
@@ -129,11 +130,11 @@ class DescriptorInfo:
                 )
 
         try:
-            frozen_parameters = _freeze_json(self.parameters)
-            frozen_execution = _freeze_json(self.execution)
-            frozen_input = _freeze_json(self.input)
-            frozen_output = _freeze_json(self.output)
-            frozen_asset = _freeze_json(self.asset)
+            frozen_parameters = freeze_json(self.parameters)
+            frozen_execution = freeze_json(self.execution)
+            frozen_input = freeze_json(self.input)
+            frozen_output = freeze_json(self.output)
+            frozen_asset = freeze_json(self.asset)
         except (TypeError, ValueError) as exc:
             raise DescriptorConfigError(
                 f"descriptor info is not JSON-safe: {exc}",
@@ -167,11 +168,11 @@ class DescriptorInfo:
             "display_name": self.display_name,
             "description": self.description,
             "category": self.category,
-            "parameters": _thaw_json(self.parameters),
-            "execution": _thaw_json(self.execution),
-            "input": _thaw_json(self.input),
-            "output": _thaw_json(self.output),
-            "asset": _thaw_json(self.asset),
+            "parameters": thaw_json(self.parameters),
+            "execution": thaw_json(self.execution),
+            "input": thaw_json(self.input),
+            "output": thaw_json(self.output),
+            "asset": thaw_json(self.asset),
         }
 
     @classmethod
@@ -313,7 +314,7 @@ def _validate_schema(value: Mapping[str, Any], path: list[str]) -> None:
         )
     if enum_values is not None:
         try:
-            _freeze_json(enum_values)
+            freeze_json(enum_values)
         except (TypeError, ValueError) as exc:
             raise DescriptorConfigError(
                 f"descriptor schema enum is not JSON-safe: {exc}",
@@ -441,7 +442,26 @@ def validate_descriptor_parameters(
                     path=["parameters", name],
                 )
             continue
-        _validate_parameter_value(parameters[source_name], schema, ["parameters", source_name])
+        try:
+            _validate_parameter_value(
+                parameters[source_name], schema, ["parameters", source_name]
+            )
+        except DescriptorConfigError as exc:
+            # Keep the established kernel diagnostic for the one static
+            # capability constraint whose implementation has a stable,
+            # user-facing message.  The schema still rejects the value and
+            # supplies the structured path.
+            if (
+                name == "periodic"
+                and parameters[source_name] is False
+                and tuple(schema.get("enum", ())) == (True,)
+            ):
+                raise DescriptorConfigError(
+                    "only periodic MBTR is supported",
+                    code=exc.code,
+                    path=exc.path,
+                ) from exc
+            raise
 
     for name in ("output", "execution"):
         if name in parameters and not isinstance(parameters[name], Mapping):
@@ -551,30 +571,6 @@ def _validate_parameter_value(value: Any, schema: Mapping[str, Any], path: list[
             for name, item_schema in properties.items():
                 if name in value and isinstance(item_schema, Mapping):
                     _validate_parameter_value(value[name], item_schema, [*path, str(name)])
-
-
-def _freeze_json(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        if any(not isinstance(key, str) for key in value):
-            raise TypeError("JSON object keys must be strings")
-        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
-    if isinstance(value, (list, tuple)):
-        return tuple(_freeze_json(item) for item in value)
-    if isinstance(value, (str, int, bool)) or value is None:
-        return value
-    if isinstance(value, float) and math.isfinite(value):
-        return value
-    if isinstance(value, float):
-        raise TypeError("JSON values cannot contain non-finite numbers")
-    raise TypeError(f"unsupported value type {type(value).__name__}")
-
-
-def _thaw_json(value: Any) -> Any:
-    if isinstance(value, MappingProxyType):
-        return {key: _thaw_json(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw_json(item) for item in value]
-    return value
 
 
 __all__ = [

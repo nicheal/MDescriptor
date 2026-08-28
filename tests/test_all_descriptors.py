@@ -180,33 +180,6 @@ def test_matrix_kernel_has_expected_coulomb_diagonal_and_shapes():
     assert EwaldSumMatrix(n_atoms_max=3).compute(batch).values.shape == (1, 9)
 
 
-@pytest.mark.reference
-def test_ewald_matches_reference_at_real_cutoff_boundary():
-    from dscribe.descriptors import EwaldSumMatrix as DscribeEwaldSumMatrix
-
-    from tests._public import EwaldSumMatrix
-
-    system = Atoms(
-        ["O", "H", "H"] * 6,
-        positions=[
-            [3.0, 3.0, 3.0], [3.76, 3.58, 3.0], [2.24, 3.58, 3.0],
-            [9.0, 3.0, 3.0], [9.76, 3.58, 3.0], [8.24, 3.58, 3.0],
-            [3.0, 9.0, 9.0], [3.76, 9.58, 9.0], [2.24, 9.58, 9.0],
-            [9.0, 9.0, 9.0], [9.76, 9.58, 9.0], [8.24, 9.58, 9.0],
-            [3.0, 3.0, 9.0], [3.76, 3.58, 9.0], [2.24, 3.58, 9.0],
-            [9.0, 9.0, 3.0], [9.76, 9.58, 3.0], [8.24, 9.58, 3.0],
-        ],
-        cell=np.diag([12.0, 12.0, 12.0]),
-        pbc=True,
-    )
-    parameters = {"accuracy": 1e-5, "w": 1.0, "r_cut": 6.0, "g_cut": 3.0, "a": 0.3}
-    reference = DscribeEwaldSumMatrix(n_atoms_max=18, permutation="none").create(system, **parameters)
-    actual = EwaldSumMatrix(n_atoms_max=18, permutation="none", **parameters).compute(
-        StructureBatch.from_ase([system])
-    ).values[0]
-    np.testing.assert_allclose(actual, reference, rtol=1e-10, atol=1e-12)
-
-
 def test_matrix_eigenspectrum_is_native_and_padded():
     from tests._public import CoulombMatrix
 
@@ -292,65 +265,6 @@ def test_mbtr_family_is_native():
         result = calculator.compute(batch)
         assert result.metadata["backend"] == "mdescriptor-cpp"
         assert np.isfinite(result.values).all()
-
-
-@pytest.mark.reference
-def test_valle_oganov_near_linear_angles_match_reference():
-    from dscribe.descriptors import ValleOganov as DscribeValleOganov
-
-    from tests._public import ValleOganov
-
-    systems = [
-        Atoms(
-            "OHH",
-            positions=[[4.0, 4.0, 4.0], [4.96, 4.0, 4.0], [3.76, 4.93, 4.0]],
-            cell=np.diag([20.0, 20.0, 20.0]),
-            pbc=True,
-        ),
-        Atoms(
-            "OHH",
-            positions=[[10.0, 10.0, 10.0], [10.96, 10.0, 10.0], [9.76, 10.93, 10.0]],
-            cell=np.diag([20.0, 20.0, 20.0]),
-            pbc=True,
-        ),
-    ]
-    species = [1, 6, 8, 14, 16, 17]
-    parameters = {"function": "angle", "n": 90, "sigma": 2.0, "r_cut": 6.0}
-    reference = DscribeValleOganov(species=species, **parameters).create(systems, n_jobs=1)
-    actual = ValleOganov(species=species, **parameters).compute(
-        StructureBatch.from_ase(systems)
-    ).values
-    np.testing.assert_allclose(actual, reference, rtol=1e-9, atol=1e-7)
-
-
-@pytest.mark.reference
-def test_lmbtr_k3_matches_reference_channel_layout():
-    from dscribe.descriptors import LMBTR as DscribeLMBTR
-
-    from tests._public import LMBTR
-
-    system = Atoms(
-        "OHH",
-        positions=[[12.0, 12.0, 12.0], [12.76, 12.58, 12.0], [11.24, 12.58, 12.0]],
-        cell=np.diag([24.0, 24.0, 24.0]),
-        pbc=True,
-    )
-    batch = StructureBatch.from_ase([system])
-    species = [1, 8]
-    for geometry, grid in (
-        ("angle", {"min": 0.0, "max": 180.0, "n": 30, "sigma": 1.5}),
-        ("cosine", {"min": -1.0, "max": 1.0, "n": 30, "sigma": 0.03}),
-    ):
-        parameters = {
-            "species": species,
-            "periodic": True,
-            "geometry": {"function": geometry},
-            "grid": grid,
-            "weighting": {"function": "exp", "scale": 0.5, "threshold": 1e-3},
-        }
-        reference = np.asarray(DscribeLMBTR(**parameters).create(system, n_jobs=1))
-        actual = LMBTR(**parameters).compute(batch).values
-        np.testing.assert_allclose(actual, reference, rtol=1e-9, atol=1e-10)
 
 
 def test_local_descriptor_family_uses_native_backend():

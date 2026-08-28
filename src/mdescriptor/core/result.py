@@ -8,7 +8,6 @@ they are always a contiguous two-dimensional ``int64`` array.
 from __future__ import annotations
 
 import importlib
-import math
 from collections.abc import Iterator, Mapping
 from copy import copy, deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -19,8 +18,11 @@ from typing import Any
 import numpy as np
 
 from .errors import DescriptorConfigError
+from .json_value import JSON_UNHANDLED, json_safe_value
 
 RESULT_SCHEMA_VERSION = 1
+
+_READONLY_CSR_TYPES: dict[type[Any], type[Any]] = {}
 
 
 def format_values(values: Any, *, dtype: str = "float64", sparse: bool = False) -> Any:
@@ -55,11 +57,9 @@ def _snapshot_values(values: Any) -> Any:
         scipy_sparse = None
     if scipy_sparse is not None and scipy_sparse.issparse(values):
         snapshot = values.tocsr(copy=True)
-        for name in ("data", "indices", "indptr"):
-            array = getattr(snapshot, name, None)
-            if isinstance(array, np.ndarray):
-                array.setflags(write=False)
-        return snapshot
+        snapshot.sum_duplicates()
+        snapshot.sort_indices()
+        return _readonly_csr(snapshot, scipy_sparse)
     try:
         snapshot = np.array(values, copy=True, order="C")
     except (TypeError, ValueError, OverflowError) as exc:
@@ -68,6 +68,154 @@ def _snapshot_values(values: Any) -> Any:
         raise ValueError("descriptor values must be a two-dimensional array")
     snapshot.setflags(write=False)
     return snapshot
+
+
+def _restore_readonly_csr(
+    data: np.ndarray,
+    indices: np.ndarray,
+    indptr: np.ndarray,
+    shape: tuple[int, int],
+) -> Any:
+    """Rebuild a pickled CSR snapshot through the read-only result seam."""
+
+    scipy_sparse = importlib.import_module("scipy.sparse")
+    matrix = scipy_sparse.csr_matrix(
+        (data, indices, indptr),
+        shape=shape,
+        copy=True,
+    )
+    return _readonly_csr(matrix, scipy_sparse)
+
+
+def _readonly_csr(values: Any, scipy_sparse: Any) -> Any:
+    """Return a CSR snapshot whose public mutation paths are disabled."""
+
+    csr_type = scipy_sparse.csr_matrix
+    readonly_type = _READONLY_CSR_TYPES.get(csr_type)
+    if readonly_type is None:
+        class ReadOnlyCSR(csr_type):  # type: ignore[misc, valid-type]
+            _MUTABLE_ATTRIBUTES = frozenset(
+                {
+                    "data",
+                    "indices",
+                    "indptr",
+                    "shape",
+                    "_shape",
+                    "has_sorted_indices",
+                    "has_canonical_format",
+                }
+            )
+
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                object.__setattr__(self, "_mdescriptor_read_only", False)
+                super().__init__(*args, **kwargs)
+                for name in ("data", "indices", "indptr"):
+                    array = getattr(self, name, None)
+                    if isinstance(array, np.ndarray):
+                        array.setflags(write=False)
+                # SciPy lazily caches these flags the first time they are
+                # queried.  Populate them before locking attribute writes so
+                # read-only operations such as ``sum()`` remain usable.
+                _ = self.has_sorted_indices
+                _ = self.has_canonical_format
+                object.__setattr__(self, "_mdescriptor_read_only", True)
+
+            def __setattr__(self, name: str, value: Any) -> None:
+                if (
+                    getattr(self, "_mdescriptor_read_only", False)
+                    and name in self._MUTABLE_ATTRIBUTES
+                ):
+                    raise ValueError("sparse descriptor values are read-only")
+                super().__setattr__(name, value)
+
+            def __setitem__(self, key: Any, value: Any) -> None:
+                del key, value
+                raise ValueError("sparse descriptor values are read-only")
+
+            def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+                return (
+                    _restore_readonly_csr,
+                    (
+                        self.data.copy(),
+                        self.indices.copy(),
+                        self.indptr.copy(),
+                        self.shape,
+                    ),
+                )
+
+            def _reject_mutation(self) -> None:
+                raise ValueError("sparse descriptor values are read-only")
+
+            def __iadd__(self, other: Any) -> Any:
+                del other
+                self._reject_mutation()
+
+            def __isub__(self, other: Any) -> Any:
+                del other
+                self._reject_mutation()
+
+            def __imul__(self, other: Any) -> Any:
+                del other
+                self._reject_mutation()
+
+            def __itruediv__(self, other: Any) -> Any:
+                del other
+                self._reject_mutation()
+
+            def __imatmul__(self, other: Any) -> Any:
+                del other
+                self._reject_mutation()
+
+            def resize(self, *args: Any, **kwargs: Any) -> None:
+                if not getattr(self, "_mdescriptor_read_only", False):
+                    super().resize(*args, **kwargs)
+                    return
+                del args, kwargs
+                self._reject_mutation()
+
+            def setdiag(self, *args: Any, **kwargs: Any) -> None:
+                if not getattr(self, "_mdescriptor_read_only", False):
+                    super().setdiag(*args, **kwargs)
+                    return
+                del args, kwargs
+                self._reject_mutation()
+
+            def eliminate_zeros(self) -> None:
+                if not getattr(self, "_mdescriptor_read_only", False):
+                    super().eliminate_zeros()
+                    return
+                self._reject_mutation()
+
+            def sum_duplicates(self) -> None:
+                if not getattr(self, "_mdescriptor_read_only", False):
+                    super().sum_duplicates()
+                    return
+                if self.has_canonical_format:
+                    return
+                self._reject_mutation()
+
+            def sort_indices(self) -> None:
+                if not getattr(self, "_mdescriptor_read_only", False):
+                    super().sort_indices()
+                    return
+                if self.has_sorted_indices:
+                    return
+                self._reject_mutation()
+
+            def prune(self) -> None:
+                if not getattr(self, "_mdescriptor_read_only", False):
+                    super().prune()
+                    return
+                self._reject_mutation()
+
+        readonly_type = ReadOnlyCSR
+        # Keep the established scipy class name for callers that use it as a
+        # lightweight representation check; the subclass only adds the
+        # read-only mutation guard.
+        readonly_type.__name__ = csr_type.__name__
+        readonly_type.__qualname__ = csr_type.__qualname__
+        _READONLY_CSR_TYPES[csr_type] = readonly_type
+    return readonly_type(values, copy=True)
 
 
 class DescriptorLevel(str, Enum):
@@ -489,40 +637,33 @@ def _json_safe(value: Any) -> Any:
     silently replacing them with ``str(value)`` would make snapshots unstable.
     """
 
+    return json_safe_value(
+        value,
+        context="metadata",
+        scalar_keys=True,
+        nonfinite_message="JSON metadata cannot contain non-finite numbers",
+        converter=_metadata_json_converter,
+    )
+
+
+def _metadata_json_converter(value: Any) -> Any:
+    """Normalize common live metadata values before strict JSON validation."""
+
     if isinstance(value, np.ndarray):
-        return _json_safe(value.tolist())
+        return value.tolist()
     if isinstance(value, np.generic):
-        return _json_safe(value.item())
+        return value.item()
     if isinstance(value, Enum):
-        return _json_safe(value.value)
+        return value.value
     if is_dataclass(value) and not isinstance(value, type):
         return {
-            item.name: _json_safe(getattr(value, item.name))
+            item.name: getattr(value, item.name)
             for item in fields(value)
         }
     if isinstance(value, PathLike):
         raw = fspath(value)
         return raw.decode() if isinstance(raw, bytes) else str(raw)
-    if isinstance(value, Mapping):
-        result: dict[str, Any] = {}
-        for key, item in value.items():
-            if isinstance(key, str):
-                json_key = key
-            elif isinstance(key, (bool, int, float)) and not isinstance(key, complex):
-                json_key = str(key)
-            else:
-                raise TypeError("JSON object keys must be strings or JSON scalar keys")
-            result[json_key] = _json_safe(item)
-        return result
-    if isinstance(value, (tuple, list)):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, bool) or value is None or isinstance(value, (str, int)):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise TypeError("JSON metadata cannot contain non-finite numbers")
-        return value
-    raise TypeError(f"metadata value of type {type(value).__name__} is not JSON-safe")
+    return JSON_UNHANDLED
 
 
 __all__ = [

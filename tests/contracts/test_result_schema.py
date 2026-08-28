@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy import sparse
 
 from mdescriptor.core.result import DescriptorResult, pair_samples
 
@@ -43,6 +44,23 @@ def test_result_is_a_snapshot_and_exposes_read_only_arrays():
         result.values[0, 0] = 4.0
     with pytest.raises(ValueError):
         result.samples[0, 0] = 4
+
+
+def test_sparse_result_values_reject_rebinding_and_item_mutation():
+    result = DescriptorResult(
+        sparse.csr_matrix([[1.0, 0.0], [0.0, 2.0]]),
+        "structure",
+        ("a", "b"),
+        None,
+        ("x", "y"),
+        {},
+    )
+
+    with pytest.raises(ValueError, match="read-only"):
+        result.values.data = np.array([9.0, 8.0])
+    with pytest.raises(ValueError, match="read-only"):
+        result.values[0, 0] = 9.0
+    np.testing.assert_array_equal(result.values.toarray(), [[1.0, 0.0], [0.0, 2.0]])
 
 
 def test_atom_and_pair_samples_use_local_indices_and_are_contiguous():

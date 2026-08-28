@@ -805,6 +805,7 @@ void AceCalculator::compute(
     const std::shared_ptr<ComputeControl>& control) const {
     if (closed()) throw std::runtime_error("ACE calculator is closed");
     std::lock_guard<std::mutex> lock(compute_mutex_);
+    if (control) control->reset(batch.structures);
     const auto graph = build_neighbor_graph(batch, options_.r_cut, control, options_.num_threads);
     std::map<std::int32_t, int> species_index;
     for (std::size_t i = 0; i < options_.species.size(); ++i) {

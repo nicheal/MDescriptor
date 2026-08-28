@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import inspect
-import re
 from collections.abc import Mapping
 from copy import copy
+from os import PathLike, fspath
 from typing import Any, ClassVar
 
-from ..registry.info import LEGACY_PARAMETER_ALIASES
+from ..registry.info import LEGACY_PARAMETER_ALIASES, validate_descriptor_parameters
 from .control import ComputeControl, _unwrap_native_control
 from .descriptor import Descriptor, _input_error_path
 from .errors import (
@@ -99,6 +99,20 @@ def _builtin_parameter_names(name: str) -> frozenset[str] | None:
     return frozenset(str(option) for option in spec.info.parameters)
 
 
+def _builtin_parameter_schemas(name: str) -> Mapping[str, Any] | None:
+    """Read canonical parameter schemas without importing descriptor classes."""
+
+    try:
+        from ..registry.builtins import builtin_registry
+
+        spec = builtin_registry.get(name)
+    except (ImportError, KeyError):
+        return None
+    if spec.info is None:
+        return None
+    return spec.info.parameters
+
+
 def _builtin_input_capabilities(name: str) -> Mapping[str, Any] | None:
     """Read input capabilities from the registry without importing kernels."""
 
@@ -134,18 +148,40 @@ def _legacy_parameter_names(name: str) -> frozenset[str]:
     return frozenset(LEGACY_PARAMETER_ALIASES.get(name, {}))
 
 
-def _configuration_error_path(
-    message: str, options: Mapping[str, Any]
-) -> list[str] | None:
-    """Extract a public parameter path from a kernel validation message."""
+def _schema_value(value: Any) -> Any:
+    """Convert common direct-Python values to the JSON schema value shape."""
 
-    option_names = {str(name) for name in options if name not in {"output", "execution"}}
-    for root, field in re.findall(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b", message):
-        if root in option_names:
-            return [root, field]
-    for name in sorted(option_names, key=len, reverse=True):
-        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", message):
-            return [name]
+    if isinstance(value, Mapping):
+        return {str(key): _schema_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_schema_value(item) for item in value]
+    if isinstance(value, PathLike):
+        raw = fspath(value)
+        return raw.decode() if isinstance(raw, bytes) else str(raw)
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _schema_value(to_dict())
+    to_list = getattr(value, "tolist", None)
+    if callable(to_list):
+        return _schema_value(to_list())
+    return value
+
+
+def _configuration_validation_path(
+    descriptor: str, options: Mapping[str, Any]
+) -> list[str | int] | None:
+    """Return the typed path of the first schema-invalid option, if any."""
+
+    schemas = _builtin_parameter_schemas(descriptor)
+    if schemas is None:
+        return None
+    try:
+        validate_descriptor_parameters(descriptor, _schema_value(options), schemas)
+    except DescriptorConfigError as exc:
+        path = list(exc.path or ())
+        if path and path[0] == "parameters":
+            path.pop(0)
+        return path or None
     return None
 
 
@@ -256,6 +292,11 @@ class DescriptorAdapter(Descriptor):
                     path=["output", "sparse"],
                 ) from exc
         self._validate_public_call(kwargs)
+        # Kernel implementations may still raise a plain ``TypeError`` or
+        # ``ValueError`` for a schema-invalid option.  Recover the path from
+        # the registry's typed schema before adding private implementation
+        # arguments below, so those arguments cannot appear in public errors.
+        configuration_path = _configuration_validation_path(self.name, kwargs)
         preloaded = getattr(self, "_preloaded_model_weights", None)
         if preloaded is not None and getattr(
             self.kernel_type, "accepts_preloaded_checkpoint", False
@@ -294,7 +335,7 @@ class DescriptorAdapter(Descriptor):
                 f"invalid {self.name} configuration: {exc}",
                 code="invalid_configuration",
                 path=getattr(exc, "path", None)
-                or _configuration_error_path(str(exc), kwargs),
+                or configuration_path,
             ) from exc
         except ValueError as exc:
             if not self.wrap_value_errors_as_config:
@@ -303,10 +344,13 @@ class DescriptorAdapter(Descriptor):
                 f"invalid {self.name} configuration: {exc}",
                 code="invalid_configuration",
                 path=getattr(exc, "path", None)
-                or _configuration_error_path(str(exc), kwargs),
+                or configuration_path,
             ) from exc
 
         snapshot = dict(options)
+        canonicalize = getattr(self._kernel, "_canonical_configuration", None)
+        if callable(canonicalize):
+            snapshot = dict(canonicalize(snapshot))
         snapshot["output"] = self._output_options
         snapshot["execution"] = self._execution_options
         for key, default in getattr(self.kernel_type, "configuration_defaults", {}).items():
@@ -332,7 +376,7 @@ class DescriptorAdapter(Descriptor):
                 f"invalid {self.name} configuration: {exc}",
                 code="invalid_configuration",
                 path=getattr(exc, "path", None)
-                or _configuration_error_path(str(exc), kwargs),
+                or configuration_path,
             ) from exc
 
     def _validate_public_call(self, kwargs: Mapping[str, Any]) -> None:

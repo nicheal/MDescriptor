@@ -24,7 +24,27 @@ dependencies = [
 ase = ["ase>=3.22"]
 sparse = ["scipy>=1.11"]
 test = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
-reference = ["pytest>=8", "ase==3.26.0", "scipy>=1.11", "dscribe==2.1.2"]
+reference-dscribe = ["pytest>=8", "ase==3.26.0", "scipy>=1.11", "dscribe==2.1.2"]
+reference-featomic = ["pytest>=8", "ase==3.26.0", "scipy>=1.11", "featomic==0.6.6"]
+reference-pyxtalff = [
+    "pytest>=8",
+    "ase==3.26.0",
+    "scipy>=1.11",
+    "numba>=0.50.1",
+    "pyxtal_ff==0.2.3",
+]
+reference-deepmd = [
+    "pytest>=8",
+    "ase==3.26.0",
+    "scipy>=1.11",
+    "deepmd-kit[torch]==3.2.0",
+]
+reference-nepadapters = [
+    "pytest>=8",
+    "ase==3.26.0",
+    "scipy>=1.11",
+    "nep-adapters==1.0.2",
+]
 all = ["ase>=3.22", "scipy>=1.11"]
 dev = ["pytest>=8", "ase>=3.22", "scipy>=1.11", "ruff>=0.8", "mypy>=1.13"]
 
@@ -77,7 +97,12 @@ testpaths = ["tests"]
 addopts = "-m 'not reference'"
 markers = [
     "model: tests that exercise bundled model-backed descriptors and assets",
-    "reference: tests that require the pinned external numerical reference stack",
+    "reference: tests that require a pinned external numerical reference implementation",
+    "dscribe: external numerical comparisons against pinned DScribe",
+    "featomic: external numerical comparisons against pinned Featomic",
+    "pyxtalff: external numerical comparisons against pinned PyXtal_FF descriptors",
+    "deepmd: external numerical comparisons against pinned deepmd-kit DPA4 descriptors",
+    "nepadapters: external numerical comparisons against pinned nep-adapters",
 ]
 
 [tool.ruff]

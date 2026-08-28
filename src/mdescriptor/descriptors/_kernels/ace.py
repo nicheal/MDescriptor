@@ -424,6 +424,23 @@ class AceKernel:
             "num_threads": None if self.num_threads == 0 else self.num_threads,
         }
 
+    def _canonical_configuration(self, options: Mapping[str, Any]) -> dict[str, Any]:
+        """Persist correlation-order broadcasts in their canonical array form."""
+
+        result = dict(options)
+        if result.get("D") is not None:
+            # Explicit SparsePSHDegree uses scalar degree controls.  Keeping
+            # that representation also preserves the established validation
+            # rule that vectors cannot be combined with ``D``.
+            return result
+        for name in ("maxdeg", "wL"):
+            value = getattr(self, name)
+            if isinstance(value, list):
+                result[name] = list(value)
+            else:
+                result[name] = [float(value)] * self.N
+        return result
+
 
 class _AceAdapterMixin(DescriptorAdapter):
     """Canonicalize ACE symbols/options before ``DescriptorAdapter`` snapshots."""

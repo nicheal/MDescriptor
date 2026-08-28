@@ -7,13 +7,13 @@ serialization seam for rebuilding an already-created descriptor.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias
 
 from .errors import DescriptorConfigError
+from .json_value import freeze_json, thaw_json
 
 JSONPrimitive: TypeAlias = str | int | float | bool | None
 JSONValue: TypeAlias = JSONPrimitive | list["JSONValue"] | dict[str, "JSONValue"]
@@ -81,7 +81,7 @@ class DescriptorConfiguration:
             )
         values = dict(self.parameters)
         try:
-            frozen = _freeze_json(values)
+            frozen = freeze_json(values)
         except (TypeError, ValueError) as exc:
             raise DescriptorConfigError(f"descriptor configuration is not JSON-safe: {exc}") from exc
         if not isinstance(frozen, MappingProxyType):  # pragma: no cover - defensive
@@ -95,7 +95,7 @@ class DescriptorConfiguration:
         return {
             "schema_version": self.schema_version,
             "descriptor": self.descriptor,
-            "parameters": _thaw_json(self.parameters),
+            "parameters": thaw_json(self.parameters),
         }
 
     @classmethod
@@ -114,30 +114,6 @@ class DescriptorConfiguration:
         if not isinstance(parameters, Mapping):
             raise DescriptorConfigError("descriptor configuration parameters must be a JSON object")
         return cls(value["schema_version"], value["descriptor"], parameters)
-
-
-def _freeze_json(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        if any(not isinstance(key, str) for key in value):
-            raise TypeError("JSON object keys must be strings")
-        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
-    if isinstance(value, (list, tuple)):
-        return tuple(_freeze_json(item) for item in value)
-    if isinstance(value, (str, int, bool)) or value is None:
-        return value
-    if isinstance(value, float) and math.isfinite(value):
-        return value
-    if isinstance(value, float):
-        raise TypeError("JSON values cannot contain non-finite numbers")
-    raise TypeError(f"unsupported value type {type(value).__name__}")
-
-
-def _thaw_json(value: Any) -> Any:
-    if isinstance(value, MappingProxyType):
-        return {key: _thaw_json(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw_json(item) for item in value]
-    return value
 
 
 __all__ = [

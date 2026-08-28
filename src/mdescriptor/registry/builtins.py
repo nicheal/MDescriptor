@@ -15,10 +15,6 @@ _MATRICES = _STANDALONE + "matrices:"
 _MANY_BODY = _STANDALONE + "many_body:"
 _ROTATIONAL = _STANDALONE + "rotational:"
 _MODEL = "mdescriptor.descriptors.model_backed."
-_COMMON_CAPABILITIES = frozenset({"sparse"})
-_CPP_CAPABILITIES = _COMMON_CAPABILITIES | {"cooperative_cancel"}
-_CPP_THREAD_CAPABILITIES = _CPP_CAPABILITIES | {"num_threads"}
-
 _MISSING = object()
 _ALL_PERIODICITY = ("isolated", "fully_periodic")
 _PERIODIC_ONLY = ("fully_periodic",)
@@ -301,7 +297,7 @@ _DESCRIPTOR_INFO = {
             "geometry": _object(default={"function": "distance"}),
             "grid": _object(default={"min": 0.0, "max": 6.0, "n": 50, "sigma": 0.1}),
             "weighting": _object(default={"function": "exp", "scale": 0.5, "threshold": 1e-3}),
-            "periodic": _parameter("boolean", default=True),
+            "periodic": _parameter("boolean", default=True, enum=[True]),
             "normalize_gaussians": _parameter("boolean", default=True),
             "normalization": _enum(("none", "l2", "n_atoms", "valle_oganov"), default="none"),
         },
@@ -316,7 +312,7 @@ _DESCRIPTOR_INFO = {
             "geometry": _object(default={"function": "distance"}),
             "grid": _object(default={"min": 0.0, "max": 6.0, "n": 50, "sigma": 0.1}),
             "weighting": _object(default={"function": "exp", "scale": 0.5, "threshold": 1e-3}),
-            "periodic": _parameter("boolean", default=True),
+            "periodic": _parameter("boolean", default=True, enum=[True]),
             "normalize_gaussians": _parameter("boolean", default=True),
             "normalization": _enum(("none", "l2", "n_atoms", "valle_oganov"), default="none"),
         },
@@ -335,7 +331,7 @@ _DESCRIPTOR_INFO = {
             "geometry": _object(),
             "grid": _object(),
             "weighting": _object(),
-            "periodic": _parameter("boolean", default=True),
+            "periodic": _parameter("boolean", default=True, enum=[True]),
             "normalize_gaussians": _parameter("boolean", default=True),
             "normalization": _enum(("none", "l2", "n_atoms", "valle_oganov"), default="valle_oganov"),
         },
@@ -579,57 +575,79 @@ _DESCRIPTOR_INFO = {
 }
 
 
+def _capabilities(info: DescriptorInfo) -> frozenset[str]:
+    """Derive runtime capabilities from the GUI-facing metadata record."""
+
+    capabilities: set[str] = set()
+    if info.output.get("sparse", False):
+        capabilities.add("sparse")
+    if info.execution.get("num_threads", False):
+        capabilities.add("num_threads")
+    if info.execution.get("cooperative_cancel", False):
+        capabilities.add("cooperative_cancel")
+    if info.input.get("spin", False):
+        capabilities.add("spin")
+    if info.input.get("charge_spin", False):
+        capabilities.add("charge_spin")
+    if "model" in info.parameters or info.asset.get("parameter") == "model":
+        capabilities.add("model")
+    return frozenset(capabilities)
+
+
 def _spec(
     name: str,
     import_path: str,
-    asset_policy: AssetPolicy,
     backend: str,
     level: str,
-    capabilities: frozenset[str],
     *,
     optional_extra: str | None = None,
 ) -> DescriptorSpec:
+    info = _DESCRIPTOR_INFO[name]
+    try:
+        asset_policy = AssetPolicy(info.asset.get("policy", AssetPolicy.NONE.value))
+    except ValueError as exc:  # pragma: no cover - guarded by DescriptorInfo
+        raise ValueError(f"unknown asset policy for {name!r}") from exc
     return DescriptorSpec(
         name,
         import_path,
         asset_policy,
         backend,
         level,
-        capabilities=capabilities,
+        capabilities=_capabilities(info),
         optional_extra=optional_extra,
-        info=_DESCRIPTOR_INFO[name],
+        info=info,
     )
 
 
 _BUILTIN_SPECS = (
-    _spec("SOAP", _STANDALONE + "soap:SOAP", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("SOAPTurbo", _STANDALONE + "soap_turbo:SOAPTurbo", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("ACSF", _STANDALONE + "acsf:ACSF", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("ACE", _STANDALONE + "ace:ACE", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("CoulombMatrix", _MATRICES + "CoulombMatrix", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("SineMatrix", _MATRICES + "SineMatrix", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("EwaldSumMatrix", _MATRICES + "EwaldSumMatrix", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("MBTR", _MANY_BODY + "MBTR", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("LMBTR", _MANY_BODY + "LMBTR", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("ValleOganov", _MANY_BODY + "ValleOganov", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("AtomicComposition", _LOCAL + "AtomicComposition", AssetPolicy.NONE, "cpp", "structure", _CPP_THREAD_CAPABILITIES),
-    _spec("NeighborList", _LOCAL + "NeighborList", AssetPolicy.NONE, "cpp", "pair", _CPP_THREAD_CAPABILITIES),
-    _spec("SortedDistances", _LOCAL + "SortedDistances", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("SphericalExpansion", _LOCAL + "SphericalExpansion", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("SphericalExpansionByPair", _LOCAL + "SphericalExpansionByPair", AssetPolicy.NONE, "cpp", "pair", _CPP_THREAD_CAPABILITIES),
-    _spec("SoapRadialSpectrum", _LOCAL + "SoapRadialSpectrum", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("SoapPowerSpectrum", _LOCAL + "SoapPowerSpectrum", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("LodeSphericalExpansion", _LOCAL + "LodeSphericalExpansion", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("EAD", _ROTATIONAL + "EAD", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("SO3", _ROTATIONAL + "SO3", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("SO4", _ROTATIONAL + "SO4", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("SNAP", _ROTATIONAL + "SNAP", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("LBispectrum", _ROTATIONAL + "LBispectrum", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("MTP", _STANDALONE + "mtp:MTP", AssetPolicy.OPTIONAL, "cpp", "atom", _CPP_THREAD_CAPABILITIES | {"model"}),
-    _spec("C00PSMLFF", _STANDALONE + "c00ps_mlff:C00PSMLFF", AssetPolicy.NONE, "cpp", "atom", _CPP_THREAD_CAPABILITIES),
-    _spec("NEP", _MODEL + "nep.descriptor:NEP", AssetPolicy.REQUIRED, "cpp", "atom", _CPP_THREAD_CAPABILITIES | {"model"}),
-    _spec("DPA4", _MODEL + "dpa4.descriptor:DPA4", AssetPolicy.REQUIRED, "numpy", "atom", _COMMON_CAPABILITIES | {"model", "spin", "charge_spin", "num_threads"}),
-    _spec("DPA4C", _MODEL + "dpa4c.descriptor:DPA4C", AssetPolicy.REQUIRED, "numpy", "atom", _COMMON_CAPABILITIES | {"model", "spin", "charge_spin", "num_threads"}),
+    _spec("SOAP", _STANDALONE + "soap:SOAP", "cpp", "structure"),
+    _spec("SOAPTurbo", _STANDALONE + "soap_turbo:SOAPTurbo", "cpp", "atom"),
+    _spec("ACSF", _STANDALONE + "acsf:ACSF", "cpp", "atom"),
+    _spec("ACE", _STANDALONE + "ace:ACE", "cpp", "atom"),
+    _spec("CoulombMatrix", _MATRICES + "CoulombMatrix", "cpp", "structure"),
+    _spec("SineMatrix", _MATRICES + "SineMatrix", "cpp", "structure"),
+    _spec("EwaldSumMatrix", _MATRICES + "EwaldSumMatrix", "cpp", "structure"),
+    _spec("MBTR", _MANY_BODY + "MBTR", "cpp", "structure"),
+    _spec("LMBTR", _MANY_BODY + "LMBTR", "cpp", "atom"),
+    _spec("ValleOganov", _MANY_BODY + "ValleOganov", "cpp", "structure"),
+    _spec("AtomicComposition", _LOCAL + "AtomicComposition", "cpp", "structure"),
+    _spec("NeighborList", _LOCAL + "NeighborList", "cpp", "pair"),
+    _spec("SortedDistances", _LOCAL + "SortedDistances", "cpp", "atom"),
+    _spec("SphericalExpansion", _LOCAL + "SphericalExpansion", "cpp", "atom"),
+    _spec("SphericalExpansionByPair", _LOCAL + "SphericalExpansionByPair", "cpp", "pair"),
+    _spec("SoapRadialSpectrum", _LOCAL + "SoapRadialSpectrum", "cpp", "atom"),
+    _spec("SoapPowerSpectrum", _LOCAL + "SoapPowerSpectrum", "cpp", "atom"),
+    _spec("LodeSphericalExpansion", _LOCAL + "LodeSphericalExpansion", "cpp", "atom"),
+    _spec("EAD", _ROTATIONAL + "EAD", "cpp", "atom"),
+    _spec("SO3", _ROTATIONAL + "SO3", "cpp", "atom"),
+    _spec("SO4", _ROTATIONAL + "SO4", "cpp", "atom"),
+    _spec("SNAP", _ROTATIONAL + "SNAP", "cpp", "atom"),
+    _spec("LBispectrum", _ROTATIONAL + "LBispectrum", "cpp", "atom"),
+    _spec("MTP", _STANDALONE + "mtp:MTP", "cpp", "atom"),
+    _spec("C00PSMLFF", _STANDALONE + "c00ps_mlff:C00PSMLFF", "cpp", "atom"),
+    _spec("NEP", _MODEL + "nep.descriptor:NEP", "cpp", "atom"),
+    _spec("DPA4", _MODEL + "dpa4.descriptor:DPA4", "numpy", "atom"),
+    _spec("DPA4C", _MODEL + "dpa4c.descriptor:DPA4C", "numpy", "atom"),
 )
 
 builtin_registry = DescriptorRegistry(_BUILTIN_SPECS, frozen=True)

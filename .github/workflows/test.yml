@@ -36,9 +36,24 @@ jobs:
         working-directory: /tmp
         run: python -m pytest --import-mode=importlib -m "not reference" --strict-markers "$GITHUB_WORKSPACE/tests"
 
-  reference:
-    name: DScribe numerical reference
+  external-reference:
+    name: ${{ matrix.provider }} numerical reference
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: dscribe
+            extra: reference-dscribe
+          - provider: featomic
+            extra: reference-featomic
+          - provider: pyxtalff
+            extra: reference-pyxtalff
+          - provider: deepmd
+            extra: reference-deepmd
+          - provider: nepadapters
+            extra: reference-nepadapters
+
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -49,11 +64,22 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install reference dependencies
-        run: python -m pip install --upgrade pip && python -m pip install ".[reference]"
-      - name: Run pinned reference suite
+      - name: Install common test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install ".[test]"
+      - name: Install reference provider
+        if: matrix.provider != 'pyxtalff'
+        run: python -m pip install ".[${{ matrix.extra }}]"
+      - name: Install PyXtal_FF descriptor provider
+        if: matrix.provider == 'pyxtalff'
+        run: |
+          # PyXtal_FF eagerly imports its training/model stack from __init__.py.
+          # The reference tests load only descriptor submodules, so keep that
+          # optional job scoped to descriptor dependencies.
+          python -m pip install --no-deps "pyxtal_ff==0.2.3"
+          python -m pip install "numba>=0.50.1"
+      - name: Run pinned provider suite
         working-directory: /tmp
-        run: python -m pytest --import-mode=importlib -m reference --strict-markers "$GITHUB_WORKSPACE/tests"
+        run: python -m pytest --import-mode=importlib -m "reference and ${{ matrix.provider }}" --strict-markers "$GITHUB_WORKSPACE/tests"
 
   quality:
     name: Ruff and mypy

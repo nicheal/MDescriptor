@@ -123,6 +123,79 @@ def test_soapturbo_metadata_defaults_rebuild_for_multiple_species():
     descriptor.close()
 
 
+@pytest.mark.parametrize("name", ["MBTR", "LMBTR", "ValleOganov"])
+def test_periodic_schema_only_advertises_supported_value(name):
+    schema = describe_descriptor(name)["parameters"]["periodic"]
+
+    assert schema["type"] == "boolean"
+    assert schema["default"] is True
+    assert schema["enum"] == [True]
+
+    with pytest.raises(DescriptorConfigError) as caught:
+        mdescriptor.create_descriptor(
+            mdescriptor.DescriptorConfiguration(
+                1,
+                name,
+                {"species": [1], "periodic": False},
+            )
+        )
+    assert caught.value.code == "invalid_parameter"
+    assert caught.value.to_dict()["path"] == ["parameters", "periodic"]
+
+
+def test_per_species_broadcasts_are_written_as_canonical_arrays():
+    from mdescriptor.descriptors import ACE, SOAPTurbo
+
+    ace = ACE(species=[1, 8], maxdeg=4.0, wL=1.25)
+    turbo = SOAPTurbo(species=[1, 8], alpha_max=3)
+    try:
+        ace_parameters = ace.configuration.to_dict()["parameters"]
+        assert ace_parameters["maxdeg"] == [4.0, 4.0, 4.0]
+        assert ace_parameters["wL"] == [1.25, 1.25, 1.25]
+
+        turbo_parameters = turbo.configuration.to_dict()["parameters"]
+        assert turbo_parameters["alpha_max"] == [3, 3]
+        assert turbo_parameters["atom_sigma_r"] == [0.5, 0.5]
+        assert turbo_parameters["atom_sigma_r_scaling"] == [0.0, 0.0]
+        assert turbo_parameters["atom_sigma_t"] == [0.5, 0.5]
+        assert turbo_parameters["atom_sigma_t_scaling"] == [0.0, 0.0]
+        assert turbo_parameters["amplitude_scaling"] == [0.0, 0.0]
+        assert turbo_parameters["central_weight"] == [1.0, 1.0]
+
+        ace_rebuilt = mdescriptor.create_descriptor(
+            mdescriptor.DescriptorConfiguration.from_dict(ace.configuration.to_dict())
+        )
+        turbo_rebuilt = mdescriptor.create_descriptor(
+            mdescriptor.DescriptorConfiguration.from_dict(turbo.configuration.to_dict())
+        )
+        try:
+            assert ace_rebuilt.configuration.to_dict() == ace.configuration.to_dict()
+            assert turbo_rebuilt.configuration.to_dict() == turbo.configuration.to_dict()
+        finally:
+            ace_rebuilt.close()
+            turbo_rebuilt.close()
+    finally:
+        ace.close()
+        turbo.close()
+
+
+def test_ace_degree_mapping_round_trips_configuration():
+    from mdescriptor.descriptors import ACE
+
+    descriptor = ACE(species=[1, 8], D={"type": "SparsePSHDegree"})
+    try:
+        configuration = mdescriptor.DescriptorConfiguration.from_dict(
+            descriptor.configuration.to_dict()
+        )
+        rebuilt = mdescriptor.create_descriptor(configuration)
+        try:
+            assert rebuilt.configuration.to_dict() == descriptor.configuration.to_dict()
+        finally:
+            rebuilt.close()
+    finally:
+        descriptor.close()
+
+
 @pytest.mark.parametrize("name", ["NEP", "DPA4", "DPA4C"])
 def test_model_backed_metadata_declares_a_rebuildable_bundled_default(name):
     metadata = describe_descriptor(name)

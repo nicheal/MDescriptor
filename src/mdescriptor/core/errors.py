@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import importlib
-import math
 from collections.abc import Mapping
 from typing import Any
+
+from .json_value import json_safe_value
 
 
 class MDescriptorError(Exception):
@@ -100,18 +101,8 @@ def _error_path(value: Any) -> tuple[str | int, ...] | None:
 def _json_safe_details(value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError("error details must be a mapping")
-    return _json_safe_value(value)
+    return json_safe_value(value, context="error detail")
 
 
 def _json_safe_value(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        if any(not isinstance(key, str) for key in value):
-            raise TypeError("error detail keys must be strings")
-        return {key: _json_safe_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe_value(item) for item in value]
-    if isinstance(value, bool) or value is None or isinstance(value, (str, int)):
-        return value
-    if isinstance(value, float) and math.isfinite(value):
-        return value
-    raise TypeError(f"error detail value of type {type(value).__name__} is not JSON-safe")
+    return json_safe_value(value, context="error detail")

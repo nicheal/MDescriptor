@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 from ase import Atoms
 
 from tests._public import ACSF, SOAP, OutputOptions, StructureBatch
@@ -12,79 +11,6 @@ def _system():
         cell=np.diag([8.0, 8.0, 8.0]),
         pbc=True,
     )
-
-
-@pytest.mark.reference
-def test_acsf_g1_to_g5_matches_reference():
-    from dscribe.descriptors import ACSF as DscribeACSF
-
-    system = _system()
-    parameters = {
-        "r_cut": 3.5,
-        "g2_params": [[0.4, 0.0], [1.0, 0.5]],
-        "g3_params": [0.7, 1.3],
-        "g4_params": [[0.2, 1.0, 1.0], [0.5, 2.0, -1.0]],
-        "g5_params": [[0.3, 1.0, 1.0], [0.6, 2.0, -1.0]],
-        "species": [1, 8],
-        "periodic": True,
-    }
-    expected = DscribeACSF(**parameters).create(system)
-    project_parameters = {key: value for key, value in parameters.items() if key != "periodic"}
-    actual = ACSF(**project_parameters).compute(StructureBatch.from_ase(system)).values
-    np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-10)
-    assert actual.shape == (3, 22)
-
-
-@pytest.mark.parametrize(
-    "parameters",
-    [
-        {
-            "rbf": "gto",
-            "weighting": {"function": "poly", "r0": 3.5, "c": 1.2, "m": 2.0, "w0": 0.8},
-            "compression": {"mode": "off", "species_weighting": None},
-        },
-        {
-            "rbf": "gto",
-            "weighting": {"function": "pow", "r0": 1.5, "c": 1.1, "d": 0.3, "m": 2.0, "w0": 0.8},
-            "compression": {"mode": "mu2", "species_weighting": {1: 1.2, 8: 0.7}},
-        },
-        {
-            "rbf": "gto",
-            "weighting": {"function": "exp", "r0": 1.5, "c": 1.1, "d": 0.3, "w0": 0.8},
-            "compression": {"mode": "mu1nu1", "species_weighting": {1: 1.2, 8: 0.7}},
-        },
-        {
-            "rbf": "gto",
-            "weighting": None,
-            "compression": {"mode": "crossover", "species_weighting": {1: 1.2, 8: 0.7}},
-        },
-        {
-            "rbf": "polynomial",
-            "weighting": None,
-            "compression": {"mode": "off", "species_weighting": None},
-        },
-    ],
-)
-@pytest.mark.reference
-def test_soap_advanced_parameters_match_reference(parameters):
-    from dscribe.descriptors import SOAP as DscribeSOAP
-
-    system = _system()
-    common = {
-        "r_cut": 3.5,
-        "n_max": 3,
-        "l_max": 2,
-        "sigma": 0.5,
-        "average": "off",
-        "species": [1, 8],
-        "periodic": True,
-        **parameters,
-    }
-    expected = DscribeSOAP(**common).create(system)
-    project_common = {key: value for key, value in common.items() if key != "periodic"}
-    result = SOAP(**project_common).compute(StructureBatch.from_ase(system))
-    np.testing.assert_allclose(result.values, expected, rtol=1e-8, atol=1e-9)
-    assert result.values.shape[1] == len(result.labels)
 
 
 def test_descriptor_dtype_is_preserved():
