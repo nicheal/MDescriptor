@@ -148,24 +148,37 @@ if(WIN32)
         message(FATAL_ERROR "scipy-openblas32 runtime DLLs were not found")
     endif()
     install(FILES ${SCIPY_OPENBLAS_RUNTIME_LIBS} DESTINATION mdescriptor)
+elseif(APPLE)
+    # scipy-openblas32's macOS wheels keep OpenBLAS in lib/ and its Fortran
+    # runtime dependencies in the adjacent .dylibs/ directory.  Preserve that
+    # relative layout because libscipy_openblas.dylib refers to those libraries
+    # via @loader_path/../.dylibs.
+    file(GLOB SCIPY_OPENBLAS_RUNTIME_LIBS
+        "${SCIPY_OPENBLAS_LIB_DIR}/libscipy_openblas*.dylib*")
+    file(GLOB SCIPY_OPENBLAS_SUPPORT_LIBS
+        "${SCIPY_OPENBLAS_PACKAGE_DIR}/.dylibs/*.dylib*")
+    list(LENGTH SCIPY_OPENBLAS_RUNTIME_LIBS SCIPY_OPENBLAS_RUNTIME_COUNT)
+    list(LENGTH SCIPY_OPENBLAS_SUPPORT_LIBS SCIPY_OPENBLAS_SUPPORT_COUNT)
+    if(SCIPY_OPENBLAS_RUNTIME_COUNT EQUAL 0)
+        message(FATAL_ERROR "scipy-openblas32 runtime libraries were not found")
+    endif()
+    if(SCIPY_OPENBLAS_SUPPORT_COUNT EQUAL 0)
+        message(FATAL_ERROR "scipy-openblas32 support libraries were not found")
+    endif()
+    install(FILES ${SCIPY_OPENBLAS_RUNTIME_LIBS} DESTINATION mdescriptor/lib)
+    install(FILES ${SCIPY_OPENBLAS_SUPPORT_LIBS} DESTINATION mdescriptor/.dylibs)
+    set_property(TARGET _native PROPERTY INSTALL_RPATH "@loader_path/lib")
 else()
     file(GLOB SCIPY_OPENBLAS_RUNTIME_LIBS
         "${SCIPY_OPENBLAS_LIB_DIR}/libscipy_openblas*.so*"
-        "${SCIPY_OPENBLAS_LIB_DIR}/libscipy_openblas*.dylib*"
         "${SCIPY_OPENBLAS_LIB_DIR}/libgfortran*.so*"
-        "${SCIPY_OPENBLAS_LIB_DIR}/libgfortran*.dylib*"
-        "${SCIPY_OPENBLAS_LIB_DIR}/libquadmath*.so*"
-        "${SCIPY_OPENBLAS_LIB_DIR}/libquadmath*.dylib*")
+        "${SCIPY_OPENBLAS_LIB_DIR}/libquadmath*.so*")
     list(LENGTH SCIPY_OPENBLAS_RUNTIME_LIBS SCIPY_OPENBLAS_RUNTIME_COUNT)
     if(SCIPY_OPENBLAS_RUNTIME_COUNT EQUAL 0)
         message(FATAL_ERROR "scipy-openblas32 runtime libraries were not found")
     endif()
     install(FILES ${SCIPY_OPENBLAS_RUNTIME_LIBS} DESTINATION mdescriptor/.libs)
-    if(APPLE)
-        set_property(TARGET _native PROPERTY INSTALL_RPATH "@loader_path/.libs")
-    else()
-        set_property(TARGET _native PROPERTY INSTALL_RPATH "$ORIGIN/.libs")
-    endif()
+    set_property(TARGET _native PROPERTY INSTALL_RPATH "$ORIGIN/.libs")
 endif()
 install(FILES "${SCIPY_OPENBLAS_METADATA}"
     DESTINATION mdescriptor/licenses
