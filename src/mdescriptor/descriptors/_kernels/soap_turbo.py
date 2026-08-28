@@ -38,6 +38,12 @@ def _per_species(value: Any, count: int, name: str, default: float, *, integer: 
     return [float(item) for item in numeric]
 
 
+def _coerce_scalar_species(value: Any) -> int:
+    """Convert the scalar branch of ``np.isscalar`` to an atomic number."""
+
+    return int(value)
+
+
 class SoapTurboKernel:
     """Batch-first native core of the soap_turbo atomic power spectrum.
 
@@ -96,7 +102,7 @@ class SoapTurboKernel:
         if central_species is None:
             self.central_species = None
         elif np.isscalar(central_species):
-            self.central_species = normalize_species([int(central_species)])  # type: ignore[arg-type]
+            self.central_species = normalize_species([_coerce_scalar_species(central_species)])
         else:
             self.central_species = normalize_species(central_species)
         if self.dtype not in {"float32", "float64"}:
