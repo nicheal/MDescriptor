@@ -91,7 +91,18 @@ exclude = [
 build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-musllinux_* *-win32 *-*linux_i686"
 test-requires = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
-test-sources = ["tests", "scripts"]
+# The repository-level provenance tests read the checked-in metadata below;
+# include those files in cibuildwheel's isolated test tree so every wheel
+# platform exercises the same contract suite as the source checkout.
+test-sources = [
+    "tests",
+    "scripts",
+    "pyproject.toml",
+    "benchmarks/_legacy_oracles/sources.lock.json",
+    "benchmarks/_legacy_oracles/soapturbo",
+    "benchmarks/_legacy_oracles/lbispectrum",
+    "benchmarks/_legacy_oracles/mtp",
+]
 test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py"
 
 [tool.cibuildwheel.windows]
