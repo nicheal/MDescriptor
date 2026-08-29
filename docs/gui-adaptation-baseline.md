@@ -51,6 +51,11 @@ from implementation names or exception text. Descriptors declaring both
 `isolated` and `fully_periodic` accept those frame kinds in one batch;
 periodic-only descriptors reject a batch containing an isolated frame.
 
+On Windows, import `mdescriptor` during single-threaded startup, before the GUI
+starts any background stdin/stdio reader. The package preloads the native
+binary at that point; an embedding host may also call
+`mdescriptor.preload_native()` explicitly during startup.
+
 ## Results and lifecycle
 
 Configurations and results carry their own schema versions. Descriptors are

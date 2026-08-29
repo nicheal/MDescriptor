@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 
+from ._runtime import preload_native, preload_native_binary
 from .core import (
     CONFIGURATION_SCHEMA_VERSION,
     RESULT_SCHEMA_VERSION,
@@ -33,6 +34,8 @@ from .registry import (
     get_descriptor,
     list_descriptors,
 )
+
+preload_native_binary()
 
 API_VERSION = 1
 
@@ -85,5 +88,6 @@ __all__ = [
     "get_descriptor",
     "get_runtime_info",
     "list_descriptors",
+    "preload_native",
     "__version__",
 ]

@@ -227,6 +227,11 @@ JSON-safe GUI metadata from the registry without constructing a descriptor or
 resolving a model. `get_runtime_info()` reports the package and contract
 schema versions, including `result_schema_version`.
 
+On Windows, import `mdescriptor` during single-threaded startup, before an
+embedding host starts background stdin/stdio readers. The package preloads the
+packaged native binary at that point; a host that controls startup explicitly
+may also call `mdescriptor.preload_native()`.
+
 ## Model resources / 模型资源
 
 `ModelResource`, `ModelResolver`, `LoadedModel` and `ModelSession` are the
