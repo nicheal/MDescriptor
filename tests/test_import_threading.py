@@ -32,6 +32,9 @@ threading.Thread(target=read_stdin, daemon=True).start()
 print("READER_STARTED", flush=True)
 metadata = mdescriptor.describe_descriptor("ACE")
 print("METADATA_DONE", flush=True)
+print("NATIVE_IMPORT_START", flush=True)
+from mdescriptor import _native
+print("NATIVE_IMPORT_DONE", flush=True)
 parameters = {
     name: ([1] if name == "species" else schema["default"])
     for name, schema in metadata["parameters"].items()
