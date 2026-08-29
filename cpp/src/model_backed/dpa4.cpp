@@ -2606,6 +2606,7 @@ void Dpa4Calculator::compute(
         }
     }
     if (batch.atoms == 0) {
+        detail::mark_completed_structures(control, batch.structures);
         return;
     }
 

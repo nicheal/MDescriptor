@@ -453,32 +453,22 @@ py::array compute_nep_array(
     return output;
 }
 
-py::array compute_dpa4c_array(
-    const Dpa4cCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const I32Array& type_indices,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    if (type_indices.ndim() != 1 || type_indices.shape(0) != batch.atoms) {
-        throw std::invalid_argument("DPA4C type_indices must have one entry per atom");
-    }
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto ctrl = control_or_default(control);
-    ctrl->reset(batch.structures);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, type_indices.data(), output.mutable_data(), ctrl);
-    }
-    return output;
-}
+template <typename Calculator>
+struct DpaBindingTraits;
 
-py::array compute_dpa4_array(
-    const Dpa4Calculator& calculator,
+template <>
+struct DpaBindingTraits<Dpa4cCalculator> {
+    static constexpr const char* name = "DPA4C";
+};
+
+template <>
+struct DpaBindingTraits<Dpa4Calculator> {
+    static constexpr const char* name = "DPA4";
+};
+
+template <typename Calculator>
+py::array compute_dpa_array(
+    const Calculator& calculator,
     const I32Array& numbers,
     const F64Array& positions,
     const F64Array& cells,
@@ -489,7 +479,9 @@ py::array compute_dpa4_array(
 ) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
     if (type_indices.ndim() != 1 || type_indices.shape(0) != batch.atoms) {
-        throw std::invalid_argument("DPA4 type_indices must have one entry per atom");
+        throw std::invalid_argument(
+            std::string(DpaBindingTraits<Calculator>::name)
+            + " type_indices must have one entry per atom");
     }
     py::array_t<double> output({batch.atoms, calculator.feature_count()});
     auto ctrl = control_or_default(control);
@@ -1119,7 +1111,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("feature_count", &Dpa4cCalculator::feature_count)
         .def("close", &Dpa4cCalculator::close)
         .def("closed", &Dpa4cCalculator::closed)
-        .def("compute", &compute_dpa4c_array,
+        .def("compute", &compute_dpa_array<Dpa4cCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
 
@@ -1132,7 +1124,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("feature_count", &Dpa4Calculator::feature_count)
         .def("close", &Dpa4Calculator::close)
         .def("closed", &Dpa4Calculator::closed)
-        .def("compute", &compute_dpa4_array,
+        .def("compute", &compute_dpa_array<Dpa4Calculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
 

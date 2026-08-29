@@ -501,6 +501,7 @@ void Dpa4cCalculator::compute(
         }
     }
     if (batch.atoms == 0) {
+        detail::mark_completed_structures(control, batch.structures);
         return;
     }
 
@@ -540,6 +541,26 @@ void Dpa4cCalculator::compute(
     ensure_pair_cache(used_pair_indices);
 
     const int angular_width = (options_.lmax + 1) * (options_.lmax + 1);
+    std::vector<std::int64_t> structure_for_atom;
+    std::unique_ptr<std::atomic<std::int64_t>[]> remaining_atoms;
+    if (control) {
+        structure_for_atom.resize(static_cast<std::size_t>(batch.atoms));
+        remaining_atoms = std::make_unique<std::atomic<std::int64_t>[]>(
+            static_cast<std::size_t>(batch.structures));
+        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+            const std::int64_t begin = batch.offsets[structure];
+            const std::int64_t end = batch.offsets[structure + 1];
+            remaining_atoms[static_cast<std::size_t>(structure)].store(
+                end - begin, std::memory_order_relaxed);
+            for (std::int64_t atom = begin; atom < end; ++atom) {
+                structure_for_atom[static_cast<std::size_t>(atom)] = structure;
+            }
+            if (begin == end) {
+                detail::check_cancelled(control);
+                control->mark_completed();
+            }
+        }
+    }
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options_.num_threads > 0 ? options_.num_threads : omp_get_max_threads())
 #endif
@@ -914,10 +935,13 @@ void Dpa4cCalculator::compute(
             }
             destination[feature] = value;
         }
-    }
-    if (control) {
-        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-            control->mark_completed();
+        if (control && !control->cancelled()) {
+            const std::int64_t structure = structure_for_atom[
+                static_cast<std::size_t>(center_atom)];
+            if (remaining_atoms[static_cast<std::size_t>(structure)].fetch_sub(
+                    1, std::memory_order_acq_rel) == 1) {
+                control->mark_completed();
+            }
         }
     }
     if (control && control->cancelled()) {

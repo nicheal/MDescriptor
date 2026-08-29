@@ -15,7 +15,7 @@ from ..model_backed.dpa import (
     load_dpa_checkpoint,
     new_runtime,
 )
-from ..model_backed.graph import _ATOMIC_SYMBOLS
+from .dpa_common import compute_native_batch
 
 
 def _as_float32(value: Any) -> np.ndarray:
@@ -186,32 +186,7 @@ class Dpa4cKernel:
         if self._cpp is None:
             values = compute_batch(self._native, value, control=control)
         else:
-            symbols: list[str] = []
-            for number in value.numbers.tolist():
-                try:
-                    symbols.append(_ATOMIC_SYMBOLS[int(number)])
-                except KeyError as exc:
-                    raise ValueError(
-                        f"atomic number {number} is absent from the checkpoint type_map"
-                    ) from exc
-            try:
-                type_indices = self._native.symbols_to_atype(symbols).astype(
-                    np.int32,
-                    copy=False,
-                )
-            except KeyError as exc:
-                raise ValueError(
-                    f"element {exc.args[0]!r} is absent from the checkpoint type_map"
-                ) from exc
-            values = self._cpp.compute(
-                value.numbers,
-                value.positions,
-                value.cells,
-                value.pbc,
-                value.offsets,
-                type_indices,
-                control,
-            )
+            values = compute_native_batch(self._cpp, self._native, value, control)
         return DescriptorResult(
             values,
             "atom",

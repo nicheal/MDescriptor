@@ -45,6 +45,15 @@ inline void mark_completed(const std::shared_ptr<ComputeControl>& control) {
     }
 }
 
+inline void mark_completed_structures(
+    const std::shared_ptr<ComputeControl>& control,
+    std::int64_t structures) {
+    for (std::int64_t structure = 0; structure < structures; ++structure) {
+        check_cancelled(control);
+        mark_completed(control);
+    }
+}
+
 } // namespace detail
 
 } // namespace mdescriptor

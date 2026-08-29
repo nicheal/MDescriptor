@@ -19,6 +19,7 @@ from mdescriptor import (
     StructureBatch,
     describe_descriptor,
 )
+from mdescriptor._runtime import native_extension_available
 from mdescriptor.registry import DescriptorInfo, validate_descriptor_parameters
 
 
@@ -79,10 +80,11 @@ def test_dpa4c_static_default_matches_the_runtime_default():
 
 
 def test_dpa_static_metadata_separates_adapter_and_execution_engine():
+    expected_engine = "cpp" if native_extension_available() else "numpy"
     for name in ("DPA4", "DPA4C"):
         metadata = describe_descriptor(name)
         assert metadata["backend"] == "numpy"
-        assert metadata["execution_engine"] == "cpp"
+        assert metadata["execution_engine"] == expected_engine
         assert metadata["descriptor_version"] == "1"
 
 

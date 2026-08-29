@@ -4,12 +4,27 @@ from __future__ import annotations
 
 import ctypes
 import importlib
+import importlib.machinery
+import importlib.util
 import os
 from pathlib import Path
 from typing import Any
 
 _DLL_DIRECTORIES: list[Any] = []
 _NATIVE_HANDLES: list[Any] = []
+
+
+def native_extension_available() -> bool:
+    """Return whether the private native module resolves to an extension binary."""
+
+    try:
+        spec = importlib.util.find_spec("mdescriptor._native")
+    except (ImportError, ValueError):
+        return False
+    if spec is None or spec.origin is None:
+        return False
+    origin = str(spec.origin)
+    return any(origin.endswith(suffix) for suffix in importlib.machinery.EXTENSION_SUFFIXES)
 
 
 def preload_native_binary() -> None:

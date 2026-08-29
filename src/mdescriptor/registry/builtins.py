@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._runtime import native_extension_available
 from .info import DescriptorInfo
 from .model_defaults import bundled_model_default
 from .registry import DescriptorRegistry
@@ -18,6 +19,7 @@ _MODEL = "mdescriptor.descriptors.model_backed."
 _MISSING = object()
 _ALL_PERIODICITY = ("isolated", "fully_periodic")
 _PERIODIC_ONLY = ("fully_periodic",)
+_DPA_EXECUTION_ENGINE = "cpp" if native_extension_available() else "numpy"
 
 
 def _parameter(
@@ -141,7 +143,7 @@ def _info(
         },
         {
             "periodicity": list(periodicity),
-            "mixed_periodicity": mixed_periodicity,
+            "mixed_periodicity": set(periodicity) == set(_ALL_PERIODICITY),
             "spin": spin,
             "charge_spin": charge_spin,
         },
@@ -657,14 +659,14 @@ _BUILTIN_SPECS = (
         _MODEL + "dpa4.descriptor:DPA4",
         "numpy",
         "atom",
-        execution_engine="cpp",
+        execution_engine=_DPA_EXECUTION_ENGINE,
     ),
     _spec(
         "DPA4C",
         _MODEL + "dpa4c.descriptor:DPA4C",
         "numpy",
         "atom",
-        execution_engine="cpp",
+        execution_engine=_DPA_EXECUTION_ENGINE,
     ),
 )
 

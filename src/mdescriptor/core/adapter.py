@@ -133,12 +133,31 @@ def _unsupported_input(
     value: Any,
     supported: Any,
 ) -> DescriptorInputError:
+    return _input_capability_error(
+        descriptor,
+        field=field,
+        message=f"{descriptor} does not support input field {field!r}",
+        code="unsupported_input",
+        value=value,
+        supported=supported,
+    )
+
+
+def _input_capability_error(
+    descriptor: str,
+    *,
+    field: str,
+    message: str,
+    code: str,
+    value: Any,
+    supported: Any = None,
+) -> DescriptorInputError:
     details: dict[str, Any] = {"provided": value}
     if supported is not None:
         details["supported"] = list(supported)
     return DescriptorInputError(
-        f"{descriptor} does not support input field {field!r}",
-        code="unsupported_input",
+        message,
+        code=code,
         path=["input", field],
         details=details,
     )
@@ -157,11 +176,13 @@ def _unsupported_periodicity(
             f"{descriptor} does not support periodicity {provided!r}; "
             f"supported: {supported_text}"
         )
-    return DescriptorInputError(
-        message,
+    return _input_capability_error(
+        descriptor,
+        field="periodicity",
+        message=message,
         code="unsupported_periodicity",
-        path=["input", "periodicity"],
-        details={"provided": provided, "supported": list(supported)},
+        value=provided,
+        supported=supported,
     )
 
 
