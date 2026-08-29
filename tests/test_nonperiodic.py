@@ -55,6 +55,32 @@ def test_nonperiodic_soap_is_translation_invariant() -> None:
     descriptor.close()
 
 
+def test_batch_can_mix_isolated_and_fully_periodic_structures() -> None:
+    isolated = _isolated_batch()
+    mixed = StructureBatch(
+        np.concatenate((isolated.numbers, isolated.numbers)),
+        np.concatenate((isolated.positions, isolated.positions + 5.0)),
+        np.concatenate((np.eye(3, dtype=np.float64)[None] * 8.0, isolated.cells)),
+        np.concatenate((np.ones((1, 3), dtype=np.int32), isolated.pbc)),
+        np.asarray([0, 2, 4], dtype=np.int64),
+        ("periodic", "isolated"),
+    )
+    descriptor = get_descriptor("SOAP")(
+        species=[6],
+        r_cut=3.5,
+        n_max=2,
+        l_max=2,
+        sigma=0.5,
+        average="off",
+    )
+    try:
+        result = descriptor.compute(mixed)
+        assert result.values.shape[0] == 4
+        assert result.row_offsets.tolist() == [0, 2, 4]
+    finally:
+        descriptor.close()
+
+
 def test_partial_periodicity_is_rejected_at_both_boundaries() -> None:
     batch = _isolated_batch()
     with pytest.raises(ValueError, match="mixed periodicity"):

@@ -28,7 +28,7 @@ def test_runtime_info_exposes_independent_contract_versions():
     assert runtime["version"] == mdescriptor.__version__
     assert runtime["api_version"] == mdescriptor.API_VERSION
     assert runtime["configuration_schema_version"] == 1
-    assert runtime["descriptor_info_schema_version"] == 1
+    assert runtime["descriptor_info_schema_version"] == 2
     assert runtime["result_schema_version"] == mdescriptor.RESULT_SCHEMA_VERSION
     json.dumps(runtime, allow_nan=False)
 
@@ -37,11 +37,13 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
     expected_fields = {
         "schema_version",
         "name",
+        "descriptor_version",
         "display_name",
         "description",
         "category",
         "level",
         "backend",
+        "execution_engine",
         "capabilities",
         "parameters",
         "execution",
@@ -54,11 +56,17 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
         assert set(metadata) == expected_fields
         assert metadata["schema_version"] == mdescriptor.DESCRIPTOR_INFO_SCHEMA_VERSION
         assert metadata["name"] == spec.name
+        assert metadata["descriptor_version"] == spec.descriptor_version
         assert metadata["level"] == spec.level
         assert metadata["backend"] == spec.backend
+        assert metadata["execution_engine"] == spec.execution_engine
         assert metadata["capabilities"] == sorted(spec.capabilities)
         assert metadata["asset"]["policy"] == spec.asset_policy.value
         assert metadata["execution"]["devices"] == ["cpu"]
+        assert metadata["input"]["mixed_periodicity"] == (
+            set(metadata["input"]["periodicity"])
+            == {"isolated", "fully_periodic"}
+        )
         assert all("type" in schema for schema in metadata["parameters"].values())
         assert set(metadata["parameters"]) <= set(
             inspect.signature(spec.load_class()).parameters
@@ -68,6 +76,14 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
 
 def test_dpa4c_static_default_matches_the_runtime_default():
     assert describe_descriptor("DPA4C")["parameters"]["calibrate"]["default"] is True
+
+
+def test_dpa_static_metadata_separates_adapter_and_execution_engine():
+    for name in ("DPA4", "DPA4C"):
+        metadata = describe_descriptor(name)
+        assert metadata["backend"] == "numpy"
+        assert metadata["execution_engine"] == "cpp"
+        assert metadata["descriptor_version"] == "1"
 
 
 def test_static_model_description_does_not_load_model_modules_or_torch():
@@ -248,11 +264,13 @@ def test_descriptor_info_does_not_leak_registry_only_optional_fields():
     assert set(mdescriptor.describe_descriptor("custom", registry=registry)) == {
         "schema_version",
         "name",
+        "descriptor_version",
         "display_name",
         "description",
         "category",
         "level",
         "backend",
+        "execution_engine",
         "capabilities",
         "parameters",
         "execution",

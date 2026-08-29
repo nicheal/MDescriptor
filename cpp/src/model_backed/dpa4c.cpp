@@ -914,7 +914,9 @@ void Dpa4cCalculator::compute(
             }
             destination[feature] = value;
         }
-        if (control) {
+    }
+    if (control) {
+        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
             control->mark_completed();
         }
     }

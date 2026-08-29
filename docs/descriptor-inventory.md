@@ -34,13 +34,13 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 | MTP | `standalone` | `local` | `OPTIONAL` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | species, model, min_dist, max_dist, r_cut, radial_basis_size, radial_funcs_count, max_rank, radial_basis_type | `—` |
 | C00PSMLFF | `standalone` | `local` | `NONE` | `cpp` | `atom` | cooperative_cancel, num_threads, sparse | species, r_cut, n_radial, l_max, cutoff_function, radial_sigma, include_radial, include_angular, normalize_radial, normalize_angular, super_vector, radial_weight, angular_weight, exclude_self_interaction | `—` |
 | NEP | `model_backed` | `model_backed` | `REQUIRED` | `cpp` | `atom` | cooperative_cancel, model, num_threads, sparse | model | `—` |
-| DPA4 | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | model | `—` |
-| DPA4C | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, model, num_threads, sparse, spin | model, calibrate | `—` |
+| DPA4 | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, cooperative_cancel, model, num_threads, sparse, spin | model | `—` |
+| DPA4C | `model_backed` | `model_backed` | `REQUIRED` | `numpy` | `atom` | charge_spin, cooperative_cancel, model, num_threads, sparse, spin | model, calibrate | `—` |
 
 ## Static descriptor metadata
 
 Each built-in entry carries `DescriptorInfo` schema version
-`1`.  Query it without importing an algorithm
+`2`.  Query it without importing an algorithm
 implementation or resolving a model:
 
 ```python

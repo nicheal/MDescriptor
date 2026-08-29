@@ -124,8 +124,11 @@ def _info(
     spin: bool = False,
     charge_spin: bool = False,
     cooperative_cancel: bool = True,
+    mixed_periodicity: bool | None = None,
     asset: dict[str, Any] | None = None,
 ) -> DescriptorInfo:
+    if mixed_periodicity is None:
+        mixed_periodicity = set(periodicity) == set(_ALL_PERIODICITY)
     return DescriptorInfo(
         display_name,
         description,
@@ -138,7 +141,7 @@ def _info(
         },
         {
             "periodicity": list(periodicity),
-            "mixed_periodicity": False,
+            "mixed_periodicity": mixed_periodicity,
             "spin": spin,
             "charge_spin": charge_spin,
         },
@@ -429,6 +432,7 @@ _DESCRIPTOR_INFO = {
             "exponent": _parameter("integer", default=1, minimum=0),
             "radial_radius": _parameter("number", exclusiveMinimum=0.0, unit="Å"),
         },
+        periodicity=_PERIODIC_ONLY,
     ),
     "EAD": _info(
         "EAD",
@@ -548,7 +552,6 @@ _DESCRIPTOR_INFO = {
         {"model": _model(default="DPA4")},
         spin=True,
         charge_spin=True,
-        cooperative_cancel=False,
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("DPA4-Air-OMat24-v20260704.pt",),
@@ -565,7 +568,6 @@ _DESCRIPTOR_INFO = {
         },
         spin=True,
         charge_spin=True,
-        cooperative_cancel=False,
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("DPA4C-Air-OMat24-v20260819.pt",),
@@ -601,6 +603,8 @@ def _spec(
     level: str,
     *,
     optional_extra: str | None = None,
+    descriptor_version: str = "1",
+    execution_engine: str | None = None,
 ) -> DescriptorSpec:
     info = _DESCRIPTOR_INFO[name]
     try:
@@ -616,6 +620,8 @@ def _spec(
         capabilities=_capabilities(info),
         optional_extra=optional_extra,
         info=info,
+        descriptor_version=descriptor_version,
+        execution_engine=execution_engine,
     )
 
 
@@ -646,8 +652,20 @@ _BUILTIN_SPECS = (
     _spec("MTP", _STANDALONE + "mtp:MTP", "cpp", "atom"),
     _spec("C00PSMLFF", _STANDALONE + "c00ps_mlff:C00PSMLFF", "cpp", "atom"),
     _spec("NEP", _MODEL + "nep.descriptor:NEP", "cpp", "atom"),
-    _spec("DPA4", _MODEL + "dpa4.descriptor:DPA4", "numpy", "atom"),
-    _spec("DPA4C", _MODEL + "dpa4c.descriptor:DPA4C", "numpy", "atom"),
+    _spec(
+        "DPA4",
+        _MODEL + "dpa4.descriptor:DPA4",
+        "numpy",
+        "atom",
+        execution_engine="cpp",
+    ),
+    _spec(
+        "DPA4C",
+        _MODEL + "dpa4c.descriptor:DPA4C",
+        "numpy",
+        "atom",
+        execution_engine="cpp",
+    ),
 )
 
 builtin_registry = DescriptorRegistry(_BUILTIN_SPECS, frozen=True)

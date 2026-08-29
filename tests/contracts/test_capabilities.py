@@ -58,7 +58,9 @@ def test_capability_declarations_match_public_constructor_behavior():
 
         assert "sparse" in spec.capabilities, spec.name
         assert ("model" in spec.capabilities) == ("model" in signature.parameters), spec.name
-        assert ("cooperative_cancel" in spec.capabilities) == (spec.backend == "cpp"), spec.name
+        assert ("cooperative_cancel" in spec.capabilities) == bool(
+            spec.info and spec.info.execution.get("cooperative_cancel", False)
+        ), spec.name
         assert ("spin" in spec.capabilities) == (spec.name in {"DPA4", "DPA4C"}), spec.name
         assert (
             "charge_spin" in spec.capabilities

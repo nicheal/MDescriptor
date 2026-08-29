@@ -181,11 +181,10 @@ class Dpa4cKernel:
         return self.feature_count
 
     def compute(self, value: Any, control: Any = None) -> DescriptorResult:
-        del control
         if self._closed or self._native is None:
             raise RuntimeError("DPA4C descriptor is closed")
         if self._cpp is None:
-            values = compute_batch(self._native, value)
+            values = compute_batch(self._native, value, control=control)
         else:
             symbols: list[str] = []
             for number in value.numbers.tolist():
@@ -211,6 +210,7 @@ class Dpa4cKernel:
                 value.pbc,
                 value.offsets,
                 type_indices,
+                control,
             )
         return DescriptorResult(
             values,
