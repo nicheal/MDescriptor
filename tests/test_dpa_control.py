@@ -8,6 +8,8 @@ import time
 import numpy as np
 import pytest
 
+from mdescriptor.descriptors._kernels.dpa_common import compute_native_batch
+from mdescriptor.descriptors.model_backed import dpa as dpa_runtime
 from mdescriptor.models import DPA4_MODEL, DPA4C_MODEL
 from tests._public import (
     DPA4,
@@ -19,6 +21,27 @@ from tests._public import (
 )
 
 pytestmark = pytest.mark.model
+
+
+class _RecordingControl:
+    def __init__(self) -> None:
+        self.total_value = 99
+        self.completed_value = 1
+        self.cancelled_value = False
+
+    def reset(self, total: int) -> None:
+        self.total_value = total
+        self.completed_value = 0
+        self.cancelled_value = False
+
+    def cancel(self) -> None:
+        self.cancelled_value = True
+
+    def cancelled(self) -> bool:
+        return self.cancelled_value
+
+    def mark_completed(self) -> None:
+        self.completed_value += 1
 
 
 def _batch() -> StructureBatch:
@@ -68,6 +91,27 @@ def _many_structures(structures: int = 64) -> StructureBatch:
         offsets,
         tuple(f"progress-{index}" for index in range(structures)),
     )
+
+
+def _unknown_type_batch() -> StructureBatch:
+    return StructureBatch(
+        np.asarray([1, 119], dtype=np.int32),
+        np.asarray([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], dtype=np.float64),
+        np.asarray([np.eye(3, dtype=np.float64) * 12.0] * 2),
+        np.ones((2, 3), dtype=np.int32),
+        np.asarray([0, 1, 2], dtype=np.int64),
+        ("known", "unknown"),
+    )
+
+
+def test_native_type_mapping_initializes_progress_before_failure() -> None:
+    control = _RecordingControl()
+
+    with pytest.raises(ValueError, match="atomic number 119"):
+        compute_native_batch(object(), object(), _unknown_type_batch(), control)
+
+    assert control.total_value == 2
+    assert control.completed_value == 0
 
 
 @pytest.mark.parametrize(
@@ -140,9 +184,68 @@ def test_dpa_native_empty_structures_count_as_completed(descriptor_type, model) 
         descriptor.close()
 
 
-def test_dpa4c_native_cancellation_stops_after_completed_structures() -> None:
-    descriptor = DPA4C(
-        model=DPA4C_MODEL,
+@pytest.mark.parametrize(
+    ("descriptor_type", "model"),
+    [(DPA4, DPA4_MODEL), (DPA4C, DPA4C_MODEL)],
+)
+def test_dpa_numpy_fallback_reports_structure_progress(descriptor_type, model) -> None:
+    descriptor = descriptor_type(model=model)
+    kernel = descriptor._kernel
+    native_calculator = kernel._cpp
+    kernel._cpp = None
+    control = ComputeControl()
+    try:
+        descriptor.compute(_batch(), control=control)
+        assert control.total() == 2
+        assert control.completed() == 2
+    finally:
+        kernel._cpp = native_calculator
+        descriptor.close()
+
+
+@pytest.mark.parametrize(
+    ("descriptor_type", "model"),
+    [(DPA4, DPA4_MODEL), (DPA4C, DPA4C_MODEL)],
+)
+def test_dpa_numpy_fallback_counts_finished_structure_before_cancel(
+    descriptor_type, model, monkeypatch
+) -> None:
+    descriptor = descriptor_type(model=model)
+    kernel = descriptor._kernel
+    native_calculator = kernel._cpp
+    kernel._cpp = None
+    control = ComputeControl()
+    original_frame_descriptor = dpa_runtime._frame_descriptor
+    calls = 0
+
+    def cancel_after_first_frame(*args, **kwargs):
+        nonlocal calls
+        result = original_frame_descriptor(*args, **kwargs)
+        calls += 1
+        if calls == 1:
+            control.cancel()
+        return result
+
+    monkeypatch.setattr(dpa_runtime, "_frame_descriptor", cancel_after_first_frame)
+    try:
+        with pytest.raises(CancelledError):
+            descriptor.compute(_batch(), control=control)
+        assert control.total() == 2
+        assert control.completed() == 1
+    finally:
+        kernel._cpp = native_calculator
+        descriptor.close()
+
+
+@pytest.mark.parametrize(
+    ("descriptor_type", "model"),
+    [(DPA4, DPA4_MODEL), (DPA4C, DPA4C_MODEL)],
+)
+def test_dpa_native_cancellation_stops_after_completed_structures(
+    descriptor_type, model
+) -> None:
+    descriptor = descriptor_type(
+        model=model,
         execution=ExecutionOptions(num_threads=1),
     )
     control = ComputeControl()
@@ -150,7 +253,7 @@ def test_dpa4c_native_cancellation_stops_after_completed_structures() -> None:
 
     def compute() -> None:
         try:
-            descriptor.compute(_many_structures(), control=control)
+            descriptor.compute(_many_structures(512), control=control)
         except BaseException as exc:  # pragma: no cover - assertion below checks the type
             errors.append(exc)
 

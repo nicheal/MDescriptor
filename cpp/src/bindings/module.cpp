@@ -485,7 +485,6 @@ py::array compute_dpa_array(
     }
     py::array_t<double> output({batch.atoms, calculator.feature_count()});
     auto ctrl = control_or_default(control);
-    ctrl->reset(batch.structures);
     {
         py::gil_scoped_release release;
         calculator.compute(batch, type_indices.data(), output.mutable_data(), ctrl);

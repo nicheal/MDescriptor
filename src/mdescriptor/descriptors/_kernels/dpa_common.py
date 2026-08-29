@@ -16,7 +16,12 @@ def compute_native_batch(
     batch: StructureBatch,
     control: Any,
 ) -> np.ndarray:
-    """Map a validated batch once and forward it through either DPA calculator."""
+    """Initialize progress, map a validated batch, and call either DPA calculator."""
+
+    if control is not None:
+        reset = getattr(control, "reset", None)
+        if callable(reset):
+            reset(batch.structures)
 
     symbols: list[str] = []
     for number in batch.numbers.tolist():

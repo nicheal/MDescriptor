@@ -50,6 +50,46 @@ def test_windows_preload_loads_packaged_binary_before_native_import(monkeypatch)
     assert loaded == ["C:/package/_native.cp312-win_amd64.pyd"]
 
 
+def test_windows_preload_failure_marks_native_extension_unavailable(monkeypatch) -> None:
+    from mdescriptor import _runtime
+
+    class FakePath:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def resolve(self):
+            return self
+
+        @property
+        def parent(self):
+            return FakePath("C:/package")
+
+        def glob(self, pattern: str):
+            assert pattern == "_native*.pyd"
+            return [FakePath("C:/package/_native.cp312-win_amd64.pyd")]
+
+        def __str__(self) -> str:
+            return self.value
+
+    def add_dll_directory(path: str) -> None:
+        del path
+
+    def load(path: str):
+        raise OSError(f"cannot load {path}")
+
+    monkeypatch.setattr(_runtime, "Path", FakePath)
+    monkeypatch.setattr(_runtime.os, "name", "nt")
+    monkeypatch.setattr(_runtime.os, "add_dll_directory", add_dll_directory, raising=False)
+    monkeypatch.setattr(_runtime.ctypes, "WinDLL", load, raising=False)
+    monkeypatch.setattr(_runtime, "_DLL_DIRECTORIES", [])
+    monkeypatch.setattr(_runtime, "_NATIVE_HANDLES", [])
+    monkeypatch.setattr(_runtime, "_NATIVE_PRELOAD_ATTEMPTED", False)
+
+    _runtime.preload_native_binary()
+
+    assert _runtime.native_extension_available() is False
+
+
 def test_create_descriptor_does_not_block_with_open_stdin_reader() -> None:
     """Keep stdin open while a worker performs the first native import.
 

@@ -935,7 +935,7 @@ void Dpa4cCalculator::compute(
             }
             destination[feature] = value;
         }
-        if (control && !control->cancelled()) {
+        if (control) {
             const std::int64_t structure = structure_for_atom[
                 static_cast<std::size_t>(center_atom)];
             if (remaining_atoms[static_cast<std::size_t>(structure)].fetch_sub(

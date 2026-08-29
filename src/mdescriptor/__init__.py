@@ -22,7 +22,10 @@ from .core import (
     StructureBatch,
     StructureInput,
 )
-from .registry import (
+
+preload_native_binary()
+
+from .registry import (  # noqa: E402  # preload native binary before registry metadata
     DESCRIPTOR_INFO_SCHEMA_VERSION,
     AssetPolicy,
     DescriptorConfiguration,
@@ -34,8 +37,6 @@ from .registry import (
     get_descriptor,
     list_descriptors,
 )
-
-preload_native_binary()
 
 API_VERSION = 1
 

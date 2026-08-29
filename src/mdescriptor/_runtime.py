@@ -12,10 +12,18 @@ from typing import Any
 
 _DLL_DIRECTORIES: list[Any] = []
 _NATIVE_HANDLES: list[Any] = []
+_NATIVE_PRELOAD_ATTEMPTED = False
 
 
 def native_extension_available() -> bool:
     """Return whether the private native module resolves to an extension binary."""
+
+    # On Windows, an extension file can exist while one of its DLL
+    # dependencies is unavailable.  ``preload_native_binary`` performs the
+    # loadability check before the registry is assembled, so do not fall back
+    # to the filename-only probe after that check has run.
+    if os.name == "nt" and _NATIVE_PRELOAD_ATTEMPTED:
+        return bool(_NATIVE_HANDLES)
 
     try:
         spec = importlib.util.find_spec("mdescriptor._native")
@@ -37,8 +45,11 @@ def preload_native_binary() -> None:
     independent of ``mdescriptor._native`` in ``sys.modules``.
     """
 
+    global _NATIVE_PRELOAD_ATTEMPTED
+
     if os.name != "nt":
         return
+    _NATIVE_PRELOAD_ATTEMPTED = True
     loader = getattr(ctypes, "WinDLL", None)
     if loader is None:
         return
