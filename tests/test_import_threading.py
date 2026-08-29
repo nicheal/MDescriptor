@@ -18,7 +18,9 @@ def test_create_descriptor_does_not_block_with_open_stdin_reader() -> None:
 import threading
 import sys
 
+print("IMPORT_START", flush=True)
 import mdescriptor
+print("IMPORT_DONE", flush=True)
 
 
 def read_stdin():
@@ -27,7 +29,9 @@ def read_stdin():
 
 
 threading.Thread(target=read_stdin, daemon=True).start()
+print("READER_STARTED", flush=True)
 metadata = mdescriptor.describe_descriptor("ACE")
+print("METADATA_DONE", flush=True)
 parameters = {
     name: ([1] if name == "species" else schema["default"])
     for name, schema in metadata["parameters"].items()
@@ -36,6 +40,7 @@ parameters = {
 descriptor = mdescriptor.create_descriptor(
     mdescriptor.DescriptorConfiguration(1, "ACE", parameters)
 )
+print("CREATE_DONE", flush=True)
 descriptor.close()
 print("BUILD_DONE", flush=True)
 '''
