@@ -47,6 +47,7 @@ def _configurations() -> dict[str, DescriptorConfiguration]:
     return result
 
 
+@pytest.mark.model
 def test_capability_declarations_match_public_constructor_behavior():
     configurations = _configurations()
     for spec in mdescriptor.builtin_registry:

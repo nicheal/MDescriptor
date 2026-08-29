@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
+import pytest
 
 from tests._public import EwaldSumMatrix, ExecutionOptions, StructureBatch
 
@@ -71,7 +72,8 @@ def _median_runtime(descriptor: EwaldSumMatrix, batch: StructureBatch) -> float:
     return float(np.median(elapsed))
 
 
-def test_ewaldsummatrix_openmp_small_batch_speed() -> None:
+@pytest.mark.timing
+def test_ewaldsummatrix_openmp_small_batch_timing_smoke() -> None:
     batch = _batch()
     serial = _descriptor(1)
     parallel = _descriptor(4)

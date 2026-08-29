@@ -174,7 +174,8 @@ def _median_compute_seconds(
     return float(np.median(elapsed)), result
 
 
-def test_valleoganov_openmp_small_batch_speed() -> None:
+@pytest.mark.timing
+def test_valleoganov_openmp_small_batch_timing_smoke() -> None:
     """Record a repeatable small-batch timing without a machine-specific gate."""
 
     batch = _batch()

@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 ase = ["ase>=3.22"]
 sparse = ["scipy>=1.11"]
-test = ["pytest>=8", "ase>=3.22", "scipy>=1.11"]
+test = ["pytest>=8", "pytest-cov>=7", "ase>=3.22", "scipy>=1.11"]
 reference-dscribe = ["pytest>=8", "ase==3.26.0", "scipy>=1.11", "dscribe==2.1.2"]
 reference-featomic = ["pytest>=8", "ase==3.26.0", "scipy>=1.11", "featomic==0.6.6"]
 reference-pyxtalff = [
@@ -46,7 +46,14 @@ reference-nepadapters = [
     "nep-adapters==1.0.2",
 ]
 all = ["ase>=3.22", "scipy>=1.11"]
-dev = ["pytest>=8", "ase>=3.22", "scipy>=1.11", "ruff>=0.8", "mypy>=1.13"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=7",
+    "ase>=3.22",
+    "scipy>=1.11",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
 
 [tool.scikit-build]
 minimum-version = "1.0"
@@ -98,6 +105,7 @@ pythonpath = ["."]
 addopts = "-m 'not reference'"
 markers = [
     "model: tests that exercise bundled model-backed descriptors and assets",
+    "timing: timing smoke tests that record runtimes without enforcing a speedup",
     "reference: tests that require a pinned external numerical reference implementation",
     "dscribe: external numerical comparisons against pinned DScribe",
     "featomic: external numerical comparisons against pinned Featomic",
@@ -105,6 +113,18 @@ markers = [
     "deepmd: external numerical comparisons against pinned deepmd-kit DPA4 descriptors",
     "nepadapters: external numerical comparisons against pinned nep-adapters",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["mdescriptor"]
+omit = [
+    "*/mdescriptor/descriptors/model_backed/_vendor/*",
+]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 target-version = "py310"

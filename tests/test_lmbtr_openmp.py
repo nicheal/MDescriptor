@@ -135,7 +135,8 @@ def _median_runtime(
     return float(np.median(elapsed))
 
 
-def test_lmbtr_openmp_small_batch_speed(
+@pytest.mark.timing
+def test_lmbtr_openmp_small_batch_timing_smoke(
     lmbtr_batch: StructureBatch,
     record_property,
 ) -> None:

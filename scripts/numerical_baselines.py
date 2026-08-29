@@ -224,14 +224,16 @@ BASELINES: Final[dict[str, dict[str, str]]] = {
         "provider": "deepmd-kit",
         "package": "deepmd-kit",
         "version": "3.2.0",
-        "test": "scripts/deepmd_reference.py",
+        "test": "tests/external_reference/test_deepmd.py",
+        "marker": "deepmd",
     },
     "DPA4C": {
         "kind": "external_static",
         "provider": "deepmd-kit",
         "package": "deepmd-kit",
         "version": "3.2.0",
-        "test": "scripts/deepmd_reference.py",
+        "test": "tests/external_reference/test_deepmd.py",
+        "marker": "deepmd",
     },
 }
 

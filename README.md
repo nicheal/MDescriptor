@@ -257,7 +257,18 @@ vendor adapters. The default inference graphs are lowered into the private
 ```bash
 .venv/bin/python -m pip install -e . --no-build-isolation
 .venv/bin/python -m pytest --import-mode=importlib tests -q
+.venv/bin/python -m pytest --cov=mdescriptor --cov-report=term-missing tests
+
+.venv/bin/cmake -S cpp/tests -B build/cpp-tests -DCMAKE_BUILD_TYPE=Release
+.venv/bin/cmake --build build/cpp-tests --config Release
+.venv/bin/ctest --test-dir build/cpp-tests -C Release --output-on-failure
 ```
+
+Coverage excludes the isolated vendored DPA implementation and enforces 75%
+branch coverage for project-owned Python code.  Tests marked `timing` record
+repeatable timing samples but intentionally do not impose a runner-dependent
+speedup threshold; controlled performance reports are produced by
+`scripts/run_benchmark.py`.
 
 The extension is private (`mdescriptor._native`). C++ shared math and batch
 helpers live in named headers under `cpp/include/mdescriptor/detail/`.

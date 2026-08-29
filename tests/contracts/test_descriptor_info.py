@@ -197,6 +197,7 @@ def test_ace_degree_mapping_round_trips_configuration():
 
 
 @pytest.mark.parametrize("name", ["NEP", "DPA4", "DPA4C"])
+@pytest.mark.model
 def test_model_backed_metadata_declares_a_rebuildable_bundled_default(name):
     metadata = describe_descriptor(name)
     model = metadata["parameters"]["model"].get("default")

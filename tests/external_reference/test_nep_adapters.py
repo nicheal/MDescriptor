@@ -10,7 +10,7 @@ from mdescriptor import StructureBatch
 from mdescriptor.descriptors import NEP
 from mdescriptor.models import NEP_MODEL
 
-pytestmark = [pytest.mark.reference, pytest.mark.nepadapters]
+pytestmark = [pytest.mark.reference, pytest.mark.nepadapters, pytest.mark.model]
 
 
 def _water() -> Atoms:

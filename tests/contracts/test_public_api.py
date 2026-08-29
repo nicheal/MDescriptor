@@ -181,6 +181,7 @@ def test_model_resolver_is_local_and_checksum_aware(tmp_path):
         ModelResolver().resolve(ModelResource.explicit(path, expected_sha256="0" * 64))
 
 
+@pytest.mark.model
 def test_default_model_backed_descriptor_uses_the_resource_resolver():
     descriptor = NEP()
     try:
@@ -446,6 +447,7 @@ def test_common_options_are_applied_or_rejected_at_the_core_boundary():
         threaded.close()
 
 
+@pytest.mark.model
 def test_cooperative_compute_reports_structure_progress():
     for descriptor in (
         ACE(species=[1, 8]),

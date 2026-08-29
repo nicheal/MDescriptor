@@ -20,7 +20,7 @@ from mdescriptor import StructureBatch
 from mdescriptor.descriptors import DPA4, DPA4C
 from mdescriptor.models import DPA4_MODEL, DPA4C_MODEL
 
-pytestmark = [pytest.mark.reference, pytest.mark.deepmd]
+pytestmark = [pytest.mark.reference, pytest.mark.deepmd, pytest.mark.model]
 ROOT = Path(__file__).resolve().parents[2]
 
 

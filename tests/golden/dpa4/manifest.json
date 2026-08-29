@@ -51,7 +51,8 @@
     "provider": "deepmd-kit",
     "package": "deepmd-kit",
     "version": "3.2.0",
-    "test": "scripts/deepmd_reference.py",
+    "test": "tests/external_reference/test_deepmd.py",
+    "marker": "deepmd",
     "committed_golden": "external_static",
     "expected_output_sha256": "0c9642a756e9a9c337aa1264ec1a293851bcbd4d0b1e52209151d960c4ea2a96"
   },

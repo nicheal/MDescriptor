@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
 from scripts.numerical_baselines import BASELINES
 
 from tests._golden import GOLDEN_ROOT, assert_descriptor_external_static_golden
+
+pytestmark = pytest.mark.model
 
 
 def test_all_promoted_external_static_goldens() -> None:

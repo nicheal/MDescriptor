@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
+import pytest
 from ase import Atoms
 
 from tests._public import CoulombMatrix, ExecutionOptions, StructureBatch
@@ -59,7 +60,8 @@ def _median_runtime(descriptor: CoulombMatrix, batch: StructureBatch) -> float:
     return float(np.median(elapsed))
 
 
-def test_coulombmatrix_openmp_small_batch_speed() -> None:
+@pytest.mark.timing
+def test_coulombmatrix_openmp_small_batch_timing_smoke() -> None:
     batch = StructureBatch.from_ase(
         [_system(4000 + index, 96) for index in range(16)],
         ids=[f"coulomb-speed-{index}" for index in range(16)],

@@ -8,6 +8,7 @@ still reporting a single permutation-symmetry result for each descriptor.
 """
 
 import numpy as np
+import pytest
 from ase import Atoms
 
 from tests._public import StructureBatch, builtin_registry
@@ -190,6 +191,7 @@ def _print_report(report: list[dict[str, object]]) -> None:
         )
 
 
+@pytest.mark.model
 def test_all_descriptors_on_single_water_symmetry_report():
     systems, permutation = _water_systems()
     batch = StructureBatch.from_ase(systems)

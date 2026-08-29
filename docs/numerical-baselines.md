@@ -40,8 +40,8 @@ metadata 与非周期契约；它们不再被冒充为 upstream 数值来源。
 | `MTP` | external static | MLIP-4 | `MLIP-4` (pinned source archive) | — |
 | `C00PSMLFF` | external static | licensed external MLFF | `local-only input` (user-supplied) | — |
 | `NEP` | external static | nep-adapters | `nep-adapters` (1.0.2) | `nepadapters` |
-| `DPA4` | external static | deepmd-kit | `deepmd-kit` (3.2.0) | — |
-| `DPA4C` | external static | deepmd-kit | `deepmd-kit` (3.2.0) | — |
+| `DPA4` | external static | deepmd-kit | `deepmd-kit` (3.2.0) | `deepmd` |
+| `DPA4C` | external static | deepmd-kit | `deepmd-kit` (3.2.0) | `deepmd` |
 
 The NPZ comparisons check values and all result identity fields
 (`samples`, labels, level, structure ids and row offsets).  Contract,
