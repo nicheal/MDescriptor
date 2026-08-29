@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeAlias
@@ -179,6 +179,81 @@ class StructureBatch:
             np.stack(frame_charge_spin) if have_charge_spin else None,
         )
 
+    @classmethod
+    def from_frames(cls, frames: Iterable[Any] | Any) -> StructureBatch:
+        """Pack GUI-style frame records into one validated batch.
+
+        A frame may be a mapping or an object exposing ``numbers``,
+        ``positions``, ``cell``, ``pbc`` and ``id``.  ``spins`` and
+        ``charge_spin`` are optional and follow the corresponding batch
+        fields.  The cumulative ``offsets`` sentinel array is generated here
+        so callers do not need to flatten structures themselves.
+        """
+
+        if isinstance(frames, Mapping) or not isinstance(frames, Iterable):
+            frame_values = [frames]
+        else:
+            frame_values = list(frames)
+
+        number_parts: list[np.ndarray] = []
+        position_parts: list[np.ndarray] = []
+        cell_parts: list[np.ndarray] = []
+        pbc_parts: list[np.ndarray] = []
+        spin_parts: list[np.ndarray] = []
+        frame_charge_spin: list[np.ndarray] = []
+        have_spins = False
+        have_charge_spin = False
+        offsets = [0]
+        generated_ids: list[Any] = []
+
+        for index, frame in enumerate(frame_values):
+            numbers = np.asarray(_frame_field(frame, "numbers", index=index))
+            try:
+                atom_count = len(numbers)
+            except TypeError as exc:
+                raise ValueError(f"frame {index} numbers must be one-dimensional") from exc
+            number_parts.append(numbers)
+            position_parts.append(
+                np.asarray(_frame_field(frame, "positions", index=index))
+            )
+            cell_parts.append(
+                np.asarray(_frame_field(frame, "cell", aliases=("cells",), index=index))
+            )
+            pbc_parts.append(np.asarray(_frame_field(frame, "pbc", index=index)))
+            generated_ids.append(_frame_field(frame, "id", index=index))
+
+            spin = _frame_field(frame, "spins", aliases=("spin",), default=None)
+            if spin is not None:
+                have_spins = True
+                spin_parts.append(np.asarray(spin))
+            else:
+                spin_parts.append(np.zeros((atom_count, 3), dtype=np.float64))
+
+            charge_spin = _frame_field(frame, "charge_spin", default=None)
+            if charge_spin is not None:
+                have_charge_spin = True
+                frame_charge_spin.append(np.asarray(charge_spin))
+            else:
+                frame_charge_spin.append(np.zeros(2, dtype=np.float64))
+            offsets.append(offsets[-1] + atom_count)
+
+        return cls(
+            np.concatenate(number_parts) if number_parts else np.empty(0),
+            np.concatenate(position_parts, axis=0)
+            if position_parts
+            else np.empty((0, 3), dtype=np.float64),
+            np.stack(cell_parts)
+            if cell_parts
+            else np.empty((0, 3, 3), dtype=np.float64),
+            np.stack(pbc_parts)
+            if pbc_parts
+            else np.empty((0, 3), dtype=np.int32),
+            np.asarray(offsets),
+            tuple(generated_ids),
+            np.concatenate(spin_parts, axis=0) if have_spins else None,
+            np.stack(frame_charge_spin) if have_charge_spin else None,
+        )
+
 
 batch_from_ase = StructureBatch.from_ase
 
@@ -202,6 +277,33 @@ def _array_snapshot(value: Any, dtype: Any, name: str) -> np.ndarray:
     if not np.isfinite(array).all():
         raise ValueError(f"{name} must be finite")
     return array
+
+
+def _frame_field(
+    frame: Any,
+    name: str,
+    *,
+    index: int | None = None,
+    aliases: Sequence[str] = (),
+    default: Any = ...,
+) -> Any:
+    """Read one required or optional field from a frame record."""
+
+    names = (name, *aliases)
+    if isinstance(frame, Mapping):
+        for candidate in names:
+            if candidate in frame:
+                return frame[candidate]
+    else:
+        for candidate in names:
+            try:
+                return getattr(frame, candidate)
+            except AttributeError:
+                continue
+    if default is not ...:
+        return default
+    location = "" if index is None else f" {index}"
+    raise ValueError(f"frame{location} is missing required field {name!r}")
 
 
 def _integer_snapshot(

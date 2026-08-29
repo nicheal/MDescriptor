@@ -178,6 +178,12 @@ def main(argv: list[str] | None = None) -> int:
         target = package_file.parent.parent
     if not package_file.is_relative_to(target):
         raise SystemExit(f"wheel verification imported {package_file}, not {target}")
+    baseline = mdescriptor.gui_baseline()
+    if not baseline.startswith("# GUI adaptation baseline"):
+        raise SystemExit("GUI adaptation baseline resource is missing or invalid")
+    runtime = mdescriptor.get_runtime_info()
+    if runtime.get("baseline_version") != mdescriptor.GUI_BASELINE_VERSION:
+        raise SystemExit("GUI adaptation baseline version is missing or inconsistent")
     _verify_vendored_openblas(mdescriptor)
     names = mdescriptor.list_descriptors()
     if len(names) != 28 or len(set(names)) != 28:

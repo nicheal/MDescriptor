@@ -6,7 +6,7 @@ import inspect
 from collections.abc import Mapping
 from copy import copy
 from os import PathLike, fspath
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from ..registry.info import LEGACY_PARAMETER_ALIASES, validate_descriptor_parameters
 from .control import ComputeControl, _unwrap_native_control
@@ -14,6 +14,7 @@ from .descriptor import Descriptor, _input_error_path
 from .errors import (
     DescriptorConfigError,
     DescriptorInputError,
+    UnsupportedPeriodicityError,
 )
 from .input import StructureBatch
 from .options import (
@@ -151,11 +152,12 @@ def _input_capability_error(
     code: str,
     value: Any,
     supported: Any = None,
+    error_type: type[DescriptorInputError] = DescriptorInputError,
 ) -> DescriptorInputError:
     details: dict[str, Any] = {"provided": value}
     if supported is not None:
         details["supported"] = list(supported)
-    return DescriptorInputError(
+    return error_type(
         message,
         code=code,
         path=["input", field],
@@ -167,7 +169,7 @@ def _unsupported_periodicity(
     descriptor: str,
     provided: str,
     supported: tuple[str, ...],
-) -> DescriptorInputError:
+) -> UnsupportedPeriodicityError:
     if supported == ("fully_periodic",):
         message = f"{descriptor} requires fully_periodic input"
     else:
@@ -176,13 +178,17 @@ def _unsupported_periodicity(
             f"{descriptor} does not support periodicity {provided!r}; "
             f"supported: {supported_text}"
         )
-    return _input_capability_error(
-        descriptor,
-        field="periodicity",
-        message=message,
-        code="unsupported_periodicity",
-        value=provided,
-        supported=supported,
+    return cast(
+        UnsupportedPeriodicityError,
+        _input_capability_error(
+            descriptor,
+            field="periodicity",
+            message=message,
+            code="unsupported_periodicity",
+            value=provided,
+            supported=supported,
+            error_type=UnsupportedPeriodicityError,
+        ),
     )
 
 

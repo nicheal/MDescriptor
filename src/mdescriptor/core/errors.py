@@ -49,6 +49,13 @@ class DescriptorInputError(MDescriptorError, ValueError):
 
     default_code = "invalid_input"
 
+
+class UnsupportedPeriodicityError(DescriptorInputError):
+    """The input periodicity is not supported by the selected descriptor."""
+
+    default_code = "unsupported_periodicity"
+
+
 class ModelLoadError(MDescriptorError, RuntimeError):
     """A model resource could not be resolved, validated, or loaded."""
 

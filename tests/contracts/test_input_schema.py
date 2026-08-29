@@ -46,3 +46,30 @@ def test_structure_batch_rejects_fractional_integer_fields(field, value):
     kwargs[field] = value
     with pytest.raises(ValueError, match="integer"):
         StructureBatch(**kwargs)
+
+
+def test_structure_batch_from_frames_packs_gui_records():
+    frames = (
+        {
+            "numbers": [1, 8],
+            "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            "cell": np.eye(3) * 10.0,
+            "pbc": [1, 1, 1],
+            "id": "periodic",
+        },
+        {
+            "numbers": [6],
+            "positions": [[2.0, 0.0, 0.0]],
+            "cell": np.zeros((3, 3)),
+            "pbc": [0, 0, 0],
+            "id": "isolated",
+        },
+    )
+
+    batch = StructureBatch.from_frames(frame for frame in frames)
+
+    np.testing.assert_array_equal(batch.numbers, [1, 8, 6])
+    np.testing.assert_array_equal(batch.offsets, [0, 2, 3])
+    np.testing.assert_array_equal(batch.cells[1], np.zeros((3, 3)))
+    np.testing.assert_array_equal(batch.pbc, [[1, 1, 1], [0, 0, 0]])
+    assert batch.ids == ("periodic", "isolated")

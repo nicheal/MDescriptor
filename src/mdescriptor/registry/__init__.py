@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, overload
 
 from ..core.descriptor import Descriptor
 from ..core.errors import DescriptorConfigError
@@ -18,8 +18,54 @@ from .registry import DescriptorRegistry
 from .spec import CAPABILITIES, AssetPolicy, DescriptorSpec
 
 
-def list_descriptors(*, registry: DescriptorRegistry = builtin_registry) -> tuple[str, ...]:
-    return registry.names()
+@overload
+def list_descriptors(
+    *,
+    registry: DescriptorRegistry = builtin_registry,
+    detailed: Literal[False] = False,
+) -> tuple[str, ...]: ...
+
+
+@overload
+def list_descriptors(
+    *,
+    registry: DescriptorRegistry = builtin_registry,
+    detailed: Literal[True],
+) -> list[dict[str, Any]]: ...
+
+
+def list_descriptors(
+    *,
+    registry: DescriptorRegistry = builtin_registry,
+    detailed: bool = False,
+) -> tuple[str, ...] | list[dict[str, Any]]:
+    """List registered names or GUI-ready summary records.
+
+    The default return value remains the historical immutable tuple.  The
+    detailed form gathers the stable fields needed for a descriptor list page
+    in one public call; full per-descriptor metadata remains available through
+    :func:`describe_descriptor`.
+    """
+
+    names = registry.names()
+    if not detailed:
+        return names
+    records: list[dict[str, Any]] = []
+    for name in names:
+        metadata = describe_descriptor(name, registry=registry)
+        records.append(
+            {
+                field: metadata[field]
+                for field in (
+                    "name",
+                    "descriptor_version",
+                    "display_name",
+                    "category",
+                    "level",
+                )
+            }
+        )
+    return records
 
 
 def describe_descriptor(

@@ -22,6 +22,7 @@ from mdescriptor.core import (
     ModelLoadError,
     OutputOptions,
     StructureBatch,
+    UnsupportedPeriodicityError,
 )
 from mdescriptor.descriptors import ACE, MTP, NEP, SOAP, AtomicComposition, CoulombMatrix
 from mdescriptor.models import NEP_MODEL, ModelResolver, ModelResource
@@ -45,6 +46,23 @@ def test_root_exposes_contracts_and_not_historical_algorithm_aliases():
     assert "DescriptorInfo" not in mdescriptor.__all__
     assert "parse_descriptor_info" not in mdescriptor.__all__
     assert "SOAP" in mdescriptor.list_descriptors()
+
+
+def test_detailed_descriptor_listing_is_a_single_gui_discovery_call():
+    names = mdescriptor.list_descriptors()
+    detailed = mdescriptor.list_descriptors(detailed=True)
+
+    assert isinstance(names, tuple)
+    assert isinstance(detailed, list)
+    assert len(detailed) == len(names) == 28
+    assert [record["name"] for record in detailed] == list(names)
+    assert set(detailed[0]) == {
+        "name",
+        "descriptor_version",
+        "display_name",
+        "category",
+        "level",
+    }
 
 
 def test_root_import_does_not_load_torch_or_model_modules():
@@ -367,6 +385,7 @@ def test_descriptor_rejects_unsupported_periodicity_before_kernel_execution():
     try:
         with pytest.raises(DescriptorInputError) as caught:
             descriptor.compute(isolated)
+        assert isinstance(caught.value, UnsupportedPeriodicityError)
         assert caught.value.code == "unsupported_periodicity"
         assert str(caught.value) == "SineMatrix requires fully_periodic input"
         assert caught.value.to_dict()["path"] == ["input", "periodicity"]

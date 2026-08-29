@@ -37,11 +37,12 @@ path). There are no network downloads or implicit model discovery.
 
 The base package requires Python 3.10+, NumPy and `array-api-compat`. ASE is
 optional and is only needed for `StructureBatch.from_ase` or direct ASE input.
+GUI/native frame records can use `StructureBatch.from_frames` without ASE.
 Sparse output is provided as SciPy CSR by the optional `sparse` extra.
 
 基础包需要 Python 3.10+、NumPy 和 `array-api-compat`。ASE 只在使用
 `StructureBatch.from_ase` 或直接传入 ASE 对象时需要；稀疏输出由可选的
-`sparse` extra 提供。
+`sparse` extra 提供。GUI/原生帧记录可使用 `StructureBatch.from_frames`，不依赖 ASE。
 
 ```bash
 python -m pip install .
@@ -54,6 +55,11 @@ are parsed by the bundled restricted NumPy reader without importing or
 installing Torch; the supported default graphs run through the C++17/OpenMP
 backend and specialised configurations retain the NumPy fallback. No network
 model download is performed.
+
+All built-in descriptors currently advertise and execute on CPU only. CUDA/GPU
+execution is not available in this release; `execution.device="cuda"` is
+rejected rather than silently falling back. Adding GPU support requires a
+device-specific kernel and a corresponding wheel/runtime build.
 
 可选的外部数值对照固定使用 `deepmd-kit==3.2.0`：
 
@@ -112,7 +118,9 @@ batch = StructureBatch(
 and validates integer fields before narrowing, finite positions/cells,
 nonsingular cells, positive atomic numbers, monotonic offsets and fully
 periodic `pbc == (1, 1, 1)`. ASE conversion is available through
-`StructureBatch.from_ase(...)`.
+`StructureBatch.from_ase(...)`; GUI-style mappings or objects exposing
+`numbers`, `positions`, `cell`, `pbc` and `id` can use
+`StructureBatch.from_frames(...)`.
 
 ## Descriptor API / 描述符 API
 
@@ -210,8 +218,10 @@ import mdescriptor
 from mdescriptor.descriptors import SOAP
 
 print(mdescriptor.list_descriptors())
+summaries = mdescriptor.list_descriptors(detailed=True)
 metadata = mdescriptor.describe_descriptor("SOAP")
 runtime = mdescriptor.get_runtime_info()
+baseline = mdescriptor.gui_baseline()
 soap = SOAP(species=[1, 8], r_cut=4.5, n_max=2, l_max=2)
 rebuilt = mdescriptor.create_descriptor(soap.configuration)
 
@@ -224,8 +234,11 @@ potentials), and `REQUIRED` (NEP/DPA4/DPA4C). The root package exposes stable
 contracts, registry functions and errors only; algorithm implementations are
 not re-exported from the root. `describe_descriptor(name)` reads static,
 JSON-safe GUI metadata from the registry without constructing a descriptor or
-resolving a model. `get_runtime_info()` reports the package and contract
-schema versions, including `result_schema_version`.
+resolving a model. `list_descriptors(detailed=True)` returns the name, version,
+display name, category and level for every descriptor in one call.
+`gui_baseline()` returns the packaged GUI contract document, and
+`get_runtime_info()` reports its `baseline_version` alongside the package and
+schema versions.
 
 On Windows, import `mdescriptor` during single-threaded startup, before an
 embedding host starts background stdin/stdio readers. The package preloads the

@@ -186,6 +186,8 @@ install(FILES "${SCIPY_OPENBLAS_METADATA}"
 install(FILES "${SCIPY_OPENBLAS_LICENSE}"
     DESTINATION mdescriptor/licenses
     RENAME scipy-openblas32-LICENSE.txt)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/gui-adaptation-baseline.md"
+    DESTINATION mdescriptor/docs)
 
 install(
     TARGETS _native

@@ -34,6 +34,14 @@ def test_runtime_info_exposes_independent_contract_versions():
     json.dumps(runtime, allow_nan=False)
 
 
+def test_gui_baseline_is_available_as_a_versioned_runtime_resource():
+    baseline = mdescriptor.gui_baseline()
+    runtime = mdescriptor.get_runtime_info()
+
+    assert baseline.startswith("# GUI adaptation baseline")
+    assert runtime["baseline_version"] == mdescriptor.GUI_BASELINE_VERSION
+
+
 def test_every_builtin_has_json_safe_static_metadata_matching_public_signature():
     expected_fields = {
         "schema_version",
