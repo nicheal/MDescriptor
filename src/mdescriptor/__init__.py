@@ -42,7 +42,7 @@ from .registry import (  # noqa: E402  # preload native binary before registry m
 )
 
 API_VERSION = 1
-GUI_BASELINE_VERSION = "1"
+GUI_BASELINE_VERSION = "2"
 
 
 def gui_baseline() -> str:

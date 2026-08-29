@@ -5,7 +5,7 @@ MDescriptor descriptors. It describes the public seams; private kernel
 classes, native symbols, and model internals are not GUI interfaces.
 
 The package exposes this document through `mdescriptor.gui_baseline()` and
-reports `baseline_version: "1"` from `mdescriptor.get_runtime_info()`.
+reports `baseline_version: "2"` from `mdescriptor.get_runtime_info()`.
 
 ## Discovery and versions
 
@@ -16,7 +16,7 @@ reports `baseline_version: "1"` from `mdescriptor.get_runtime_info()`.
 `category`, `level`, `backend`, `execution_engine`, `capabilities`,
 `parameters`, `execution`, `input`, `output`, and `asset`.
 
-`schema_version` is the metadata-envelope version and is currently `2`.
+`schema_version` is the metadata-envelope version and is currently `3`.
 `descriptor_version` identifies the individual descriptor contract and is
 currently the string `"1"` for the built-ins. A GUI should check both before
 persisting or reconstructing metadata-driven configurations.
@@ -38,6 +38,16 @@ Parameter schemas use JSON-safe values. Supported schema types are `integer`,
 `object`; object schemas may contain nested `properties`, and array schemas
 may contain `items`. The `parameters` object is the canonical constructor
 surface; implementation-only options must not be synthesized by the GUI.
+
+The key in `parameters` is the canonical constructor/configuration name and
+must be preserved when a configuration is serialized. Each built-in parameter
+also provides a GUI-facing `display_name` and a `description`. The GUI should
+use `display_name` as the field label and `description` as the tooltip, while
+continuing to submit values under the mapping key. These presentation fields
+are deliberately independent of names such as `r_cut`, `cutoff`, and `rcut`,
+so descriptors can share a label without changing their numerical interfaces.
+For nested object properties, the same fields may be present on the nested
+schema.
 
 The current built-ins advertise CPU execution (`execution.devices == ["cpu"]`)
 and may advertise `num_threads` and `cooperative_cancel` independently.

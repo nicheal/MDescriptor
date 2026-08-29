@@ -11,7 +11,7 @@ from typing import Any
 from ..core.errors import DescriptorConfigError
 from ..core.json_value import freeze_json, thaw_json
 
-DESCRIPTOR_INFO_SCHEMA_VERSION = 2
+DESCRIPTOR_INFO_SCHEMA_VERSION = 3
 
 _SCHEMA_TYPES = frozenset(
     {
@@ -37,6 +37,7 @@ _SCHEMA_FIELDS = frozenset(
         "exclusiveMaximum",
         "enum",
         "unit",
+        "display_name",
         "description",
         "items",
         "properties",
@@ -301,11 +302,17 @@ def _validate_schema(value: Mapping[str, Any], path: list[str]) -> None:
                 code="invalid_descriptor_info",
                 path=[*path, field_name],
             )
-    for field_name in ("unit", "description"):
+    for field_name in ("unit", "display_name", "description"):
         field_value = value.get(field_name)
         if field_value is not None and not isinstance(field_value, str):
             raise DescriptorConfigError(
                 f"descriptor schema {field_name} must be a string",
+                code="invalid_descriptor_info",
+                path=[*path, field_name],
+            )
+        if field_name == "display_name" and field_value is not None and not field_value.strip():
+            raise DescriptorConfigError(
+                "descriptor schema display_name must be a non-empty string",
                 code="invalid_descriptor_info",
                 path=[*path, field_name],
             )

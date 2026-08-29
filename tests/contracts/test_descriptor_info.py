@@ -29,7 +29,7 @@ def test_runtime_info_exposes_independent_contract_versions():
     assert runtime["version"] == mdescriptor.__version__
     assert runtime["api_version"] == mdescriptor.API_VERSION
     assert runtime["configuration_schema_version"] == 1
-    assert runtime["descriptor_info_schema_version"] == 2
+    assert runtime["descriptor_info_schema_version"] == 3
     assert runtime["result_schema_version"] == mdescriptor.RESULT_SCHEMA_VERSION
     json.dumps(runtime, allow_nan=False)
 
@@ -77,10 +77,33 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
             == {"isolated", "fully_periodic"}
         )
         assert all("type" in schema for schema in metadata["parameters"].values())
+        assert all(
+            isinstance(schema.get("display_name"), str)
+            and schema["display_name"].strip()
+            and isinstance(schema.get("description"), str)
+            and schema["description"].strip()
+            for schema in metadata["parameters"].values()
+        ), spec.name
         assert set(metadata["parameters"]) <= set(
             inspect.signature(spec.load_class()).parameters
         )
         json.dumps(metadata, allow_nan=False)
+
+
+def test_parameter_presentation_names_do_not_change_configuration_keys():
+    soap = describe_descriptor("SOAP")
+    neighbor_list = describe_descriptor("NeighborList")
+    so3 = describe_descriptor("SO3")
+
+    assert set(soap["parameters"]) >= {"r_cut", "n_max"}
+    assert set(neighbor_list["parameters"]) >= {"cutoff"}
+    assert set(so3["parameters"]) >= {"rcut"}
+    assert soap["parameters"]["r_cut"]["display_name"] == "Cutoff radius"
+    assert neighbor_list["parameters"]["cutoff"]["display_name"] == "Cutoff radius"
+    assert so3["parameters"]["rcut"]["display_name"] == "Cutoff radius"
+    assert "r_cut" not in soap["parameters"]["r_cut"]["display_name"]
+    assert "cutoff" not in neighbor_list["parameters"]["cutoff"]["display_name"]
+    assert "rcut" not in so3["parameters"]["rcut"]["display_name"]
 
 
 def test_dpa4c_static_default_matches_the_runtime_default():
@@ -256,6 +279,18 @@ def test_descriptor_info_parses_full_metadata_and_rejects_unknown_versions():
         DescriptorInfo.from_dict(unsupported)
     assert caught.value.code == "unsupported_descriptor_info_schema"
     assert caught.value.to_dict()["path"] == ["schema_version"]
+
+
+def test_descriptor_parameter_display_name_must_be_non_empty_string():
+    with pytest.raises(DescriptorConfigError) as caught:
+        DescriptorInfo(
+            "Example",
+            "Example descriptor.",
+            "local",
+            {"value": {"type": "number", "display_name": "   "}},
+        )
+    assert caught.value.code == "invalid_descriptor_info"
+    assert caught.value.to_dict()["path"] == ["parameters", "value", "display_name"]
 
 
 def test_descriptor_info_does_not_leak_registry_only_optional_fields():

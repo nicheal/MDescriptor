@@ -40,7 +40,7 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 ## Static descriptor metadata
 
 Each built-in entry carries `DescriptorInfo` schema version
-`2`.  Query it without importing an algorithm
+`3`.  Query it without importing an algorithm
 implementation or resolving a model:
 
 ```python
@@ -53,6 +53,9 @@ The returned object is JSON-safe and contains the canonical parameter schema,
 execution devices, input periodicity, output representation, and model asset
 policy.  Historical Python constructor aliases remain available to direct
 callers but are intentionally omitted from the canonical GUI parameter list.
+Each built-in parameter schema also exposes a GUI-facing ``display_name`` and
+``description``.  The mapping key remains the canonical constructor name and
+must be used when serializing values.
 
 The canonical algorithm imports are:
 

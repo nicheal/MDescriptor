@@ -240,6 +240,19 @@ display name, category and level for every descriptor in one call.
 `get_runtime_info()` reports its `baseline_version` alongside the package and
 schema versions.
 
+The keys in `metadata["parameters"]` are the unchanged constructor and
+configuration names. Each parameter schema also contains a GUI-facing
+`display_name` and `description`; use the former as the field label and the
+latter as the tooltip, while submitting the value under the mapping key:
+
+```python
+metadata = mdescriptor.describe_descriptor("SOAP")
+for parameter_name, schema in metadata["parameters"].items():
+    label = schema["display_name"]
+    tooltip = schema["description"]
+    # Render `label` and `tooltip`, then serialize the value as `parameter_name`.
+```
+
 On Windows, import `mdescriptor` during single-threaded startup, before an
 embedding host starts background stdin/stdio readers. The package preloads the
 packaged native binary at that point; a host that controls startup explicitly
