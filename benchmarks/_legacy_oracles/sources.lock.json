@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "oracles": {
+    "lbispectrum": {
+      "lammps_archive": ".deps/lammps-stable.tar.gz",
+      "lammps_sha256": "21cbbb7424520958c725d99a20d46c8a6cc2a54a92cca0ff35e5854d7d9b9bff",
+      "pyxtal_ff_distribution": "pyxtal-ff",
+      "pyxtal_ff_version": "0.2.3"
+    },
+    "mtp": {
+      "archive": ".deps/mlip-4-main.zip",
+      "sha256": "f2c2ebcfed52aab45c0a94f3361da543935bc6924a671741b5ac60fab5813d97"
+    },
+    "soapturbo": {
+      "archive": ".deps/soap_turbo-master.zip",
+      "sha256": "89093dd439dad020526668867f69a136fc229d10e36d7e8357e34e4499410bb8"
+    }
+  }
+}
+

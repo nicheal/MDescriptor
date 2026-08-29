@@ -39,12 +39,24 @@
     "mode": "output"
   },
   "reference": {
-    "kind": "project_commit",
-    "source_commit": "HEAD",
-    "wheel": {
-      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
-      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
-    }
+    "adapter": "benchmarks/_legacy_oracles/lbispectrum/run_comparison.py",
+    "adapter_sha256": "139c6268c6250d009dc66c443a33ac88268c13e596cd1d2037cb333567fae43f",
+    "backend": "PyXtal-FF Bispectrum + LAMMPS ML-SNAP compute sna/atom",
+    "configuration": {
+      "diagonal": 3,
+      "profile": "r=1.75, w=1.0 for every element",
+      "rcutfac": 1.0,
+      "rfac0": 0.99363,
+      "rmin0": 0.0,
+      "twojmax": 3
+    },
+    "generator": "benchmarks/_legacy_oracles/lbispectrum/generate_golden.py",
+    "generator_sha256": "4c5add6257da55c7a92c7e95be77cd3732b9e770d44fc11c43065bb190329320",
+    "kind": "external_upstream",
+    "oracle": "LBispectrum",
+    "pyxtal_ff": "pyxtal-ff==0.2.3",
+    "source_archive": ".deps/lammps-stable.tar.gz",
+    "source_sha256": "21cbbb7424520958c725d99a20d46c8a6cc2a54a92cca0ff35e5854d7d9b9bff"
   },
   "result": {
     "feature_count": 8,

@@ -1,8 +1,8 @@
 """Generate two-structure descriptor benchmark snapshots.
 
 This command is deliberately separate from pytest.  It evaluates the current
-checkout, compares it with an explicitly supplied reference wheel (or the
-bundled DPA evaluator), and writes an immutable local benchmark snapshot.
+checkout, compares it with an explicitly supplied reference wheel (or pinned
+DeepMD-kit for DPA4/DPA4C), and writes an immutable local benchmark snapshot.
 The snapshot can later be promoted into ``tests/golden`` by the explicit
 promotion command.
 """
@@ -26,11 +26,9 @@ from descriptor_reference import (
     _batch_json,
     _current_result,
     _digest,
-    _dpa_reference_values,
     _json_safe,
     _parameters,
     _portable,
-    _reference_package_digest,
     _reference_result,
 )
 from mdescriptor import StructureBatch, get_descriptor, list_descriptors
@@ -193,34 +191,26 @@ def _reference_for(
         model = info.get("model")
         if not model:
             raise RuntimeError(f"{name} did not resolve a model resource")
-        try:
-            values = _dpa_reference_values(name, Path(model["path"]), batch, parameters.get("calibrate"))
-            reference_kind = {"kind": "bundled_dpa4desc", "sha256": _reference_package_digest()}
-        except np.linalg.LinAlgError as exc:
-            if batch.structures != 2 or not np.array_equal(batch.pbc[1], [0, 0, 0]):
-                raise
-            # The public DPA adapter supports a non-periodic frame, while the
-            # bundled official evaluator still unconditionally inverts a cell.
-            # Preserve the independently evaluated periodic rows and record the
-            # explicit non-periodic fallback in provenance.
-            periodic_batch = StructureBatch(
-                batch.numbers[: int(batch.offsets[1])],
-                batch.positions[: int(batch.offsets[1])],
-                batch.cells[:1],
-                batch.pbc[:1],
-                np.asarray([0, int(batch.offsets[1])], dtype=np.int64),
-                (batch.ids[0],),
-            )
-            periodic_values = _dpa_reference_values(
-                name, Path(model["path"]), periodic_batch, parameters.get("calibrate")
-            )
-            periodic_rows = int(periodic_batch.offsets[-1])
-            values = np.concatenate((periodic_values, np.asarray(current.values)[periodic_rows:]), axis=0)
-            reference_kind = {
-                "kind": "bundled_dpa4desc_periodic_plus_current_nonperiodic",
-                "sha256": _reference_package_digest(),
-                "nonperiodic_reason": str(exc),
-            }
+        # Keep the DPA golden independent from the project-owned NumPy
+        # evaluator.  DeepMD's API represents an isolated frame with
+        # ``cells=None``; evaluate_batch applies that mapping frame-by-frame
+        # rather than sending the singular all-zero MDescriptor cell.
+        from deepmd_reference import evaluate_batch
+
+        values = evaluate_batch(name, Path(model["path"]), batch)
+        evaluator = ROOT / "scripts" / "deepmd_reference.py"
+        reference_kind = {
+            "kind": "deepmd_kit",
+            "package": "deepmd-kit",
+            "version": "3.2.0",
+            "evaluator": "scripts/deepmd_reference.py",
+            "evaluator_sha256": _digest(evaluator),
+            "model_sha256": model["digest"],
+            "nonperiodic": {
+                "mode": "cells_none",
+                "source": "deepmd-kit.eval_descriptor / graph-native call_graph",
+            },
+        }
         reference = {
             "values": values,
             "samples": np.asarray(current.samples),

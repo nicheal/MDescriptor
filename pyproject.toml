@@ -94,6 +94,7 @@ repair-wheel-command = "delvewheel repair --ignore-existing -w {dest_dir} -v {wh
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-m 'not reference'"
 markers = [
     "model: tests that exercise bundled model-backed descriptors and assets",

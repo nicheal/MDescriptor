@@ -35,9 +35,16 @@
     "mode": "output"
   },
   "reference": {
-    "kind": "bundled_dpa4desc_periodic_plus_current_nonperiodic",
-    "nonperiodic_reason": "Singular matrix",
-    "sha256": "ebdceb60c34c60b5e7987147e57262e5355d82ba8338fb5c20e1930d910ee887"
+    "evaluator": "scripts/deepmd_reference.py",
+    "evaluator_sha256": "d0f3061fe20711a852a95f03f5d1f11187bc5237f5800afcbdaeedf142106cc6",
+    "kind": "deepmd_kit",
+    "model_sha256": "e75a9d5bc1c9b68e4d8aa097d4ab6be690a42d658fc13f030080da6c119f6a23",
+    "nonperiodic": {
+      "mode": "cells_none",
+      "source": "deepmd-kit.eval_descriptor / graph-native call_graph"
+    },
+    "package": "deepmd-kit",
+    "version": "3.2.0"
   },
   "result": {
     "feature_count": 64,
@@ -440,7 +447,7 @@
     ]
   },
   "schema_version": 1,
-  "source_snapshot": "20260826-v0.1.0-dev-17f6a89-r02",
+  "source_snapshot": "20260828-v0.1.0-dev-6abf3b6",
   "tolerance": {
     "atol": 1e-05,
     "rtol": 2e-05

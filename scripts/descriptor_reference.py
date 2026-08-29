@@ -359,7 +359,11 @@ def _dpa_reference_values(
     batch: StructureBatch,
     calibrate: Any,
 ) -> np.ndarray:
-    """Evaluate DPA through the bundled reference evaluator, not its adapter."""
+    """Evaluate DPA through the bundled evaluator for legacy diagnostics.
+
+    Golden generation uses :mod:`scripts.deepmd_reference` instead, so the
+    committed DPA fixtures do not fall back to project-owned output rows.
+    """
 
     _info, checkpoint = load_dpa_checkpoint(
         model_path,
@@ -387,7 +391,7 @@ def _dpa_reference_values(
 
 
 def _reference_package_digest() -> str:
-    """Hash the direct NumPy evaluator used as the DPA wrapper reference."""
+    """Hash the bundled evaluator used by legacy/manual DPA diagnostics."""
 
     package = ROOT / "src" / "mdescriptor" / "descriptors" / "model_backed" / "_vendor" / "dpa4desc"
     checksum = hashlib.sha256()

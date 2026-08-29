@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 from scripts.external_reference import external_c00ps_project_columns, sha256
@@ -15,9 +16,13 @@ def test_golden_fixtures_are_self_contained() -> None:
     assert len(manifests) == 28
     for manifest_path in manifests:
         fixture_dir = manifest_path.parent
-        manifest_text = manifest_path.read_text(encoding="utf-8")
-        manifest = json.loads(manifest_text)
-        assert "benchmarks" not in manifest_text
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # Fixture data stays portable and local; provenance may legitimately
+        # point at the checked-in upstream-oracle adapters under benchmarks/.
+        portable_manifest = {key: value for key, value in manifest.items() if key != "reference"}
+        assert "benchmarks" not in json.dumps(portable_manifest)
+        assert Path(manifest["input"]).parent == Path(".")
+        assert Path(manifest["expected_output"]).parent == Path(".")
         assert (fixture_dir / manifest["input"]).is_file()
         assert (fixture_dir / manifest["expected_output"]).is_file()
         assert manifest["dataset"]["source"] == "promoted-local-dataset"
@@ -52,6 +57,49 @@ def test_ace_and_c00ps_use_external_source_references() -> None:
     assert ace_reference["generator_sha256"] == sha256(ace_generator)
 
     assert "local-only" in c00_reference["distribution_boundary"]
+
+
+def test_dpa_goldens_use_pinned_deepmd_for_nonperiodic_rows() -> None:
+    for name in ("dpa4", "dpa4c"):
+        manifest = json.loads(
+            (GOLDEN_ROOT / name / "manifest.json").read_text(encoding="utf-8")
+        )
+        reference = manifest["reference"]
+        assert reference["kind"] == "deepmd_kit"
+        assert reference["package"] == "deepmd-kit"
+        assert reference["version"] == "3.2.0"
+        model = manifest["configuration"]["parameters"]["model"]
+        assert reference["model_sha256"] == model["expected_sha256"]
+        assert reference["nonperiodic"] == {
+            "mode": "cells_none",
+            "source": "deepmd-kit.eval_descriptor / graph-native call_graph",
+        }
+        evaluator = ROOT / reference["evaluator"]
+        assert evaluator.is_file()
+        assert reference["evaluator_sha256"] == sha256(evaluator)
+
+
+def test_upstream_goldens_use_pinned_independent_oracles() -> None:
+    lock = json.loads(
+        (ROOT / "benchmarks/_legacy_oracles/sources.lock.json").read_text(encoding="utf-8")
+    )["oracles"]
+    expected = {
+        "soapturbo": ("soapturbo", "archive", "sha256"),
+        "lbispectrum": ("lbispectrum", "lammps_archive", "lammps_sha256"),
+        "mtp": ("mtp", "archive", "sha256"),
+    }
+    for name, (lock_name, archive_key, digest_key) in expected.items():
+        manifest = json.loads(
+            (GOLDEN_ROOT / name / "manifest.json").read_text(encoding="utf-8")
+        )
+        reference = manifest["reference"]
+        assert reference["kind"] == "external_upstream"
+        assert reference["source_archive"] == lock[lock_name][archive_key]
+        assert reference["source_sha256"] == lock[lock_name][digest_key]
+        for field in ("adapter", "generator"):
+            path = ROOT / reference[field]
+            assert path.is_file()
+            assert reference[f"{field}_sha256"] == sha256(path)
 
 
 def test_external_c00ps_mapping_follows_source_loop_order() -> None:

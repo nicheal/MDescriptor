@@ -20,7 +20,8 @@ src/mdescriptor/descriptors/
 src/mdescriptor/models/assets/ packaged, hash-verified model resources
 tests/golden/              descriptor-owned, benchmark-independent accuracy fixtures
 scripts/benchmarking/      controlled local benchmark runners
-benchmarks/                local-only benchmark snapshots (ignored by Git)
+benchmarks/                local benchmark snapshots (ignored except for tracked oracles)
+benchmarks/_legacy_oracles/ pinned independent upstream oracle adapters
 ```
 
 `standalone` descriptors never require a model file. `model_backed` descriptors
@@ -52,6 +53,18 @@ are parsed by the bundled restricted NumPy reader without importing or
 installing Torch; the supported default graphs run through the C++17/OpenMP
 backend and specialised configurations retain the NumPy fallback. No network
 model download is performed.
+
+可选的外部数值对照固定使用 `deepmd-kit==3.2.0`：
+
+```bash
+python -m pip install ".[reference-deepmd]"
+python -m pytest -m deepmd tests/external_reference/test_deepmd.py
+```
+
+该对照同时覆盖周期和非周期输入；非周期帧按 DeepMD 的 `cells=None` 语义传入。
+`tests/golden/dpa4*` 的 expected output（包括非周期行）也由该外部 evaluator 生成，
+manifest 记录了 evaluator 脚本、模型 hash 和 `deepmd-kit` 版本；运行时仍只加载已
+提交的 NPZ，不要求安装 DeepMD。
 
 性能说明：DPA4 native 路径现在使用固定大小分块的 SGEMM、可复用的计算工作区，
 并只为每条边计算一次 attention logit；DPA4C 的类型对 MLP 采用每个 calculator
@@ -229,7 +242,7 @@ For GUI configuration JSON, a model parameter may be an explicit path string
 or the tagged object returned by `ModelResource.to_dict()`; the latter is used
 for named/checksummed resources.
 
-The DPA4/DPA4C checkpoint readers and NumPy reference path remain isolated
+The DPA4/DPA4C checkpoint readers and NumPy fallback path remain isolated
 vendor adapters. The default inference graphs are lowered into the private
 `mdescriptor._native` C++17/OpenMP extension.
 

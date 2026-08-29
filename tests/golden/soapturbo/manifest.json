@@ -62,12 +62,15 @@
     "mode": "output"
   },
   "reference": {
-    "kind": "project_commit",
-    "source_commit": "HEAD",
-    "wheel": {
-      "name": "mdescriptor-0.1.0.dev0-cp312-cp312-linux_x86_64.whl",
-      "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
-    }
+    "adapter": "benchmarks/_legacy_oracles/soapturbo/soap_turbo_reference.f90",
+    "adapter_sha256": "874b1f62f2f76dc76db6db4384ae2ef54402d51435a11030133d736110299d5a",
+    "backend": "soap_turbo-master Fortran get_soap",
+    "generator": "benchmarks/_legacy_oracles/soapturbo/generate_golden.py",
+    "generator_sha256": "dd7c33f36ce25c3eb67b23414c3eaccb143f246760c2ac1f4179e97b43aae4fe",
+    "kind": "external_upstream",
+    "oracle": "SOAPTurbo",
+    "source_archive": ".deps/soap_turbo-master.zip",
+    "source_sha256": "89093dd439dad020526668867f69a136fc229d10e36d7e8357e34e4499410bb8"
   },
   "result": {
     "feature_count": 315,
