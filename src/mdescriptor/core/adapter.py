@@ -209,6 +209,60 @@ def _schema_value(value: Any) -> Any:
     return value
 
 
+def _validate_direct_parameter_type(
+    value: Any, schema: Mapping[str, Any], path: list[str]
+) -> None:
+    """Validate only types that Python kernels otherwise coerce silently.
+
+    Direct constructors retain a few historical, richer Python forms that are
+    intentionally represented by a simpler JSON schema (for example ACSF
+    parameter arrays).  Kernel validation remains responsible for those forms
+    and for semantic ranges, while this guard protects integer, boolean, and
+    numeric options from lossy conversion before configuration is snapshotted.
+    """
+
+    schema_type = schema.get("type")
+    if schema_type == "integer":
+        valid = (isinstance(value, int) and not isinstance(value, bool)) or (
+            isinstance(value, float) and value.is_integer()
+        )
+    elif schema_type == "number":
+        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif schema_type == "boolean":
+        valid = isinstance(value, bool)
+    elif schema_type == "string":
+        valid = isinstance(value, str)
+    elif schema_type == "species":
+        valid = isinstance(value, (list, tuple)) and all(
+            isinstance(item, int) and not isinstance(item, bool) for item in value
+        )
+    elif schema_type == "model":
+        valid = isinstance(value, str) or (
+            isinstance(value, Mapping) and value.get("__type__") == "ModelResource"
+        )
+    elif schema_type == "array":
+        item_values = value if isinstance(value, (list, tuple)) else (value,)
+        valid = isinstance(value, (list, tuple)) or (
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+        )
+        item_schema = schema.get("items")
+        if valid and isinstance(item_schema, Mapping):
+            for index, item in enumerate(item_values):
+                _validate_direct_parameter_type(item, item_schema, [*path, str(index)])
+            return
+    else:
+        # ``object`` and ``enum`` have established direct-Python forms whose
+        # semantic validation belongs to the concrete kernel.
+        return
+
+    if not valid:
+        raise DescriptorConfigError(
+            f"descriptor parameter value does not match type {schema_type!r}",
+            code="invalid_parameter",
+            path=path,
+        )
+
+
 def _configuration_validation_path(
     descriptor: str, options: Mapping[str, Any]
 ) -> list[str | int] | None:
@@ -293,11 +347,18 @@ class DescriptorAdapter(Descriptor):
 
         self._registry_input_capabilities = capabilities
 
-    def _initialize(self, options: Mapping[str, Any]) -> None:
+    def _initialize(
+        self,
+        options: Mapping[str, Any],
+        *,
+        validate_public: bool = True,
+    ) -> None:
         """Initialize a kernel from already-bound public options."""
 
         super().__init__()
         options = _canonicalize_legacy_options(options, self.name)
+        if validate_public:
+            self._validate_public_parameters(options)
         kwargs = dict(options)
         output_value = kwargs.pop("output", None)
         execution_value = kwargs.pop("execution", None)
@@ -420,6 +481,24 @@ class DescriptorAdapter(Descriptor):
                 path=getattr(exc, "path", None)
                 or configuration_path,
             ) from exc
+
+    def _validate_public_parameters(self, options: Mapping[str, Any]) -> None:
+        """Reject direct values that the kernel would silently coerce."""
+
+        schemas = _builtin_parameter_schemas(self.name)
+        if schemas is None:
+            return
+        parameters = {
+            key: value
+            for key, value in _canonicalize_legacy_options(options, self.name).items()
+            if key not in {"output", "execution"}
+        }
+        for name, schema in schemas.items():
+            if name not in parameters or parameters[name] is None:
+                continue
+            _validate_direct_parameter_type(
+                _schema_value(parameters[name]), schema, ["parameters", name]
+            )
 
     def _validate_public_call(self, kwargs: Mapping[str, Any]) -> None:
         signature = getattr(type(self), "__signature__", None)

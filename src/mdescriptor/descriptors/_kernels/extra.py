@@ -85,8 +85,8 @@ class _MatrixKernel(_StructureKernel):
         max_atoms = int(self.n_atoms_max or (counts.max() if len(counts) else 0))
         columns = max_atoms if self.permutation == "eigenspectrum" else max_atoms * max_atoms
         values: Any
-        if not len(counts):
-            values = np.empty((0, columns), dtype=np.float64)
+        if not len(counts) or not np.any(counts):
+            values = np.zeros((len(counts), columns), dtype=np.float64)
         else:
             native_permutation = self.permutation
             if self.kind == 2:

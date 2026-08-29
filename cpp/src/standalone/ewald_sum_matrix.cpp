@@ -19,6 +19,9 @@ std::vector<double> ewald_matrix_values(
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
+    if (count == 0) {
+        return {};
+    }
 #ifdef _OPENMP
     const int workers = num_threads > 0 ? num_threads : omp_get_max_threads();
 #else

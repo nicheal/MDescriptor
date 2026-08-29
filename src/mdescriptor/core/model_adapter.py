@@ -39,6 +39,7 @@ class ModelBackedAdapter(DescriptorAdapter):
 
     def _initialize_public(self, options: Mapping[str, Any]) -> None:
         options = dict(options)
+        self._validate_public_parameters(options)
         model = options.pop("model", None)
         self.model_resource: ModelResource | None = None
         self.resolved_model: ResolvedModel | None = None
@@ -84,7 +85,9 @@ class ModelBackedAdapter(DescriptorAdapter):
                 ) from exc
 
         try:
-            super()._initialize(options)
+            # The public schema was checked before the model resource was
+            # replaced by the private model_path/model_digest kernel options.
+            super()._initialize(options, validate_public=False)
         except (DescriptorConfigError, DescriptorInputError, ModelLoadError):
             if self.loaded_model is not None:
                 discard_loaded_model(self.loaded_model)

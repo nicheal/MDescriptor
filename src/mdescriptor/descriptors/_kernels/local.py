@@ -92,6 +92,7 @@ class SortedDistancesKernel(_AtomKernel):
 
 class NeighborListKernel:
     name = "NeighborList"
+    _feature_labels = ("dx", "dy", "dz", "distance")
 
     def __init__(
         self,
@@ -109,7 +110,7 @@ class NeighborListKernel:
 
     @property
     def feature_count(self) -> int:
-        return 9
+        return len(self._feature_labels)
 
     def _raw(self, batch: StructureBatch, control: Any = None) -> tuple[np.ndarray, np.ndarray]:
         values, offsets = _cpp.compute_neighbor_list(
@@ -127,7 +128,7 @@ class NeighborListKernel:
             "pair",
             batch.ids,
             offsets,
-            ("dx", "dy", "dz", "distance"),
+            self._feature_labels,
             {"backend": "mdescriptor-cpp", "descriptor": self.name},
             samples=pair_samples(records, offsets, batch.offsets),
             _atom_row_offsets=batch.offsets.copy(),
@@ -214,6 +215,8 @@ class LodeSphericalExpansionKernel(SphericalExpansionKernel):
         )
         self.k_cutoff, self.exponent = float(k_cutoff), int(exponent)
         self.radial_radius = self.cutoff if radial_radius is None else float(radial_radius)
+        if self.exponent < 1 or self.exponent > 9:
+            raise ValueError("LODE exponent must be between 1 and 9")
 
 
 __all__ = ["AtomicCompositionKernel", "NeighborListKernel", "SortedDistancesKernel", "SphericalExpansionKernel", "SphericalExpansionByPairKernel", "SoapRadialSpectrumKernel", "SoapPowerSpectrumKernel", "LodeSphericalExpansionKernel"]

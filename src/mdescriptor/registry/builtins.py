@@ -431,7 +431,7 @@ _DESCRIPTOR_INFO = {
             "max_radial": _parameter("integer", default=6, minimum=0),
             "max_angular": _parameter("integer", default=4, minimum=0),
             "k_cutoff": _parameter("number", default=2.5, exclusiveMinimum=0.0),
-            "exponent": _parameter("integer", default=1, minimum=0),
+            "exponent": _parameter("integer", default=1, minimum=1, maximum=9),
             "radial_radius": _parameter("number", exclusiveMinimum=0.0, unit="Å"),
         },
         periodicity=_PERIODIC_ONLY,
