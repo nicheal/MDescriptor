@@ -11,7 +11,7 @@ from typing import Any
 from ..core.errors import DescriptorConfigError
 from ..core.json_value import freeze_json, thaw_json
 
-DESCRIPTOR_INFO_SCHEMA_VERSION = 1
+DESCRIPTOR_INFO_SCHEMA_VERSION = 2
 
 _SCHEMA_TYPES = frozenset(
     {
@@ -57,8 +57,10 @@ _DESCRIPTOR_INFO_PAYLOAD_FIELDS = frozenset(
 _DESCRIPTOR_INFO_FIELDS = _DESCRIPTOR_INFO_PAYLOAD_FIELDS | {
     "schema_version",
     "name",
+    "descriptor_version",
     "level",
     "backend",
+    "execution_engine",
     "capabilities",
 }
 
@@ -222,7 +224,16 @@ def _validate_descriptor_info_envelope(value: Mapping[str, Any]) -> None:
             path=["schema_version"],
             details={"supported": DESCRIPTOR_INFO_SCHEMA_VERSION},
         )
-    for field_name in ("name", "display_name", "description", "category", "level", "backend"):
+    for field_name in (
+        "name",
+        "descriptor_version",
+        "display_name",
+        "description",
+        "category",
+        "level",
+        "backend",
+        "execution_engine",
+    ):
         _require_info_string(value[field_name], field_name, [field_name])
     capabilities = value["capabilities"]
     if not isinstance(capabilities, (list, tuple)) or not all(

@@ -144,6 +144,27 @@ def _unsupported_input(
     )
 
 
+def _unsupported_periodicity(
+    descriptor: str,
+    provided: str,
+    supported: tuple[str, ...],
+) -> DescriptorInputError:
+    if supported == ("fully_periodic",):
+        message = f"{descriptor} requires fully_periodic input"
+    else:
+        supported_text = ", ".join(supported) or "none"
+        message = (
+            f"{descriptor} does not support periodicity {provided!r}; "
+            f"supported: {supported_text}"
+        )
+    return DescriptorInputError(
+        message,
+        code="unsupported_periodicity",
+        path=["input", "periodicity"],
+        details={"provided": provided, "supported": list(supported)},
+    )
+
+
 def _legacy_parameter_names(name: str) -> frozenset[str]:
     return frozenset(LEGACY_PARAMETER_ALIASES.get(name, {}))
 
@@ -456,7 +477,7 @@ class DescriptorAdapter(Descriptor):
             else:  # StructureBatch normally rejects this during construction.
                 kind = "mixed"
             if kind not in periodicity:
-                raise _unsupported_input(self.name, "periodicity", kind, periodicity)
+                raise _unsupported_periodicity(self.name, kind, periodicity)
 
         if batch.spins is not None and not bool(capabilities.get("spin", False)):
             raise _unsupported_input(self.name, "spins", True, None)

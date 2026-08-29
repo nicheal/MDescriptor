@@ -42,7 +42,7 @@
     "water3-nonperiodic"
   ],
   "nonperiodic": {
-    "match": "cell matrix is singular",
+    "match": "requires fully_periodic input",
     "mode": "error",
     "type": "DescriptorInputError"
   },

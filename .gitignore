@@ -31,6 +31,7 @@ docs/*
 !docs/
 !docs/descriptor-inventory.md
 !docs/numerical-baselines.md
+!docs/gui-adaptation-baseline.md
 research/
 mdescriptor/*.so
 mdescriptor/*.pyd

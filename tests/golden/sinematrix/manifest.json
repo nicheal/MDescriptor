@@ -29,7 +29,7 @@
     "water3-nonperiodic"
   ],
   "nonperiodic": {
-    "match": "does not support input field 'periodicity'",
+    "match": "requires fully_periodic input",
     "mode": "error",
     "type": "DescriptorInputError"
   },

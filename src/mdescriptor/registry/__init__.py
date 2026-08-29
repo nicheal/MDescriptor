@@ -55,11 +55,13 @@ def describe_descriptor(
     result: dict[str, Any] = {
         "schema_version": DESCRIPTOR_INFO_SCHEMA_VERSION,
         "name": spec.name,
+        "descriptor_version": spec.descriptor_version,
         "display_name": payload["display_name"],
         "description": payload["description"],
         "category": payload["category"],
         "level": spec.level,
         "backend": spec.backend,
+        "execution_engine": spec.execution_engine,
         "capabilities": sorted(spec.capabilities),
         "parameters": payload["parameters"],
         "execution": payload["execution"],

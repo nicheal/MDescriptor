@@ -16,8 +16,9 @@ class StructureBatch:
 
     Fully periodic structures carry a nonsingular cell and ``pbc=(1, 1, 1)``.
     Isolated structures use ``pbc=(0, 0, 0)`` and may carry ASE's zero cell.
-    Mixed periodicity is intentionally rejected until the native kernels have
-    an explicit partial-periodicity contract.
+    Partial periodicity within one frame is rejected until the native kernels
+    have an explicit partial-periodicity contract. A batch may contain both
+    isolated and fully periodic frames.
     """
 
     numbers: np.ndarray

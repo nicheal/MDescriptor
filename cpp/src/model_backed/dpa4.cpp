@@ -2751,9 +2751,9 @@ void Dpa4Calculator::compute(
             output[static_cast<std::size_t>(node) * kChannels + static_cast<std::size_t>(channel)] =
                 static_cast<double>(x[index] + output_update[index]);
         }
-        if (control) {
-            control->mark_completed();
-        }
+    }
+    if (control) {
+        control->mark_completed();
     }
     detail::check_cancelled(control);
 }

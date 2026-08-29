@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ...core.errors import ModelLoadError
+from ...core.errors import CancelledError, ModelLoadError
 from ...core.input import StructureBatch
 from ._vendor.dpa4desc.api import (
     _DPA4C_REQUIRED_TENSORS,
@@ -304,11 +304,17 @@ def _frame_descriptor(
 def compute_batch(
     evaluator: DescriptorEvaluator,
     batch: StructureBatch,
+    *,
+    control: Any = None,
 ) -> np.ndarray:
     """Compute all frames and restore the project's flattened atom order."""
 
+    if control is not None:
+        control.reset(batch.structures)
     rows: list[np.ndarray] = []
     for frame in range(batch.structures):
+        if control is not None and bool(control.cancelled()):
+            raise CancelledError("descriptor computation was cancelled")
         begin = int(batch.offsets[frame])
         end = int(batch.offsets[frame + 1])
         symbols: list[str] = []
@@ -337,6 +343,8 @@ def compute_batch(
                 charge_spin=charge_spin,
             )
         )
+        if control is not None:
+            control.mark_completed()
     if not rows:
         return np.empty((0, int(evaluator.dim_out)), dtype=np.float64)
     return np.concatenate(rows, axis=0)

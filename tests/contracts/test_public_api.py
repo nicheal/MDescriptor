@@ -367,7 +367,8 @@ def test_descriptor_rejects_unsupported_periodicity_before_kernel_execution():
     try:
         with pytest.raises(DescriptorInputError) as caught:
             descriptor.compute(isolated)
-        assert caught.value.code == "unsupported_input"
+        assert caught.value.code == "unsupported_periodicity"
+        assert str(caught.value) == "SineMatrix requires fully_periodic input"
         assert caught.value.to_dict()["path"] == ["input", "periodicity"]
     finally:
         descriptor.close()
