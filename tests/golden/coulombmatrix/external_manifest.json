@@ -1,0 +1,78 @@
+{
+  "configuration": {
+    "descriptor": "CoulombMatrix",
+    "parameters": {
+      "n_atoms_max": 3,
+      "permutation": "none"
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "external-water-v1",
+    "sha256": "5f518af94e4e2b061e9c0b6f8a96f0d4339105084d608f0e7af4634b910921fd",
+    "source": "pinned-external-provider"
+  },
+  "descriptor": "CoulombMatrix",
+  "expected_output": "external_expected_output.npz",
+  "input": "external_input.npz",
+  "input_ids": [
+    "external-water-periodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "kind": "external_static",
+    "package": "dscribe",
+    "provider": "DScribe",
+    "source": "dscribe runtime evaluation",
+    "verification": {
+      "atol": 1e-11,
+      "mae": 0.0,
+      "max_abs": 0.0,
+      "rtol": 1e-09
+    },
+    "version": "2.1.2"
+  },
+  "result": {
+    "feature_count": 9,
+    "labels": [
+      "CoulombMatrix:0",
+      "CoulombMatrix:1",
+      "CoulombMatrix:2",
+      "CoulombMatrix:3",
+      "CoulombMatrix:4",
+      "CoulombMatrix:5",
+      "CoulombMatrix:6",
+      "CoulombMatrix:7",
+      "CoulombMatrix:8"
+    ],
+    "level": "structure",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "CoulombMatrix",
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 9,
+      "level": "structure",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": null,
+    "structure_ids": [
+      "external-water-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "tolerance": {
+    "atol": 1e-11,
+    "rtol": 1e-09
+  }
+}

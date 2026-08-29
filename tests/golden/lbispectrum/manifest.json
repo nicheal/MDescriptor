@@ -58,6 +58,15 @@
     "source_archive": ".deps/lammps-stable.tar.gz",
     "source_sha256": "21cbbb7424520958c725d99a20d46c8a6cc2a54a92cca0ff35e5854d7d9b9bff"
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "LAMMPS/PyXtal_FF",
+    "package": "lammps + pyxtal_ff",
+    "version": "pinned source archive + 0.2.3",
+    "test": "benchmarks/_legacy_oracles/lbispectrum/generate_golden.py",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "058885ae88ac1894eb349cdbf79d32c8693783b594519e8443ebb748820a6ef1"
+  },
   "result": {
     "feature_count": 8,
     "labels": [

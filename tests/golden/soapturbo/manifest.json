@@ -72,6 +72,15 @@
     "source_archive": ".deps/soap_turbo-master.zip",
     "source_sha256": "89093dd439dad020526668867f69a136fc229d10e36d7e8357e34e4499410bb8"
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "soap_turbo-master",
+    "package": "soap_turbo",
+    "version": "pinned source archive",
+    "test": "benchmarks/_legacy_oracles/soapturbo/generate_golden.py",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "f8cc269ca904fcf647db582126640732644464a8d19bb514df985f0937d10f1f"
+  },
   "result": {
     "feature_count": 315,
     "labels": [

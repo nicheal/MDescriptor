@@ -19,6 +19,7 @@ src/mdescriptor/descriptors/
   model_backed/               graph seam plus NEP, DPA4, DPA4C
 src/mdescriptor/models/assets/ packaged, hash-verified model resources
 tests/golden/              descriptor-owned, benchmark-independent accuracy fixtures
+docs/numerical-baselines.md  static-golden and external-runtime oracle inventory
 scripts/benchmarking/      controlled local benchmark runners
 benchmarks/                local benchmark snapshots (ignored except for tracked oracles)
 benchmarks/_legacy_oracles/ pinned independent upstream oracle adapters
@@ -65,6 +66,11 @@ python -m pytest -m deepmd tests/external_reference/test_deepmd.py
 `tests/golden/dpa4*` 的 expected output（包括非周期行）也由该外部 evaluator 生成，
 manifest 记录了 evaluator 脚本、模型 hash 和 `deepmd-kit` 版本；运行时仍只加载已
 提交的 NPZ，不要求安装 DeepMD。
+
+所有 28 个描述符都登记在[数值基线清单](docs/numerical-baselines.md)，并都有外部
+静态 golden：7 个沿用独立上游/source NPZ，另外 21 个在对应目录的
+`external_manifest.json` 中保存固定版本 provider 生成的数值。默认测试只依赖提交的
+fixture；外部 provider 缺失或版本漂移会使 reference job 失败，而不会静默跳过。
 
 性能说明：DPA4 native 路径现在使用固定大小分块的 SGEMM、可复用的计算工作区，
 并只为每条边计算一次 attention logit；DPA4C 的类型对 MLP 采用每个 calculator

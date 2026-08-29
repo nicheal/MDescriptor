@@ -37,7 +37,10 @@ def _descriptor_module(name: str):
 
     package_spec = importlib.util.find_spec("pyxtal_ff")
     if package_spec is None or package_spec.submodule_search_locations is None:
-        pytest.skip("pyxtal_ff is not installed")
+        pytest.fail(
+            "PyXtal_FF reference job requires pyxtal_ff==0.2.3",
+            pytrace=False,
+        )
 
     package_path = Path(next(iter(package_spec.submodule_search_locations)))
     package = sys.modules.get("pyxtal_ff")
@@ -58,7 +61,10 @@ def _descriptor_module(name: str):
     try:
         return importlib.import_module(f"pyxtal_ff.descriptors.{name}")
     except ImportError as exc:
-        pytest.skip(f"PyXtal_FF descriptor dependencies are unavailable: {exc}")
+        pytest.fail(
+            f"PyXtal_FF reference job requires its descriptor dependencies: {exc}",
+            pytrace=False,
+        )
 
 
 def _assert_matches(expected: np.ndarray, actual: np.ndarray) -> None:
@@ -98,7 +104,10 @@ def test_so4_matches_pyxtalff():
 
 
 def test_so3_matches_pyxtalff(monkeypatch):
-    scipy_special = pytest.importorskip("scipy.special")
+    try:
+        import scipy.special as scipy_special
+    except ImportError as exc:  # pragma: no cover - exercised in misconfigured CI
+        pytest.fail(f"PyXtal_FF reference job requires scipy: {exc}", pytrace=False)
     if not hasattr(scipy_special, "sph_harm") and hasattr(scipy_special, "sph_harm_y"):
         monkeypatch.setattr(
             scipy_special,

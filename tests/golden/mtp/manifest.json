@@ -63,6 +63,15 @@
     "source_archive": ".deps/mlip-4-main.zip",
     "source_sha256": "f2c2ebcfed52aab45c0a94f3361da543935bc6924a671741b5ac60fab5813d97"
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "MLIP-4",
+    "package": "MLIP-4",
+    "version": "pinned source archive",
+    "test": "benchmarks/_legacy_oracles/mtp/generate_golden.py",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "8ce8d3c736c44335f4afb1f548e314ecb8f73c940f9fd0cefce30aaff2ce2f1d"
+  },
   "result": {
     "feature_count": 5,
     "labels": [

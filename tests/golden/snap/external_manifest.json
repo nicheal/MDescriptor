@@ -1,0 +1,91 @@
+{
+  "configuration": {
+    "descriptor": "SNAP",
+    "parameters": {
+      "lmax": 2,
+      "normalize_U": false,
+      "rcut": 3.5,
+      "weights": {
+        "H": 1.0,
+        "O": 2.0
+      }
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "external-water-v1",
+    "sha256": "5f518af94e4e2b061e9c0b6f8a96f0d4339105084d608f0e7af4634b910921fd",
+    "source": "pinned-external-provider"
+  },
+  "descriptor": "SNAP",
+  "expected_output": "external_expected_output.npz",
+  "input": "external_input.npz",
+  "input_ids": [
+    "external-water-periodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "kind": "external_static",
+    "package": "pyxtal_ff",
+    "provider": "PyXtal_FF",
+    "source": "pyxtal_ff runtime evaluation",
+    "verification": {
+      "atol": 1e-10,
+      "mae": 6.410216273133345e-15,
+      "max_abs": 2.842170943040401e-14,
+      "rtol": 1e-09
+    },
+    "version": "0.2.3"
+  },
+  "result": {
+    "feature_count": 14,
+    "labels": [
+      "SNAP:0",
+      "SNAP:1",
+      "SNAP:2",
+      "SNAP:3",
+      "SNAP:4",
+      "SNAP:5",
+      "SNAP:6",
+      "SNAP:7",
+      "SNAP:8",
+      "SNAP:9",
+      "SNAP:10",
+      "SNAP:11",
+      "SNAP:12",
+      "SNAP:13"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "SNAP",
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 14,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      3
+    ],
+    "structure_ids": [
+      "external-water-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "tolerance": {
+    "atol": 1e-10,
+    "rtol": 1e-09
+  }
+}

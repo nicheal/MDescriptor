@@ -48,6 +48,20 @@
       "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
     }
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "Featomic",
+    "package": "featomic",
+    "version": "0.6.6",
+    "test": "tests/external_reference/test_featomic.py",
+    "marker": "featomic",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "f327fc6997c467e33a6d5842a7ef7a5867542cb006aa46b4db7d83b8196c9019",
+    "fixture": "external_manifest.json",
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "project_snapshot_sha256": "350957132e5a690c97ece94cb57708abfdf574f4df1a4c3332c6ea12c01e7991"
+  },
   "result": {
     "feature_count": 28,
     "labels": [

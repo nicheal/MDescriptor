@@ -81,6 +81,15 @@
       "mae": 1.3119267992676206e-11
     }
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "licensed external MLFF",
+    "package": "local-only input",
+    "version": "user-supplied",
+    "test": "scripts/generate_external_c00ps_reference.py",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "a0be946be264461d58aed6fb92665c50316fc2433b3e4ab04fd4139184a9afba"
+  },
   "result": {
     "feature_count": 175,
     "labels": [

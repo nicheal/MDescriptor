@@ -1,0 +1,195 @@
+{
+  "configuration": {
+    "descriptor": "LodeSphericalExpansion",
+    "parameters": {
+      "cutoff": 3.5,
+      "density_width": 0.5,
+      "exponent": 1,
+      "k_cutoff": 2.5,
+      "max_angular": 2,
+      "max_radial": 2,
+      "radial_radius": 3.5,
+      "species": [
+        1,
+        8
+      ]
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "external-water-v1",
+    "sha256": "5f518af94e4e2b061e9c0b6f8a96f0d4339105084d608f0e7af4634b910921fd",
+    "source": "pinned-external-provider"
+  },
+  "descriptor": "LodeSphericalExpansion",
+  "expected_output": "external_expected_output.npz",
+  "input": "external_input.npz",
+  "input_ids": [
+    "external-water-periodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "kind": "external_static",
+    "package": "featomic",
+    "provider": "Featomic",
+    "source": "featomic runtime evaluation",
+    "verification": {
+      "atol": 5e-08,
+      "mae": 7.39196265811299e-10,
+      "max_abs": 3.040138996102115e-08,
+      "rtol": 1e-07
+    },
+    "version": "0.6.6"
+  },
+  "result": {
+    "feature_count": 108,
+    "labels": [
+      "LodeSphericalExpansion:0",
+      "LodeSphericalExpansion:1",
+      "LodeSphericalExpansion:2",
+      "LodeSphericalExpansion:3",
+      "LodeSphericalExpansion:4",
+      "LodeSphericalExpansion:5",
+      "LodeSphericalExpansion:6",
+      "LodeSphericalExpansion:7",
+      "LodeSphericalExpansion:8",
+      "LodeSphericalExpansion:9",
+      "LodeSphericalExpansion:10",
+      "LodeSphericalExpansion:11",
+      "LodeSphericalExpansion:12",
+      "LodeSphericalExpansion:13",
+      "LodeSphericalExpansion:14",
+      "LodeSphericalExpansion:15",
+      "LodeSphericalExpansion:16",
+      "LodeSphericalExpansion:17",
+      "LodeSphericalExpansion:18",
+      "LodeSphericalExpansion:19",
+      "LodeSphericalExpansion:20",
+      "LodeSphericalExpansion:21",
+      "LodeSphericalExpansion:22",
+      "LodeSphericalExpansion:23",
+      "LodeSphericalExpansion:24",
+      "LodeSphericalExpansion:25",
+      "LodeSphericalExpansion:26",
+      "LodeSphericalExpansion:27",
+      "LodeSphericalExpansion:28",
+      "LodeSphericalExpansion:29",
+      "LodeSphericalExpansion:30",
+      "LodeSphericalExpansion:31",
+      "LodeSphericalExpansion:32",
+      "LodeSphericalExpansion:33",
+      "LodeSphericalExpansion:34",
+      "LodeSphericalExpansion:35",
+      "LodeSphericalExpansion:36",
+      "LodeSphericalExpansion:37",
+      "LodeSphericalExpansion:38",
+      "LodeSphericalExpansion:39",
+      "LodeSphericalExpansion:40",
+      "LodeSphericalExpansion:41",
+      "LodeSphericalExpansion:42",
+      "LodeSphericalExpansion:43",
+      "LodeSphericalExpansion:44",
+      "LodeSphericalExpansion:45",
+      "LodeSphericalExpansion:46",
+      "LodeSphericalExpansion:47",
+      "LodeSphericalExpansion:48",
+      "LodeSphericalExpansion:49",
+      "LodeSphericalExpansion:50",
+      "LodeSphericalExpansion:51",
+      "LodeSphericalExpansion:52",
+      "LodeSphericalExpansion:53",
+      "LodeSphericalExpansion:54",
+      "LodeSphericalExpansion:55",
+      "LodeSphericalExpansion:56",
+      "LodeSphericalExpansion:57",
+      "LodeSphericalExpansion:58",
+      "LodeSphericalExpansion:59",
+      "LodeSphericalExpansion:60",
+      "LodeSphericalExpansion:61",
+      "LodeSphericalExpansion:62",
+      "LodeSphericalExpansion:63",
+      "LodeSphericalExpansion:64",
+      "LodeSphericalExpansion:65",
+      "LodeSphericalExpansion:66",
+      "LodeSphericalExpansion:67",
+      "LodeSphericalExpansion:68",
+      "LodeSphericalExpansion:69",
+      "LodeSphericalExpansion:70",
+      "LodeSphericalExpansion:71",
+      "LodeSphericalExpansion:72",
+      "LodeSphericalExpansion:73",
+      "LodeSphericalExpansion:74",
+      "LodeSphericalExpansion:75",
+      "LodeSphericalExpansion:76",
+      "LodeSphericalExpansion:77",
+      "LodeSphericalExpansion:78",
+      "LodeSphericalExpansion:79",
+      "LodeSphericalExpansion:80",
+      "LodeSphericalExpansion:81",
+      "LodeSphericalExpansion:82",
+      "LodeSphericalExpansion:83",
+      "LodeSphericalExpansion:84",
+      "LodeSphericalExpansion:85",
+      "LodeSphericalExpansion:86",
+      "LodeSphericalExpansion:87",
+      "LodeSphericalExpansion:88",
+      "LodeSphericalExpansion:89",
+      "LodeSphericalExpansion:90",
+      "LodeSphericalExpansion:91",
+      "LodeSphericalExpansion:92",
+      "LodeSphericalExpansion:93",
+      "LodeSphericalExpansion:94",
+      "LodeSphericalExpansion:95",
+      "LodeSphericalExpansion:96",
+      "LodeSphericalExpansion:97",
+      "LodeSphericalExpansion:98",
+      "LodeSphericalExpansion:99",
+      "LodeSphericalExpansion:100",
+      "LodeSphericalExpansion:101",
+      "LodeSphericalExpansion:102",
+      "LodeSphericalExpansion:103",
+      "LodeSphericalExpansion:104",
+      "LodeSphericalExpansion:105",
+      "LodeSphericalExpansion:106",
+      "LodeSphericalExpansion:107"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "LodeSphericalExpansion",
+      "details": {
+        "species": [
+          1,
+          8
+        ]
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 108,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      3
+    ],
+    "structure_ids": [
+      "external-water-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "tolerance": {
+    "atol": 5e-08,
+    "rtol": 1e-07
+  }
+}

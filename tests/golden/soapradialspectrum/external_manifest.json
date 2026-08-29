@@ -1,0 +1,96 @@
+{
+  "configuration": {
+    "descriptor": "SoapRadialSpectrum",
+    "parameters": {
+      "cutoff": 3.5,
+      "density_width": 0.6,
+      "max_angular": 2,
+      "max_radial": 2,
+      "species": [
+        1,
+        8
+      ]
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "external-water-v1",
+    "sha256": "5f518af94e4e2b061e9c0b6f8a96f0d4339105084d608f0e7af4634b910921fd",
+    "source": "pinned-external-provider"
+  },
+  "descriptor": "SoapRadialSpectrum",
+  "expected_output": "external_expected_output.npz",
+  "input": "external_input.npz",
+  "input_ids": [
+    "external-water-periodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "kind": "external_static",
+    "package": "featomic",
+    "provider": "Featomic",
+    "source": "featomic runtime evaluation",
+    "verification": {
+      "atol": 5e-08,
+      "mae": 1.719751320516938e-10,
+      "max_abs": 1.1772369190587995e-09,
+      "rtol": 1e-07
+    },
+    "version": "0.6.6"
+  },
+  "result": {
+    "feature_count": 12,
+    "labels": [
+      "SoapRadialSpectrum:0",
+      "SoapRadialSpectrum:1",
+      "SoapRadialSpectrum:2",
+      "SoapRadialSpectrum:3",
+      "SoapRadialSpectrum:4",
+      "SoapRadialSpectrum:5",
+      "SoapRadialSpectrum:6",
+      "SoapRadialSpectrum:7",
+      "SoapRadialSpectrum:8",
+      "SoapRadialSpectrum:9",
+      "SoapRadialSpectrum:10",
+      "SoapRadialSpectrum:11"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "SoapRadialSpectrum",
+      "details": {
+        "species": [
+          1,
+          8
+        ]
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 12,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      3
+    ],
+    "structure_ids": [
+      "external-water-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "tolerance": {
+    "atol": 5e-08,
+    "rtol": 1e-07
+  }
+}

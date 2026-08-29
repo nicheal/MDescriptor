@@ -28,6 +28,20 @@ _MAX_ANGULAR = 2
 _RADIAL_COUNT = _MAX_RADIAL + 1
 
 
+def _require_featomic():
+    """Fail the selected reference job when its provider is unavailable."""
+
+    try:
+        import featomic
+    except ImportError as exc:  # pragma: no cover - exercised in misconfigured CI
+        pytest.fail(
+            "Featomic reference job requires featomic==0.6.6; "
+            f"import failed: {exc}",
+            pytrace=False,
+        )
+    return featomic
+
+
 def _water() -> Atoms:
     return Atoms(
         "OHH",
@@ -216,7 +230,7 @@ def _sort_neighbor_rows(rows: np.ndarray) -> np.ndarray:
 
 
 def test_basic_local_descriptors_match_featomic():
-    featomic = pytest.importorskip("featomic")
+    featomic = _require_featomic()
     system = _water()
     batch = StructureBatch.from_ase(system)
 
@@ -251,7 +265,7 @@ def test_basic_local_descriptors_match_featomic():
 
 
 def test_spherical_expansion_family_matches_featomic():
-    featomic = pytest.importorskip("featomic")
+    featomic = _require_featomic()
     from featomic.basis import Gto, TensorProduct
     from featomic.cutoff import Cutoff, ShiftedCosine
     from featomic.density import Gaussian
@@ -325,7 +339,7 @@ def test_spherical_expansion_family_matches_featomic():
 
 
 def test_lode_spherical_expansion_matches_featomic():
-    featomic = pytest.importorskip("featomic")
+    featomic = _require_featomic()
     from featomic.basis import Gto, TensorProduct
     from featomic.density import SmearedPowerLaw
 

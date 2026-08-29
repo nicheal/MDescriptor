@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from scripts.check_numerical_baselines import validate_manifests
 from scripts.external_reference import external_c00ps_project_columns, sha256
 
 from tests._golden import GOLDEN_ROOT, ROOT
@@ -19,13 +20,38 @@ def test_golden_fixtures_are_self_contained() -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         # Fixture data stays portable and local; provenance may legitimately
         # point at the checked-in upstream-oracle adapters under benchmarks/.
-        portable_manifest = {key: value for key, value in manifest.items() if key != "reference"}
+        portable_manifest = {
+            key: value
+            for key, value in manifest.items()
+            if key not in {"reference", "numeric_baseline"}
+        }
         assert "benchmarks" not in json.dumps(portable_manifest)
         assert Path(manifest["input"]).parent == Path(".")
         assert Path(manifest["expected_output"]).parent == Path(".")
         assert (fixture_dir / manifest["input"]).is_file()
         assert (fixture_dir / manifest["expected_output"]).is_file()
         assert manifest["dataset"]["source"] == "promoted-local-dataset"
+
+    external_manifests = sorted(GOLDEN_ROOT.glob("*/external_manifest.json"))
+    assert len(external_manifests) == 21
+    for manifest_path in external_manifests:
+        fixture_dir = manifest_path.parent
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        portable_manifest = {
+            key: value for key, value in manifest.items() if key != "reference"
+        }
+        assert "benchmarks" not in json.dumps(portable_manifest)
+        assert Path(manifest["input"]).parent == Path(".")
+        assert Path(manifest["expected_output"]).parent == Path(".")
+        assert (fixture_dir / manifest["input"]).is_file()
+        assert (fixture_dir / manifest["expected_output"]).is_file()
+        assert manifest["dataset"]["source"] == "pinned-external-provider"
+
+
+def test_every_descriptor_has_an_explicit_numeric_baseline() -> None:
+    """Keep static golden and runtime-oracle provenance independently auditable."""
+
+    validate_manifests()
 
 
 def test_ace_and_c00ps_use_external_source_references() -> None:

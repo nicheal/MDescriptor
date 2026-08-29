@@ -47,6 +47,15 @@
     "package": "deepmd-kit",
     "version": "3.2.0"
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "deepmd-kit",
+    "package": "deepmd-kit",
+    "version": "3.2.0",
+    "test": "scripts/deepmd_reference.py",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "afd4bd76fed7e04afb4486493a88c49e0a1ac78894a2b29405ca020bc7b9751c"
+  },
   "result": {
     "feature_count": 219,
     "labels": [

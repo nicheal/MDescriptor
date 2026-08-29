@@ -46,6 +46,20 @@
       "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
     }
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "PyXtal_FF",
+    "package": "pyxtal_ff",
+    "version": "0.2.3",
+    "test": "tests/external_reference/test_pyxtalff.py",
+    "marker": "pyxtalff",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "48dc3d83bf1a756af7c44fad133da5036c18d3f97e9cbb927f97d5c5cfdec377",
+    "fixture": "external_manifest.json",
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "project_snapshot_sha256": "56266bdb5b2283105ea4cb7fc32e3a0363d3b83df1e69a9c1d2290d4e2642d95"
+  },
   "result": {
     "feature_count": 14,
     "labels": [

@@ -95,3 +95,4 @@ jobs:
       - run: ruff check src tests scripts
       - run: mypy
       - run: python scripts/check_descriptor_inventory.py --check
+      - run: python scripts/check_numerical_baselines.py --check

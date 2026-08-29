@@ -146,9 +146,14 @@ def _assert_nonperiodic_contract(name: str, manifest: dict[str, Any], batch: Str
     raise AssertionError(f"unknown non-periodic policy: {policy}")
 
 
-def assert_descriptor_golden(name: str) -> None:
-    fixture_dir = GOLDEN_ROOT / name.lower()
-    manifest = json.loads((fixture_dir / "manifest.json").read_text(encoding="utf-8"))
+def assert_descriptor_golden_at(
+    name: str,
+    fixture_dir: Path,
+    manifest_name: str = "manifest.json",
+) -> None:
+    """Assert one descriptor golden using an explicitly selected manifest."""
+
+    manifest = json.loads((fixture_dir / manifest_name).read_text(encoding="utf-8"))
     assert manifest["descriptor"] == name
     expected = manifest["result"]
     ids = tuple(manifest["input_ids"])
@@ -162,3 +167,19 @@ def assert_descriptor_golden(name: str) -> None:
     finally:
         descriptor.close()
     _assert_nonperiodic_contract(name, manifest, batch)
+
+
+def assert_descriptor_golden(name: str) -> None:
+    """Assert the retained project snapshot golden."""
+
+    assert_descriptor_golden_at(name, GOLDEN_ROOT / name.lower())
+
+
+def assert_descriptor_external_static_golden(name: str) -> None:
+    """Assert the provider-generated static numerical sidecar."""
+
+    assert_descriptor_golden_at(
+        name,
+        GOLDEN_ROOT / name.lower(),
+        manifest_name="external_manifest.json",
+    )

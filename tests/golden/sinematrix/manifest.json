@@ -41,6 +41,20 @@
       "sha256": "dea7c4a1afc45bf8641a5d410162cb77bd5c503433e56ccc7117c0ca0f1de5a3"
     }
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "DScribe",
+    "package": "dscribe",
+    "version": "2.1.2",
+    "test": "tests/external_reference/test_dscribe.py",
+    "marker": "dscribe",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "aea80997cf8f2a511953f01ab9bc84c7e0ada5f7bf704821031d37b9194a3c24",
+    "fixture": "external_manifest.json",
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "project_snapshot_sha256": "8d1db0a6774fd73bf4e3c0bd0446017473e90d11061d66e5c12baf7159b5b092"
+  },
   "result": {
     "feature_count": 1681,
     "labels": [

@@ -70,6 +70,15 @@
       "mae": 6.74807432154978e-16
     }
   },
+  "numeric_baseline": {
+    "kind": "external_static",
+    "provider": "ACE1.jl",
+    "package": "ACE1.jl",
+    "version": "0.12.5",
+    "test": "scripts/generate_ace1_reference.py",
+    "committed_golden": "external_static",
+    "expected_output_sha256": "df56083a486be113162184d841e48c976452cd16506d1c1b3541d3c0482aa9e6"
+  },
   "result": {
     "feature_count": 32,
     "labels": [

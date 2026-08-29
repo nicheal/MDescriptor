@@ -1,0 +1,228 @@
+{
+  "configuration": {
+    "descriptor": "NEP",
+    "parameters": {
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "model": {
+        "__type__": "ModelResource",
+        "expected_sha256": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+        "identifier": "nep89_20250409",
+        "name": "nep89_20250409.txt"
+      },
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      }
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "external-water-v1",
+    "sha256": "5f518af94e4e2b061e9c0b6f8a96f0d4339105084d608f0e7af4634b910921fd",
+    "source": "pinned-external-provider"
+  },
+  "descriptor": "NEP",
+  "expected_output": "external_expected_output.npz",
+  "input": "external_input.npz",
+  "input_ids": [
+    "external-water-periodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "kind": "external_static",
+    "package": "nep-adapters",
+    "provider": "nep-adapters",
+    "source": "nep-adapters runtime evaluation",
+    "verification": {
+      "atol": 1e-07,
+      "mae": 6.559161280370767e-10,
+      "max_abs": 6.653965101133252e-09,
+      "rtol": 1e-06
+    },
+    "version": "1.0.2"
+  },
+  "result": {
+    "feature_count": 35,
+    "labels": [
+      "nep:q1",
+      "nep:q2",
+      "nep:q3",
+      "nep:q4",
+      "nep:q5",
+      "nep:q6",
+      "nep:q7",
+      "nep:q8",
+      "nep:q9",
+      "nep:q10",
+      "nep:q11",
+      "nep:q12",
+      "nep:q13",
+      "nep:q14",
+      "nep:q15",
+      "nep:q16",
+      "nep:q17",
+      "nep:q18",
+      "nep:q19",
+      "nep:q20",
+      "nep:q21",
+      "nep:q22",
+      "nep:q23",
+      "nep:q24",
+      "nep:q25",
+      "nep:q26",
+      "nep:q27",
+      "nep:q28",
+      "nep:q29",
+      "nep:q30",
+      "nep:q31",
+      "nep:q32",
+      "nep:q33",
+      "nep:q34",
+      "nep:q35"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "NEP",
+      "details": {
+        "angular_cutoff": 5.0,
+        "l_max": 4,
+        "model_path": "${PACKAGE_ROOT}/models/assets/nep89_20250409.txt",
+        "n_max_angular": 4,
+        "n_max_radial": 4,
+        "radial_cutoff": 6.0,
+        "species": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          82,
+          83,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94
+        ]
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 35,
+      "level": "atom",
+      "model": {
+        "__type__": "ModelResource",
+        "expected_sha256": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+        "identifier": "nep89_20250409",
+        "name": "nep89_20250409.txt",
+        "resolved": {
+          "digest": "75168ece02e840e4a32644f982b78d43cba697f5b64b4c8134ab66c7a8c28be1",
+          "source": "package"
+        }
+      },
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      3
+    ],
+    "structure_ids": [
+      "external-water-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "tolerance": {
+    "atol": 1e-07,
+    "rtol": 1e-06
+  }
+}

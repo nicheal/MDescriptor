@@ -1,0 +1,164 @@
+{
+  "configuration": {
+    "descriptor": "SOAP",
+    "parameters": {
+      "average": "off",
+      "compression": {
+        "mode": "off",
+        "species_weighting": null
+      },
+      "l_max": 2,
+      "n_max": 3,
+      "r_cut": 3.5,
+      "rbf": "gto",
+      "sigma": 0.5,
+      "species": [
+        1,
+        8
+      ]
+    },
+    "schema_version": 1
+  },
+  "dataset": {
+    "name": "external-water-v1",
+    "sha256": "5f518af94e4e2b061e9c0b6f8a96f0d4339105084d608f0e7af4634b910921fd",
+    "source": "pinned-external-provider"
+  },
+  "descriptor": "SOAP",
+  "expected_output": "external_expected_output.npz",
+  "input": "external_input.npz",
+  "input_ids": [
+    "external-water-periodic"
+  ],
+  "nonperiodic": {
+    "mode": "output"
+  },
+  "reference": {
+    "generator": "scripts/generate_external_static_goldens.py",
+    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "kind": "external_static",
+    "package": "dscribe",
+    "provider": "DScribe",
+    "source": "dscribe runtime evaluation",
+    "verification": {
+      "atol": 1e-11,
+      "mae": 1.6166049733481955e-12,
+      "max_abs": 3.795719294430455e-11,
+      "rtol": 1e-09
+    },
+    "version": "2.1.2"
+  },
+  "result": {
+    "feature_count": 63,
+    "labels": [
+      "soap:z1=1,z2=1,l=0,n1=0,n2=0",
+      "soap:z1=1,z2=1,l=0,n1=0,n2=1",
+      "soap:z1=1,z2=1,l=0,n1=0,n2=2",
+      "soap:z1=1,z2=1,l=0,n1=1,n2=1",
+      "soap:z1=1,z2=1,l=0,n1=1,n2=2",
+      "soap:z1=1,z2=1,l=0,n1=2,n2=2",
+      "soap:z1=1,z2=1,l=1,n1=0,n2=0",
+      "soap:z1=1,z2=1,l=1,n1=0,n2=1",
+      "soap:z1=1,z2=1,l=1,n1=0,n2=2",
+      "soap:z1=1,z2=1,l=1,n1=1,n2=1",
+      "soap:z1=1,z2=1,l=1,n1=1,n2=2",
+      "soap:z1=1,z2=1,l=1,n1=2,n2=2",
+      "soap:z1=1,z2=1,l=2,n1=0,n2=0",
+      "soap:z1=1,z2=1,l=2,n1=0,n2=1",
+      "soap:z1=1,z2=1,l=2,n1=0,n2=2",
+      "soap:z1=1,z2=1,l=2,n1=1,n2=1",
+      "soap:z1=1,z2=1,l=2,n1=1,n2=2",
+      "soap:z1=1,z2=1,l=2,n1=2,n2=2",
+      "soap:z1=1,z2=8,l=0,n1=0,n2=0",
+      "soap:z1=1,z2=8,l=0,n1=0,n2=1",
+      "soap:z1=1,z2=8,l=0,n1=0,n2=2",
+      "soap:z1=1,z2=8,l=0,n1=1,n2=0",
+      "soap:z1=1,z2=8,l=0,n1=1,n2=1",
+      "soap:z1=1,z2=8,l=0,n1=1,n2=2",
+      "soap:z1=1,z2=8,l=0,n1=2,n2=0",
+      "soap:z1=1,z2=8,l=0,n1=2,n2=1",
+      "soap:z1=1,z2=8,l=0,n1=2,n2=2",
+      "soap:z1=1,z2=8,l=1,n1=0,n2=0",
+      "soap:z1=1,z2=8,l=1,n1=0,n2=1",
+      "soap:z1=1,z2=8,l=1,n1=0,n2=2",
+      "soap:z1=1,z2=8,l=1,n1=1,n2=0",
+      "soap:z1=1,z2=8,l=1,n1=1,n2=1",
+      "soap:z1=1,z2=8,l=1,n1=1,n2=2",
+      "soap:z1=1,z2=8,l=1,n1=2,n2=0",
+      "soap:z1=1,z2=8,l=1,n1=2,n2=1",
+      "soap:z1=1,z2=8,l=1,n1=2,n2=2",
+      "soap:z1=1,z2=8,l=2,n1=0,n2=0",
+      "soap:z1=1,z2=8,l=2,n1=0,n2=1",
+      "soap:z1=1,z2=8,l=2,n1=0,n2=2",
+      "soap:z1=1,z2=8,l=2,n1=1,n2=0",
+      "soap:z1=1,z2=8,l=2,n1=1,n2=1",
+      "soap:z1=1,z2=8,l=2,n1=1,n2=2",
+      "soap:z1=1,z2=8,l=2,n1=2,n2=0",
+      "soap:z1=1,z2=8,l=2,n1=2,n2=1",
+      "soap:z1=1,z2=8,l=2,n1=2,n2=2",
+      "soap:z1=8,z2=8,l=0,n1=0,n2=0",
+      "soap:z1=8,z2=8,l=0,n1=0,n2=1",
+      "soap:z1=8,z2=8,l=0,n1=0,n2=2",
+      "soap:z1=8,z2=8,l=0,n1=1,n2=1",
+      "soap:z1=8,z2=8,l=0,n1=1,n2=2",
+      "soap:z1=8,z2=8,l=0,n1=2,n2=2",
+      "soap:z1=8,z2=8,l=1,n1=0,n2=0",
+      "soap:z1=8,z2=8,l=1,n1=0,n2=1",
+      "soap:z1=8,z2=8,l=1,n1=0,n2=2",
+      "soap:z1=8,z2=8,l=1,n1=1,n2=1",
+      "soap:z1=8,z2=8,l=1,n1=1,n2=2",
+      "soap:z1=8,z2=8,l=1,n1=2,n2=2",
+      "soap:z1=8,z2=8,l=2,n1=0,n2=0",
+      "soap:z1=8,z2=8,l=2,n1=0,n2=1",
+      "soap:z1=8,z2=8,l=2,n1=0,n2=2",
+      "soap:z1=8,z2=8,l=2,n1=1,n2=1",
+      "soap:z1=8,z2=8,l=2,n1=1,n2=2",
+      "soap:z1=8,z2=8,l=2,n1=2,n2=2"
+    ],
+    "level": "atom",
+    "metadata": {
+      "backend": "mdescriptor-cpp",
+      "descriptor": "SOAP",
+      "details": {
+        "average": "off",
+        "compression": {
+          "mode": "off",
+          "species_weighting": null
+        },
+        "l_max": 2,
+        "n_max": 3,
+        "r_cut": 3.5,
+        "rbf": "gto",
+        "sigma": 0.5,
+        "species": [
+          1,
+          8
+        ],
+        "weighting": {}
+      },
+      "execution": {
+        "device": "cpu",
+        "num_threads": null
+      },
+      "feature_count": 63,
+      "level": "atom",
+      "output": {
+        "dtype": "float64",
+        "sparse": false
+      },
+      "schema_version": 1
+    },
+    "row_offsets": [
+      0,
+      3
+    ],
+    "structure_ids": [
+      "external-water-periodic"
+    ]
+  },
+  "schema_version": 1,
+  "tolerance": {
+    "atol": 1e-11,
+    "rtol": 1e-09
+  }
+}

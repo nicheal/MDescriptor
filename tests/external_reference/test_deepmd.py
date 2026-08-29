@@ -43,8 +43,15 @@ def _water_nonperiodic() -> Atoms:
 
 
 def _reference_values(name: str, system: Atoms) -> np.ndarray:
-    pytest.importorskip("torch")
-    pytest.importorskip("deepmd")
+    try:
+        import deepmd  # noqa: F401
+        import torch  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - exercised in misconfigured CI
+        pytest.fail(
+            "DeepMD reference job requires deepmd-kit[torch]==3.2.0; "
+            f"import failed: {exc}",
+            pytrace=False,
+        )
     model = DPA4_MODEL if name == "DPA4" else DPA4C_MODEL
     return evaluate_batch(name, model, StructureBatch.from_ase(system))
 
@@ -79,8 +86,15 @@ def test_dpa_descriptors_match_deepmd_kit(name, descriptor, system_factory):
 def test_dpa_golden_nonperiodic_rows_match_deepmd_kit(name):
     """Keep the committed non-periodic golden rows tied to DeepMD output."""
 
-    pytest.importorskip("torch")
-    pytest.importorskip("deepmd")
+    try:
+        import deepmd  # noqa: F401
+        import torch  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - exercised in misconfigured CI
+        pytest.fail(
+            "DeepMD reference job requires deepmd-kit[torch]==3.2.0; "
+            f"import failed: {exc}",
+            pytrace=False,
+        )
     fixture_dir = ROOT / "tests" / "golden" / name.lower()
     with np.load(fixture_dir / "input.npz") as arrays:
         batch = StructureBatch(

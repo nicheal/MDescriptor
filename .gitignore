@@ -30,6 +30,7 @@ benchmarks/_legacy_oracles/mtp/*
 docs/*
 !docs/
 !docs/descriptor-inventory.md
+!docs/numerical-baselines.md
 research/
 mdescriptor/*.so
 mdescriptor/*.pyd
