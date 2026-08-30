@@ -1,0 +1,8 @@
+/tmp/mdescriptor-cuda-install/mdescriptor/.libs/libgfortran-83c28eba.so.5.0.0
+/tmp/mdescriptor-cuda-install/mdescriptor/.libs/libquadmath-2284e583.so.0.0.0
+/tmp/mdescriptor-cuda-install/mdescriptor/.libs/libscipy_openblas.so
+/tmp/mdescriptor-cuda-install/mdescriptor/licenses/scipy-openblas32-METADATA.txt
+/tmp/mdescriptor-cuda-install/mdescriptor/licenses/scipy-openblas32-LICENSE.txt
+/tmp/mdescriptor-cuda-install/mdescriptor/docs/gui-adaptation-baseline.md
+/tmp/mdescriptor-cuda-install/mdescriptor/_native.cpython-312-x86_64-linux-gnu.so
+/tmp/mdescriptor-cuda-install/mdescriptor/_cuda.cpython-312-x86_64-linux-gnu.so

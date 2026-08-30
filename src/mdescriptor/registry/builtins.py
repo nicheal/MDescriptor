@@ -143,6 +143,7 @@ def _info(
     charge_spin: bool = False,
     cooperative_cancel: bool = True,
     mixed_periodicity: bool | None = None,
+    devices: tuple[str, ...] = ("cpu",),
     asset: dict[str, Any] | None = None,
 ) -> DescriptorInfo:
     if mixed_periodicity is None:
@@ -153,7 +154,7 @@ def _info(
         category,
         parameters,
         {
-            "devices": ["cpu"],
+            "devices": list(devices),
             "num_threads": True,
             "cooperative_cancel": cooperative_cancel,
         },
@@ -822,6 +823,7 @@ _DESCRIPTOR_INFO = {
                 default=False,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SortedDistances": _info(
         "Sorted Distances",
@@ -889,6 +891,7 @@ _DESCRIPTOR_INFO = {
                 minimum=0,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SphericalExpansionByPair": _info(
         "Spherical Expansion by Pair",
@@ -965,6 +968,7 @@ _DESCRIPTOR_INFO = {
                 minimum=0,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SoapPowerSpectrum": _info(
         "SOAP Power Spectrum",
@@ -1003,6 +1007,7 @@ _DESCRIPTOR_INFO = {
                 minimum=0,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "LodeSphericalExpansion": _info(
         "LODE Spherical Expansion",

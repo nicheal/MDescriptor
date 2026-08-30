@@ -1,6 +1,7 @@
 #pragma once
 
 #include "local_common.hpp"
+#include "local_layout.hpp"
 #include "mdescriptor/detail/math3.hpp"
 
 #include <algorithm>
@@ -632,17 +633,7 @@ inline void compute_coefficients_into(
 }
 
 inline std::int64_t local_feature_count(const LocalDescriptorOptions& options, LocalDescriptorKind kind) {
-    const std::int64_t species = static_cast<std::int64_t>(options.species.size());
-    const std::int64_t radial = static_cast<std::int64_t>(options.max_radial + 1);
-    const std::int64_t angular = static_cast<std::int64_t>(options.max_angular + 1);
-    switch (kind) {
-    case LocalDescriptorKind::SoapRadialSpectrum:
-        return species * species * radial;
-    case LocalDescriptorKind::SoapPowerSpectrum:
-        return species * (species + 1) / 2 * species * angular * radial * radial;
-    default:
-        return species * species * radial * angular * angular;
-    }
+    return local_layout_feature_count(options, kind);
 }
 
 inline std::array<double, 3> cross(const std::array<double, 3>& left, const std::array<double, 3>& right) {

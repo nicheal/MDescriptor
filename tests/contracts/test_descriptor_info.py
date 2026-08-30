@@ -71,7 +71,18 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
         assert metadata["execution_engine"] == spec.execution_engine
         assert metadata["capabilities"] == sorted(spec.capabilities)
         assert metadata["asset"]["policy"] == spec.asset_policy.value
-        assert metadata["execution"]["devices"] == ["cpu"]
+        expected_devices = (
+            ["cpu", "cuda"]
+            if spec.name
+            in {
+                "NeighborList",
+                "SphericalExpansion",
+                "SoapRadialSpectrum",
+                "SoapPowerSpectrum",
+            }
+            else ["cpu"]
+        )
+        assert metadata["execution"]["devices"] == expected_devices
         assert metadata["input"]["mixed_periodicity"] == (
             set(metadata["input"]["periodicity"])
             == {"isolated", "fully_periodic"}

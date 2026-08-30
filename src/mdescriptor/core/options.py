@@ -45,6 +45,13 @@ class ExecutionOptions:
     def __post_init__(self) -> None:
         if not isinstance(self.device, str) or not self.device.strip():
             raise DescriptorConfigError("execution device cannot be empty")
+        if self.device not in {"cpu", "cuda"}:
+            raise DescriptorConfigError(
+                "execution device must be exactly 'cpu' or 'cuda'",
+                code="invalid_device",
+                path=["device"],
+                details={"supported": ["cpu", "cuda"]},
+            )
         if isinstance(self.num_threads, bool):
             raise DescriptorConfigError("num_threads must be a positive integer or None")
         if self.num_threads is not None and (

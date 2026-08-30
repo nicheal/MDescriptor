@@ -56,10 +56,27 @@ installing Torch; the supported default graphs run through the C++17/OpenMP
 backend and specialised configurations retain the NumPy fallback. No network
 model download is performed.
 
-All built-in descriptors currently advertise and execute on CPU only. CUDA/GPU
-execution is not available in this release; `execution.device="cuda"` is
-rejected rather than silently falling back. Adding GPU support requires a
-device-specific kernel and a corresponding wheel/runtime build.
+The base wheel keeps the CPU backend as its default. `NeighborList`,
+`SphericalExpansion`, `SoapRadialSpectrum`, and `SoapPowerSpectrum` also
+advertise `execution.device="cuda"`; the other built-ins remain CPU-only.
+CUDA is an opt-in plugin build and never silently falls back to CPU:
+
+```bash
+cmake -S . -B build-cuda \
+  -DMDESCRIPTOR_BUILD_CUDA=ON \
+  -DCMAKE_CUDA_ARCHITECTURES=75
+cmake --build build-cuda
+cmake --install build-cuda --prefix /path/to/your/environment
+```
+
+The CUDA target requires a CUDA toolkit and an explicit architecture list.
+Without the plugin or a usable CUDA driver, a CUDA computation reports the
+structured `device_unavailable` error.
+
+基础 wheel 默认使用 CPU。`NeighborList`、`SphericalExpansion`、
+`SoapRadialSpectrum` 和 `SoapPowerSpectrum` 声明支持 `device="cuda"`；其他
+内置描述符仍为 CPU-only。CUDA 是显式启用的独立插件目标，没有插件或不可用
+驱动时不会静默回退，而是返回结构化的 `device_unavailable` 错误。
 
 可选的外部数值对照固定使用 `deepmd-kit==3.2.0`：
 

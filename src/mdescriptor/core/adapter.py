@@ -9,7 +9,8 @@ from os import PathLike, fspath
 from typing import Any, ClassVar, cast
 
 from ..registry.info import LEGACY_PARAMETER_ALIASES, validate_descriptor_parameters
-from .control import ComputeControl, _unwrap_native_control
+from .backends import BackendKernel, CpuBackend, CudaBackend
+from .control import ComputeControl
 from .descriptor import Descriptor, _input_error_path
 from .errors import (
     DescriptorConfigError,
@@ -126,6 +127,20 @@ def _builtin_input_capabilities(name: str) -> Mapping[str, Any] | None:
     if spec.info is None:
         return None
     return spec.info.input
+
+
+def _builtin_execution_capabilities(name: str) -> Mapping[str, Any] | None:
+    """Read execution capabilities from the registry without loading kernels."""
+
+    try:
+        from ..registry.builtins import builtin_registry
+
+        spec = builtin_registry.get(name)
+    except (ImportError, KeyError):
+        return None
+    if spec.info is None:
+        return None
+    return spec.info.execution
 
 
 def _unsupported_input(
@@ -342,6 +357,8 @@ class DescriptorAdapter(Descriptor):
 
     kernel_type: ClassVar[type[Any]]
     name: ClassVar[str]
+    _kernel: Any
+    _backend: BackendKernel
     wrap_value_errors_as_config: ClassVar[bool] = True
     allowed_options: ClassVar[frozenset[str] | None] = None
     requires_species: ClassVar[bool] = False
@@ -352,6 +369,11 @@ class DescriptorAdapter(Descriptor):
         """Bind input metadata supplied by a non-built-in registry."""
 
         self._registry_input_capabilities = capabilities
+
+    def _bind_execution_capabilities(self, capabilities: Mapping[str, Any]) -> None:
+        """Bind execution metadata supplied by a non-built-in registry."""
+
+        self._registry_execution_capabilities = capabilities
 
     def _initialize(
         self,
@@ -381,7 +403,22 @@ class DescriptorAdapter(Descriptor):
             if execution_value is None
             else _coerce_options(execution_value, ExecutionOptions, "execution")
         )
-        supported_devices = tuple(self.supported_devices)
+        execution_capabilities = getattr(
+            self, "_registry_execution_capabilities", None
+        )
+        if execution_capabilities is None:
+            execution_capabilities = _builtin_execution_capabilities(self.name)
+        if execution_capabilities is not None:
+            declared_devices = execution_capabilities.get("devices", ("cpu",))
+        else:
+            declared_devices = self.supported_devices
+        supported_devices = tuple(str(value) for value in declared_devices)
+        if not supported_devices:
+            raise DescriptorConfigError(
+                f"{self.name} does not declare an execution device",
+                code="invalid_descriptor_info",
+                path=["execution", "devices"],
+            )
         if self._execution_options.device not in supported_devices:
             supported = ", ".join(supported_devices) or "none"
             raise DescriptorConfigError(
@@ -417,7 +454,10 @@ class DescriptorAdapter(Descriptor):
             # This implementation identity is deliberately absent from the
             # public constructor and configuration snapshot.
             kwargs["model_digest"] = resolved_model_digest
-        if self._execution_options.num_threads is not None:
+        if (
+            self._execution_options.num_threads is not None
+            and self._execution_options.device == "cpu"
+        ):
             if not _accepts_keyword(parameters, "num_threads"):
                 raise DescriptorConfigError(
                     f"{self.name} does not support execution.num_threads",
@@ -425,18 +465,8 @@ class DescriptorAdapter(Descriptor):
                     path=["execution", "num_threads"],
                 )
             kwargs["num_threads"] = self._execution_options.num_threads
-        if self._execution_options.device != "cpu":
-            if not _has_explicit_keyword(parameters, "device"):
-                raise DescriptorConfigError(
-                    f"{self.name} does not support execution.device={self._execution_options.device!r}",
-                    code="unsupported_device",
-                    path=["execution", "device"],
-                    details={"supported": list(supported_devices)},
-                )
-            kwargs["device"] = self._execution_options.device
-
         try:
-            self._kernel = self.kernel_type(**kwargs)
+            validation_kernel = self.kernel_type(**kwargs)
         except (DescriptorConfigError, DescriptorInputError):
             raise
         except TypeError as exc:
@@ -457,7 +487,7 @@ class DescriptorAdapter(Descriptor):
             ) from exc
 
         snapshot = dict(options)
-        canonicalize = getattr(self._kernel, "_canonical_configuration", None)
+        canonicalize = getattr(validation_kernel, "_canonical_configuration", None)
         if callable(canonicalize):
             snapshot = dict(canonicalize(snapshot))
         snapshot["output"] = self._output_options
@@ -471,11 +501,37 @@ class DescriptorAdapter(Descriptor):
             _json_safe(snapshot),
         )
 
+        backend: BackendKernel
+        if self._execution_options.device == "cuda":
+            # ``validation_kernel`` only validates and canonicalizes options;
+            # it is never used for CUDA computation.  In particular, no CUDA
+            # module or driver is touched on this construction path.
+            resolved_features: int | None
+            try:
+                candidate = int(validation_kernel.feature_count)
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                candidate = 0
+            resolved_features = candidate if candidate > 0 else None
+            backend_options = dict(snapshot)
+            backend_options["output"] = self._output_options
+            backend_options["execution"] = self._execution_options
+            backend = CudaBackend(
+                self.name,
+                _json_safe(backend_options),
+                resolved_features,
+            )
+            self._kernel = backend
+            close_validation = getattr(validation_kernel, "close", None)
+            if callable(close_validation):
+                close_validation()
+        else:
+            self._kernel = validation_kernel
+            backend = CpuBackend(validation_kernel)
+        self._backend = backend
+
         self._feature_count: int | None = None
-        try:
-            resolved_features = int(self._kernel.feature_count)
-        except (AttributeError, TypeError, ValueError, RuntimeError):
-            resolved_features = 0
+        backend_features = self._backend.feature_count
+        resolved_features = 0 if backend_features is None else int(backend_features)
         if resolved_features > 0:
             self._feature_count = resolved_features
         try:
@@ -594,10 +650,23 @@ class DescriptorAdapter(Descriptor):
 
     def _adapt_result(self, result: Any) -> DescriptorResult:
         adapted = adapt_result(result)
+        adapted = self._apply_execution_metadata(adapted)
         adapted = self._add_model_identity(adapted)
         adapted = _apply_output(adapted, self._output_options)
         self._metadata_snapshot = dict(adapted.metadata)
         return adapted
+
+    def _apply_execution_metadata(self, result: DescriptorResult) -> DescriptorResult:
+        """Record the selected device independently of backend labels."""
+
+        metadata = dict(result.metadata)
+        metadata["execution"] = {
+            "device": self._execution_options.device,
+            "num_threads": self._execution_options.num_threads,
+        }
+        updated = copy(result)
+        object.__setattr__(updated, "metadata", _json_safe(metadata))
+        return updated
 
     def _add_model_identity(self, result: DescriptorResult) -> DescriptorResult:
         """Attach resolved model identity without changing the result schema."""
@@ -623,7 +692,10 @@ class DescriptorAdapter(Descriptor):
     def _snapshot_kernel_metadata(self) -> None:
         """Capture diagnostic metadata before a native runtime can disappear."""
 
-        builder = getattr(getattr(self, "_kernel", None), "_metadata", None)
+        backend = getattr(self, "_backend", None)
+        builder = getattr(backend, "metadata", None)
+        if not callable(builder):
+            builder = getattr(getattr(self, "_kernel", None), "_metadata", None)
         if not callable(builder):
             return
         try:
@@ -709,7 +781,7 @@ class DescriptorAdapter(Descriptor):
         control: ComputeControl | None = None,
     ) -> DescriptorResult:
         try:
-            raw_result = self._kernel.compute(batch, _unwrap_native_control(control))
+            raw_result = self._backend.compute(batch, control)
         except DescriptorInputError:
             raise
         except ValueError as exc:
@@ -722,7 +794,7 @@ class DescriptorAdapter(Descriptor):
         if self.closed:
             return
         self._snapshot_kernel_metadata()
-        close = getattr(self._kernel, "close", None)
+        close = getattr(self._backend, "close", None)
         if close is not None:
             close()
         super().close()
@@ -859,10 +931,18 @@ def adapter_class(
         if requires_species is None
         else bool(requires_species)
     )
+    declared_execution = _builtin_execution_capabilities(name)
+    declared_devices = (
+        declared_execution.get("devices", ("cpu",))
+        if declared_execution is not None
+        else None
+    )
     resolved_supported_devices = tuple(
         str(item)
         for item in (
-            supported_devices if supported_devices is not None else ("cpu",)
+            supported_devices
+            if supported_devices is not None
+            else (declared_devices if declared_devices is not None else ("cpu",))
         )
     )
     if not resolved_supported_devices:

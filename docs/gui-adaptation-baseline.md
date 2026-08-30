@@ -49,13 +49,20 @@ so descriptors can share a label without changing their numerical interfaces.
 For nested object properties, the same fields may be present on the nested
 schema.
 
-The current built-ins advertise CPU execution (`execution.devices == ["cpu"]`)
-and may advertise `num_threads` and `cooperative_cancel` independently.
-Cancellation is cooperative and is reported as the public `CancelledError`.
-CUDA/GPU execution is not available in this release. A GUI must not offer a
-CUDA device for built-in descriptors; selecting one produces a structured
-`unsupported_device` configuration error. Future GPU support requires a
-device-specific kernel and matching platform wheels.
+The current built-ins advertise CPU execution and the first CUDA-capable
+descriptors (`NeighborList`, `SphericalExpansion`, `SoapRadialSpectrum`, and
+`SoapPowerSpectrum`) advertise `execution.devices == ["cpu", "cuda"]`.
+The remaining built-ins advertise `execution.devices == ["cpu"]`. A GUI
+should offer only the devices declared by the selected descriptor. Selecting
+an undeclared device produces a structured `unsupported_device` configuration
+error; CUDA plugin or driver failures use `device_unavailable`,
+`backend_error`, or `backend_out_of_memory`.
+
+CUDA execution is synchronous at the public boundary and returns the same
+host-owned NumPy/CSR result contract as CPU execution. The CUDA plugin is
+loaded lazily on the first CUDA `compute()` call, so static discovery and
+`describe_descriptor()` do not require a CUDA driver. Cancellation is
+cooperative and is reported as the public `CancelledError`.
 
 ## Input policy
 

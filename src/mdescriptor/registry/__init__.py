@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
 from ..core.descriptor import Descriptor
 from ..core.errors import DescriptorConfigError
@@ -148,11 +148,20 @@ def create_descriptor(
     # Rebuild through its public JSON view so descriptor constructors receive
     # ordinary dict/list values rather than mappingproxy/tuple implementations.
     values = _restore_parameters(configuration.to_dict()["parameters"])
-    descriptor = spec.load_class()(**values)
+    descriptor_type = spec.load_class()
+    # Bind registry capabilities before the adapter constructor runs.  Built-in
+    # adapters can read their immutable registry entry during construction, but
+    # custom registries must also be able to opt a class into a device without
+    # mutating the shared class object.
+    descriptor = cast(Any, descriptor_type).__new__(descriptor_type)
     if spec.info is not None:
         bind_input = getattr(descriptor, "_bind_input_capabilities", None)
         if callable(bind_input):
             bind_input(spec.info.input)
+        bind_execution = getattr(descriptor, "_bind_execution_capabilities", None)
+        if callable(bind_execution):
+            bind_execution(spec.info.execution)
+    descriptor_type.__init__(descriptor, **values)
     return descriptor
 
 

@@ -194,3 +194,71 @@ install(
     LIBRARY DESTINATION mdescriptor
     RUNTIME DESTINATION mdescriptor
 )
+
+# The CUDA backend is an independently loadable plugin.  It is opt-in so the
+# CPU wheel and its build environment remain completely CUDA-free.  A release
+# build must provide an explicit architecture list, which keeps the produced
+# plugin's compatibility matrix visible in the build invocation.
+option(MDESCRIPTOR_BUILD_CUDA "Build the optional MDescriptor CUDA plugin" OFF)
+if(MDESCRIPTOR_BUILD_CUDA)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
+        message(FATAL_ERROR
+            "MDESCRIPTOR_BUILD_CUDA requires an explicit CMAKE_CUDA_ARCHITECTURES value")
+    endif()
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+
+    set(MDESCRIPTOR_CUDA_SOURCES
+        cpp/cuda/src/context.cu
+        cpp/cuda/src/batch.cu
+        cpp/cuda/src/neighbor_graph.cu
+        cpp/cuda/src/local_descriptors.cu
+        cpp/cuda/src/backend.cu
+        cpp/cuda/src/bindings.cu
+        # The host graph builder remains the canonical source for deterministic
+        # CSR ordering; descriptor coefficients and feature assembly run in the
+        # CUDA translation unit below.
+        cpp/src/common/control.cpp
+        cpp/src/common/neighbor.cpp
+        cpp/src/standalone/neighbor_list.cpp
+        cpp/src/standalone/spherical_expansion.cpp
+        cpp/src/standalone/spherical_expansion_by_pair.cpp
+    )
+    # pybind11 otherwise attaches its ``thin_lto`` interface target at module
+    # creation time when the global IPO variable has not been declared yet.
+    # Declare it as disabled for this target and restore the caller's value
+    # afterwards so the CPU extension keeps its existing build flags.
+    set(_MDESCRIPTOR_CUDA_IPO_WAS_DEFINED FALSE)
+    if(DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+        set(_MDESCRIPTOR_CUDA_IPO_WAS_DEFINED TRUE)
+        set(_MDESCRIPTOR_CUDA_IPO_SAVED "${CMAKE_INTERPROCEDURAL_OPTIMIZATION}")
+    endif()
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+    pybind11_add_module(_cuda ${MDESCRIPTOR_CUDA_SOURCES})
+    if(_MDESCRIPTOR_CUDA_IPO_WAS_DEFINED)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION "${_MDESCRIPTOR_CUDA_IPO_SAVED}")
+    else()
+        unset(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    endif()
+    target_compile_features(_cuda PRIVATE cxx_std_17)
+    # pybind11 enables host LTO for its extension targets.  CUDA relocatable
+    # device code has its own device-link step; disabling host IPO here avoids
+    # the CUDA toolchain dropping the fatbin registration symbol at the final
+    # Python-module link.
+    set_target_properties(
+        _cuda PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        INTERPROCEDURAL_OPTIMIZATION OFF)
+    target_compile_options(_cuda PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-lto>)
+    target_link_options(_cuda PRIVATE -fno-lto)
+    target_include_directories(
+        _cuda PRIVATE
+        cpp/include cpp/src cpp/src/common cpp/src/standalone
+        cpp/cuda/include)
+    target_link_libraries(_cuda PRIVATE CUDA::cudart)
+    install(
+        TARGETS _cuda
+        LIBRARY DESTINATION mdescriptor
+        RUNTIME DESTINATION mdescriptor
+    )
+endif()

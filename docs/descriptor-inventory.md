@@ -70,6 +70,8 @@ factory.  Algorithm classes are deliberately not re-exported from the root.
 
 - C++17/OpenMP kernels implement the standalone numerical formulas.
 - `mdescriptor._native` is the private pybind11 extension name.
+- The opt-in `MDESCRIPTOR_BUILD_CUDA` target installs `mdescriptor._cuda` as
+  an independently loadable CUDA plugin for the first local descriptor set.
 - Python adapters own input packing, lifecycle, typed options and result
   normalization.
 - DPA4/DPA4C use the bundled NumPy checkpoint loader and fallback inference
