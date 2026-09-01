@@ -34,48 +34,6 @@ void check_cuda(cudaError_t status, const char* operation) {
     throw std::runtime_error(operation);
 }
 
-template <typename Value>
-class DeviceBuffer {
-public:
-    DeviceBuffer() = default;
-    DeviceBuffer(const DeviceBuffer&) = delete;
-    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
-
-    ~DeviceBuffer() noexcept {
-        if (data_ != nullptr) {
-            (void)cudaFree(data_);
-        }
-    }
-
-    void upload(
-        const std::vector<Value>& values,
-        cudaStream_t stream,
-        const char* operation) {
-        if (values.empty()) {
-            return;
-        }
-        check_cuda(
-            cudaMalloc(reinterpret_cast<void**>(&data_), values.size() * sizeof(Value)),
-            operation);
-        try {
-            check_cuda(
-                cudaMemcpyAsync(
-                    data_, values.data(), values.size() * sizeof(Value),
-                    cudaMemcpyHostToDevice, stream),
-                operation);
-        } catch (...) {
-            (void)cudaFree(data_);
-            data_ = nullptr;
-            throw;
-        }
-    }
-
-    Value* data() const noexcept { return data_; }
-
-private:
-    Value* data_ = nullptr;
-};
-
 __device__ int species_index(
     std::int32_t number,
     const std::int32_t* species,
@@ -88,14 +46,15 @@ __device__ int species_index(
     return -1;
 }
 
+template <int MaxAngular>
 __device__ void harmonic_values(
     const double* vector,
-    int max_angular,
     double* output) {
     // Compute the complete real-harmonic block once per graph edge.  The old
     // coefficient kernel recomputed the Legendre recurrence independently for
     // every (l, m) coefficient of that edge.
-    double legendre[528]{};
+    constexpr int max_angular = MaxAngular;
+    double legendre[(MaxAngular + 1) * (MaxAngular + 2) / 2]{};
     const double norm = sqrt(
         vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
     double direction[3] = {vector[0], vector[1], vector[2]};
@@ -234,9 +193,10 @@ __device__ std::size_t coefficient_index(
     int m,
     int radial_count,
     int max_angular) {
-    return ((static_cast<std::size_t>(species) * radial_count + radial)
-        * (max_angular + 1) + angular)
-        * (2 * max_angular + 1) + max_angular + m;
+    const int angular_count = max_angular + 1;
+    return (static_cast<std::size_t>(species) * radial_count + radial)
+        * static_cast<std::size_t>(angular_count * angular_count)
+        + static_cast<std::size_t>(angular * angular + angular + m);
 }
 
 __device__ double cutoff_value(double distance, double cutoff) {
@@ -252,6 +212,7 @@ __device__ double cutoff_value(double distance, double cutoff) {
         * (distance - cutoff + width) / width));
 }
 
+template <int MaxAngular>
 __global__ void compute_edge_basis(
     const std::int32_t* numbers,
     const std::int32_t* graph_atoms,
@@ -262,7 +223,6 @@ __global__ void compute_edge_basis(
     double cutoff,
     double density_width,
     int radial_count,
-    int max_angular,
     std::size_t total,
     double* edge_basis,
     std::int32_t* edge_species,
@@ -274,6 +234,7 @@ __global__ void compute_edge_basis(
     if (linear >= total) {
         return;
     }
+    constexpr int max_angular = MaxAngular;
     const int angular_count = max_angular + 1;
     const int radial_stride = angular_count * radial_count;
     const int harmonic_stride = angular_count * angular_count;
@@ -291,13 +252,54 @@ __global__ void compute_edge_basis(
         }
         return;
     }
-    harmonic_values(displacement, max_angular, harmonic_output);
+    harmonic_values<MaxAngular>(displacement, harmonic_output);
     for (int angular = 0; angular < angular_count; ++angular) {
         for (int radial = 0; radial < radial_count; ++radial) {
             radial_output[angular * radial_count + radial] = scaling * radial_value(
                 distance, angular, radial, radial_count, density_width,
                 gto_constants, gamma_a, gamma_b, orthonormalization);
         }
+    }
+}
+
+template <int MaxAngular>
+void launch_edge_basis(
+    int requested_angular,
+    cudaStream_t stream,
+    const std::int32_t* numbers,
+    const std::int32_t* graph_atoms,
+    const double* graph_displacements,
+    const double* graph_distance2,
+    const std::int32_t* species,
+    int species_count,
+    double cutoff,
+    double density_width,
+    int radial_count,
+    std::size_t total,
+    double* edge_basis,
+    std::int32_t* edge_species,
+    const double* gto_constants,
+    const double* gamma_a,
+    const double* gamma_b,
+    const double* orthonormalization) {
+    if (requested_angular == MaxAngular) {
+        constexpr unsigned int block_size = 128;
+        const auto blocks = static_cast<unsigned int>(
+            (total + block_size - 1) / block_size);
+        compute_edge_basis<MaxAngular><<<blocks, block_size, 0, stream>>>(
+            numbers, graph_atoms, graph_displacements, graph_distance2, species,
+            species_count, cutoff, density_width, radial_count, total, edge_basis,
+            edge_species, gto_constants, gamma_a, gamma_b, orthonormalization);
+        return;
+    }
+    if constexpr (MaxAngular < 31) {
+        launch_edge_basis<MaxAngular + 1>(
+            requested_angular, stream, numbers, graph_atoms, graph_displacements,
+            graph_distance2, species, species_count, cutoff, density_width, radial_count,
+            total, edge_basis, edge_species, gto_constants, gamma_a, gamma_b,
+            orthonormalization);
+    } else {
+        throw std::invalid_argument("unsupported CUDA angular order");
     }
 }
 
@@ -317,17 +319,20 @@ __global__ void compute_coefficients(
     }
     const std::int64_t center = static_cast<std::int64_t>(linear / coefficient_size);
     const std::size_t local = linear % coefficient_size;
-    const int width = 2 * max_angular + 1;
     const int angular_count = max_angular + 1;
     const int radial_stride = angular_count * radial_count;
-    const int harmonic_stride = angular_count * angular_count;
-    const int per_species = radial_count * angular_count * width;
+    const int angular_block = angular_count * angular_count;
+    const int per_species = radial_count * angular_block;
     const int coefficient_species = static_cast<int>(local / per_species);
     const int species_local = static_cast<int>(local % per_species);
-    const int radial = species_local / (angular_count * width);
-    const int angular_local = species_local % (angular_count * width);
-    const int angular = angular_local / width;
-    const int m = angular_local % width - max_angular;
+    const int radial = species_local / angular_block;
+    const int angular_local = species_local % angular_block;
+    int angular = 0;
+    while (angular + 1 < angular_count
+        && (angular + 1) * (angular + 1) <= angular_local) {
+        ++angular;
+    }
+    const int m = angular_local - angular * angular - angular;
     double result = 0.0;
     if (m <= angular && m >= -angular) {
         const std::int64_t begin = graph_offsets[center];
@@ -370,6 +375,7 @@ __global__ void assemble_features(
     int kind,
     int coefficient_size,
     int features,
+    int active_features,
     std::size_t total,
     const double* coefficients,
     double* output) {
@@ -377,39 +383,27 @@ __global__ void assemble_features(
     if (linear >= total) {
         return;
     }
-    const std::int64_t center = static_cast<std::int64_t>(linear / features);
-    const int feature = static_cast<int>(linear % features);
+    const std::int64_t center = static_cast<std::int64_t>(linear / active_features);
+    const int feature = static_cast<int>(linear % active_features);
     const int center_species = species_index(numbers[center], species, species_count);
     if (center_species < 0) {
-        output[linear] = 0.0;
         return;
     }
+    const std::size_t output_index = static_cast<std::size_t>(center) * features
+        + static_cast<std::size_t>(center_species) * active_features + feature;
     const int angular_count = max_angular + 1;
     if (kind == 2) {
-        const int per_center = species_count * radial_count;
-        const int center_offset = center_species * per_center;
-        if (feature < center_offset || feature >= center_offset + per_center) {
-            output[linear] = 0.0;
-            return;
-        }
-        const int local = feature - center_offset;
+        const int local = feature;
         const int neighbor_species = local / radial_count;
         const int radial = local % radial_count;
-        output[linear] = coefficient_at(
+        output[output_index] = coefficient_at(
             coefficients, center, neighbor_species, radial, 0, 0,
             radial_count, coefficient_max_angular, coefficient_size);
         return;
     }
     if (kind == 3) {
-        const int pair_count = species_count * (species_count + 1) / 2;
         const int pair_stride = angular_count * radial_count * radial_count;
-        const int per_center = pair_count * pair_stride;
-        const int center_offset = center_species * per_center;
-        if (feature < center_offset || feature >= center_offset + per_center) {
-            output[linear] = 0.0;
-            return;
-        }
-        const int local = feature - center_offset;
+        const int local = feature;
         int pair = local / pair_stride;
         int remainder = local % pair_stride;
         int first = 0;
@@ -439,17 +433,11 @@ __global__ void assemble_features(
         const double pair_scale = first == second ? 1.0 : 1.414213562373095048801688724209698079;
         const double angular_scale = (angular % 2 == 0 ? 1.0 : -1.0)
             / sqrt(2.0 * angular + 1.0);
-        output[linear] = pair_scale * angular_scale * value;
+        output[output_index] = pair_scale * angular_scale * value;
         return;
     }
 
-    const int center_block = species_count * radial_count * angular_count * angular_count;
-    const int center_offset = center_species * center_block;
-    if (feature < center_offset || feature >= center_offset + center_block) {
-        output[linear] = 0.0;
-        return;
-    }
-    const int local = feature - center_offset;
+    const int local = feature;
     const int neighbor_species = local / (angular_count * angular_count * radial_count);
     int remainder = local % (angular_count * angular_count * radial_count);
     // The spherical expansion layout is (species, l, m, n), while the
@@ -468,7 +456,7 @@ __global__ void assemble_features(
         }
         remainder -= block;
     }
-    output[linear] = coefficient_at(
+    output[output_index] = coefficient_at(
         coefficients, center, neighbor_species, found_radial, found_angular, found_m,
         radial_count, coefficient_max_angular, coefficient_size);
 }
@@ -507,25 +495,32 @@ std::vector<double> compute_local_descriptors(
     const auto descriptor_kind = static_cast<LocalDescriptorKind>(kind);
     const auto features = detail::local_layout_feature_count(options, descriptor_kind);
     const int radial_count = max_radial + 1;
-    const int angular_count = max_angular + 1;
-    const int coefficient_width = 2 * max_angular + 1;
+    // SoapRadialSpectrum only consumes the l=0 coefficient block.  Avoid
+    // constructing the unused higher-angular channels on the device.
+    const int coefficient_max_angular = kind == 2 ? 0 : max_angular;
+    const int coefficient_angular_count = coefficient_max_angular + 1;
+    const int coefficient_angular_block = coefficient_angular_count * coefficient_angular_count;
     const int coefficient_size = static_cast<int>(species.size()) * radial_count
-        * angular_count * coefficient_width;
+        * coefficient_angular_block;
     const std::size_t output_size = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(features);
     const std::size_t coefficient_total = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(coefficient_size);
+    const int active_features = static_cast<int>(
+        features / static_cast<std::int64_t>(species.size()));
+    const std::size_t active_output_size = static_cast<std::size_t>(batch.atoms())
+        * static_cast<std::size_t>(active_features);
 
     std::vector<double> gto_constants;
     std::vector<double> gamma_a;
     std::vector<double> gamma_b;
     std::vector<double> orthonormalization;
-    gto_constants.reserve(static_cast<std::size_t>(angular_count) * radial_count);
-    gamma_a.reserve(static_cast<std::size_t>(angular_count) * radial_count);
-    gamma_b.reserve(static_cast<std::size_t>(angular_count));
+    gto_constants.reserve(static_cast<std::size_t>(coefficient_angular_count) * radial_count);
+    gamma_a.reserve(static_cast<std::size_t>(coefficient_angular_count) * radial_count);
+    gamma_b.reserve(static_cast<std::size_t>(coefficient_angular_count));
     orthonormalization.reserve(
-        static_cast<std::size_t>(angular_count) * radial_count * radial_count);
-    for (int angular = 0; angular < angular_count; ++angular) {
+        static_cast<std::size_t>(coefficient_angular_count) * radial_count * radial_count);
+    for (int angular = 0; angular < coefficient_angular_count; ++angular) {
         const GtoRadialBasis basis(radial_count, cutoff, angular);
         gto_constants.insert(gto_constants.end(), basis.gto_constants.begin(), basis.gto_constants.end());
         gamma_a.insert(gamma_a.end(), basis.gamma_a.begin(), basis.gamma_a.end());
@@ -535,58 +530,107 @@ std::vector<double> compute_local_descriptors(
         }
     }
 
-    DeviceBuffer<std::int32_t> device_species;
-    DeviceBuffer<double> device_gto_constants;
-    DeviceBuffer<double> device_gamma_a;
-    DeviceBuffer<double> device_gamma_b;
-    DeviceBuffer<double> device_orthonormalization;
-    device_species.upload(species, context.stream(), "could not upload CUDA species");
-    device_gto_constants.upload(gto_constants, context.stream(), "could not upload CUDA radial constants");
-    device_gamma_a.upload(gamma_a, context.stream(), "could not upload CUDA radial gamma values");
-    device_gamma_b.upload(gamma_b, context.stream(), "could not upload CUDA radial gamma denominators");
-    device_orthonormalization.upload(
-        orthonormalization, context.stream(), "could not upload CUDA radial orthonormalization");
-    context.synchronize();
+    const int edge_radial_stride = coefficient_angular_count * radial_count;
+    const int edge_harmonic_stride = coefficient_angular_count * coefficient_angular_count;
+    const int edge_basis_stride = edge_radial_stride + edge_harmonic_stride;
+    const std::size_t edge_count = graph.pairs();
+
+    auto align_up = [](std::size_t value, std::size_t alignment) {
+        return (value + alignment - 1) / alignment * alignment;
+    };
+    std::size_t workspace_size = 0;
+    auto reserve_workspace = [&workspace_size, &align_up](
+        std::size_t bytes, std::size_t alignment) {
+        workspace_size = align_up(workspace_size, alignment);
+        const std::size_t offset = workspace_size;
+        workspace_size += bytes;
+        return offset;
+    };
+    const std::size_t species_offset = reserve_workspace(
+        species.size() * sizeof(std::int32_t), alignof(std::int32_t));
+    const std::size_t gto_constants_offset = reserve_workspace(
+        gto_constants.size() * sizeof(double), alignof(double));
+    const std::size_t gamma_a_offset = reserve_workspace(
+        gamma_a.size() * sizeof(double), alignof(double));
+    const std::size_t gamma_b_offset = reserve_workspace(
+        gamma_b.size() * sizeof(double), alignof(double));
+    const std::size_t orthonormalization_offset = reserve_workspace(
+        orthonormalization.size() * sizeof(double), alignof(double));
+    const std::size_t edge_basis_offset = reserve_workspace(
+        edge_count * static_cast<std::size_t>(edge_basis_stride) * sizeof(double), alignof(double));
+    const std::size_t edge_species_offset = reserve_workspace(
+        edge_count * sizeof(std::int32_t), alignof(std::int32_t));
+    const std::size_t coefficient_offset = reserve_workspace(
+        coefficient_total * sizeof(double), alignof(double));
+    auto* workspace = static_cast<unsigned char*>(context.workspace_buffer(workspace_size));
+    auto* device_species = reinterpret_cast<std::int32_t*>(workspace + species_offset);
+    auto* device_gto_constants = reinterpret_cast<double*>(workspace + gto_constants_offset);
+    auto* device_gamma_a = reinterpret_cast<double*>(workspace + gamma_a_offset);
+    auto* device_gamma_b = reinterpret_cast<double*>(workspace + gamma_b_offset);
+    auto* device_orthonormalization = reinterpret_cast<double*>(
+        workspace + orthonormalization_offset);
+    auto* edge_basis = reinterpret_cast<double*>(workspace + edge_basis_offset);
+    auto* edge_species = reinterpret_cast<std::int32_t*>(workspace + edge_species_offset);
+    auto* coefficient_data = reinterpret_cast<double*>(workspace + coefficient_offset);
+    auto upload = [&context](void* destination, const void* source, std::size_t bytes, const char* operation) {
+        if (bytes == 0) {
+            return;
+        }
+        check_cuda(
+            cudaMemcpyAsync(
+                destination, source, bytes, cudaMemcpyHostToDevice, context.stream()),
+            operation);
+    };
+    upload(
+        device_species, species.data(), species.size() * sizeof(std::int32_t),
+        "could not upload CUDA species");
+    upload(
+        device_gto_constants, gto_constants.data(), gto_constants.size() * sizeof(double),
+        "could not upload CUDA radial constants");
+    upload(
+        device_gamma_a, gamma_a.data(), gamma_a.size() * sizeof(double),
+        "could not upload CUDA radial gamma values");
+    upload(
+        device_gamma_b, gamma_b.data(), gamma_b.size() * sizeof(double),
+        "could not upload CUDA radial gamma denominators");
+    upload(
+        device_orthonormalization, orthonormalization.data(),
+        orthonormalization.size() * sizeof(double),
+        "could not upload CUDA radial orthonormalization");
 
     double* output = context.output_buffer(output_size);
     if (coefficient_total > 0) {
-        // Allocate the coefficient workspace directly because it is written
-        // by the first kernel and consumed by the second one.
-        double* coefficient_data = nullptr;
-        check_cuda(
-            cudaMalloc(
-                reinterpret_cast<void**>(&coefficient_data),
-                coefficient_total * sizeof(double)),
-            "could not allocate CUDA spherical coefficients");
-        try {
-            constexpr unsigned int block_size = 128;
-            const auto coefficient_blocks = static_cast<unsigned int>(
-                (coefficient_total + block_size - 1) / block_size);
-            compute_coefficients<<<coefficient_blocks, block_size, 0, context.stream()>>>(
-                batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(),
-                graph.distance2(), device_species.data(), static_cast<int>(species.size()),
-                cutoff, density_width, radial_count, max_angular, coefficient_size,
-                coefficient_total, coefficient_data, device_gto_constants.data(), device_gamma_a.data(),
-                device_gamma_b.data(), device_orthonormalization.data());
-            check_cuda(cudaGetLastError(), "CUDA spherical coefficient kernel launch failed");
-            if (output_size > 0) {
-                const auto output_blocks = static_cast<unsigned int>(
-                    (output_size + block_size - 1) / block_size);
-                assemble_features<<<output_blocks, block_size, 0, context.stream()>>>(
-                    batch.numbers(), device_species.data(), static_cast<int>(species.size()),
-                    radial_count, max_angular, kind, coefficient_size,
-                    static_cast<int>(features), output_size, coefficient_data, output);
-                check_cuda(cudaGetLastError(), "CUDA local descriptor kernel launch failed");
-            }
-            const auto result = context.download_output(output_size);
-            double* allocated_coefficients = coefficient_data;
-            coefficient_data = nullptr;
-            check_cuda(cudaFree(allocated_coefficients), "could not release CUDA spherical coefficients");
-            return result;
-        } catch (...) {
-            (void)cudaFree(coefficient_data);
-            throw;
+        constexpr unsigned int block_size = 128;
+        if (edge_count > 0) {
+            launch_edge_basis<0>(
+                coefficient_max_angular, context.stream(), batch.numbers(), graph.atoms(),
+                graph.displacements(), graph.distance2(), device_species,
+                static_cast<int>(species.size()), cutoff, density_width, radial_count,
+                edge_count, edge_basis, edge_species, device_gto_constants, device_gamma_a,
+                device_gamma_b, device_orthonormalization);
+            check_cuda(cudaGetLastError(), "CUDA edge basis kernel launch failed");
         }
+        const auto coefficient_blocks = static_cast<unsigned int>(
+            (coefficient_total + block_size - 1) / block_size);
+        compute_coefficients<<<coefficient_blocks, block_size, 0, context.stream()>>>(
+            graph.offsets(), edge_species, radial_count, coefficient_max_angular,
+            coefficient_size, edge_basis_stride, coefficient_total, coefficient_data, edge_basis);
+        check_cuda(cudaGetLastError(), "CUDA spherical coefficient kernel launch failed");
+        check_cuda(
+            cudaMemsetAsync(
+                output, 0, output_size * sizeof(double), context.stream()),
+            "could not clear CUDA descriptor output");
+        if (active_output_size > 0) {
+            const auto output_blocks = static_cast<unsigned int>(
+                (active_output_size + block_size - 1) / block_size);
+            assemble_features<<<output_blocks, block_size, 0, context.stream()>>>(
+                batch.numbers(), device_species, static_cast<int>(species.size()),
+                radial_count, max_angular, coefficient_max_angular, kind, coefficient_size,
+                static_cast<int>(features), active_features, active_output_size,
+                coefficient_data, output);
+            check_cuda(cudaGetLastError(), "CUDA local descriptor kernel launch failed");
+        }
+        return context.download_output(output_size);
     }
     return {};
 }

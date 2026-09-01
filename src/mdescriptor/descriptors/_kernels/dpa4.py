@@ -15,6 +15,7 @@ from ..model_backed.dpa import (
     load_dpa_checkpoint,
     new_runtime,
 )
+from ..model_backed.graph import _ATOMIC_SYMBOLS
 from .dpa_common import compute_native_batch
 
 
@@ -202,8 +203,8 @@ def _native_payload(
         "env_output_projection": value("env_seed_embedding.output_proj.matrix"),
         "film_scale_norm": value("film_scale_norm.adam_scale"),
         "film_shift_norm": value("film_shift_norm.adam_scale"),
-        "film_scale_strength_log": float(value("film_scale_strength_log")[0]),
-        "film_shift_strength_log": float(value("film_shift_strength_log")[0]),
+        "film_scale_strength_log": _as_float32(value("film_scale_strength_log")),
+        "film_shift_strength_log": _as_float32(value("film_shift_strength_log")),
         "radial_freqs": value("radial_basis.adam_freqs"),
         "radial_layer1": value("radial_embedding.net.0.matrix"),
         "radial_norm_scale": value("radial_embedding.net.1.adam_scale"),
@@ -224,6 +225,16 @@ def _native_payload(
         "output_grid_right": value("output_ffn.act.grid_op.right_proj.weight"),
         "output_grid_out": value("output_ffn.act.grid_op.out_proj.weight"),
     }
+
+
+def _type_numbers(type_map: Any) -> np.ndarray:
+    """Translate the checkpoint type order to public atomic numbers."""
+
+    numbers_by_symbol = {symbol: number for number, symbol in _ATOMIC_SYMBOLS.items()}
+    return np.asarray(
+        [int(numbers_by_symbol.get(str(symbol), -1)) for symbol in type_map],
+        dtype=np.int32,
+    )
 
 
 class Dpa4Kernel:
@@ -264,11 +275,23 @@ class Dpa4Kernel:
         )
         self._cpp = None
         payload = _native_payload(descriptor, num_threads=self.num_threads)
+        self._cuda_model_payload = payload
         if payload is not None:
             from mdescriptor import _native as native
 
             self._cpp = native.Dpa4Calculator(payload)
         self._closed = False
+
+    def _cuda_payload(self) -> dict[str, Any]:
+        """Return the private device handoff without changing public state."""
+
+        return {
+            "version": 1,
+            "model": self._cuda_model_payload,
+            "labels": self._labels(),
+            "type_numbers": _type_numbers(self._native.type_map),
+            "feature_count": self.feature_count,
+        }
 
     @property
     def feature_count(self) -> int:

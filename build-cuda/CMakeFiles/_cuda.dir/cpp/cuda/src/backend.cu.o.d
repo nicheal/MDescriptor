@@ -268,6 +268,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o : /home/nicheal/MDescriptor/cpp/c
     /usr/include/c++/13/bits/vector.tcc \
     /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/batch.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/dpa4.hpp \
     /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/neighbor_graph.hpp \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/pytypes.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h \
@@ -471,8 +472,9 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o : /home/nicheal/MDescriptor/cpp/c
     /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
     /usr/include/c++/13/bits/streambuf.tcc \
     /usr/include/c++/13/optional \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/local_descriptors.hpp \
-    /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/dpa4c.hpp \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/nep.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/nep.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
     /usr/include/c++/13/atomic \
     /usr/include/c++/13/mutex \
@@ -484,6 +486,8 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o : /home/nicheal/MDescriptor/cpp/c
     /usr/include/c++/13/bits/unique_lock.h \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/local_descriptors.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
     /home/nicheal/MDescriptor/cpp/src/common/local_layout.hpp \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/numpy.h \

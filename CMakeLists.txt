@@ -5,6 +5,9 @@ set(PYBIND11_FINDPYTHON ON)
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
+option(MDESCRIPTOR_BUILD_NATIVE "Build the CPU native extension" ON)
+
+if(MDESCRIPTOR_BUILD_NATIVE)
 # OpenBLAS is a build-time dependency and is vendored into the resulting
 # wheel.  scipy-openblas32 deliberately exports a prefixed CBLAS ABI so that
 # this extension cannot accidentally bind to NumPy/SciPy's copy of OpenBLAS.
@@ -194,12 +197,17 @@ install(
     LIBRARY DESTINATION mdescriptor
     RUNTIME DESTINATION mdescriptor
 )
+endif()
 
 # The CUDA backend is an independently loadable plugin.  It is opt-in so the
 # CPU wheel and its build environment remain completely CUDA-free.  A release
 # build must provide an explicit architecture list, which keeps the produced
 # plugin's compatibility matrix visible in the build invocation.
 option(MDESCRIPTOR_BUILD_CUDA "Build the optional MDescriptor CUDA plugin" OFF)
+option(
+    MDESCRIPTOR_BUNDLE_CUDA_RUNTIME
+    "Bundle the CUDA runtime and cuBLAS shared libraries with the CUDA plugin"
+    OFF)
 if(MDESCRIPTOR_BUILD_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
         message(FATAL_ERROR
@@ -213,13 +221,19 @@ if(MDESCRIPTOR_BUILD_CUDA)
         cpp/cuda/src/batch.cu
         cpp/cuda/src/neighbor_graph.cu
         cpp/cuda/src/local_descriptors.cu
+        cpp/cuda/src/nep.cu
+        cpp/cuda/src/dpa4c.cu
+        cpp/cuda/src/dpa4.cu
         cpp/cuda/src/backend.cu
         cpp/cuda/src/bindings.cu
-        # The host graph builder remains the canonical source for deterministic
-        # CSR ordering; descriptor coefficients and feature assembly run in the
-        # CUDA translation unit below.
+        # CPU sources provide shared validation/layout helpers only.  The CUDA
+        # backend owns DPA/NEP graph construction, descriptor coefficients, and
+        # feature assembly on the device; canonical CPU graph construction is
+        # retained for explicitly CPU-backed paths.
         cpp/src/common/control.cpp
         cpp/src/common/neighbor.cpp
+        cpp/src/common/nep.cpp
+        cpp/src/model_backed/dpa4_wigner.cpp
         cpp/src/standalone/neighbor_list.cpp
         cpp/src/standalone/spherical_expansion.cpp
         cpp/src/standalone/spherical_expansion_by_pair.cpp
@@ -255,7 +269,86 @@ if(MDESCRIPTOR_BUILD_CUDA)
         _cuda PRIVATE
         cpp/include cpp/src cpp/src/common cpp/src/standalone
         cpp/cuda/include)
-    target_link_libraries(_cuda PRIVATE CUDA::cudart)
+    # Link cuBLASLt explicitly as well as through cuBLAS so the CUDA target
+    # resolves the complete cuBLAS closure from one toolkit installation.
+    target_link_libraries(_cuda PRIVATE CUDA::cudart CUDA::cublas CUDA::cublasLt)
+    if(MDESCRIPTOR_BUNDLE_CUDA_RUNTIME)
+        if(NOT UNIX OR APPLE)
+            message(FATAL_ERROR
+                "MDESCRIPTOR_BUNDLE_CUDA_RUNTIME currently supports Linux only")
+        endif()
+
+        set(_MDESCRIPTOR_CUDA_RUNTIME_DIRS)
+        foreach(_cuda_target CUDA::cudart CUDA::cublas CUDA::cublasLt)
+            get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION)
+            if(NOT _cuda_location)
+                get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION_RELEASE)
+            endif()
+            if(NOT _cuda_location OR NOT EXISTS "${_cuda_location}")
+                message(FATAL_ERROR
+                    "Could not resolve the shared library for ${_cuda_target}")
+            endif()
+            get_filename_component(_cuda_runtime_dir "${_cuda_location}" DIRECTORY)
+            list(APPEND _MDESCRIPTOR_CUDA_RUNTIME_DIRS "${_cuda_runtime_dir}")
+        endforeach()
+        list(REMOVE_DUPLICATES _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
+
+        # CUDA installs a development symlink, a SONAME symlink (for example
+        # libcublas.so.13), and a fully-versioned file.  Wheels should contain
+        # a real file under the SONAME name rather than a symlink that may be
+        # lost by a wheel/archive tool.
+        set(_MDESCRIPTOR_CUDA_RUNTIME_FILES)
+        foreach(_cuda_library cudart cublas cublasLt)
+            set(_cuda_soname_link)
+            foreach(_cuda_dir IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
+                file(GLOB _cuda_candidates LIST_DIRECTORIES FALSE
+                    "${_cuda_dir}/lib${_cuda_library}.so.[0-9]*")
+                foreach(_cuda_candidate IN LISTS _cuda_candidates)
+                    get_filename_component(_cuda_candidate_name
+                        "${_cuda_candidate}" NAME)
+                    if(_cuda_candidate_name MATCHES
+                        "^lib${_cuda_library}\\.so\\.[0-9]+$")
+                        set(_cuda_soname_link "${_cuda_candidate}")
+                    endif()
+                endforeach()
+            endforeach()
+            if(NOT _cuda_soname_link)
+                message(FATAL_ERROR
+                    "Could not find the SONAME link for lib${_cuda_library}.so")
+            endif()
+            get_filename_component(_cuda_real_library
+                "${_cuda_soname_link}" REALPATH)
+            get_filename_component(_cuda_soname
+                "${_cuda_soname_link}" NAME)
+            list(APPEND _MDESCRIPTOR_CUDA_RUNTIME_FILES
+                "${_cuda_real_library}|${_cuda_soname}")
+        endforeach()
+
+        foreach(_cuda_runtime_entry IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_FILES)
+            string(REPLACE "|" ";" _cuda_runtime_parts "${_cuda_runtime_entry}")
+            list(GET _cuda_runtime_parts 0 _cuda_real_library)
+            list(GET _cuda_runtime_parts 1 _cuda_soname)
+            install(
+                FILES "${_cuda_real_library}"
+                DESTINATION mdescriptor/.cuda_libs
+                RENAME "${_cuda_soname}")
+        endforeach()
+
+        # Preserve the license notice alongside the redistributed NVIDIA
+        # libraries.  libcuda itself is intentionally not bundled: it belongs
+        # to the host NVIDIA driver and is the hardware boundary.
+        get_filename_component(_cuda_bin_dir "${CMAKE_CUDA_COMPILER}" DIRECTORY)
+        get_filename_component(_cuda_root "${_cuda_bin_dir}" DIRECTORY)
+        if(EXISTS "${_cuda_root}/EULA.txt")
+            install(
+                FILES "${_cuda_root}/EULA.txt"
+                DESTINATION mdescriptor/licenses
+                RENAME NVIDIA-CUDA-EULA.txt)
+        endif()
+        set_target_properties(
+            _cuda PROPERTIES
+            INSTALL_RPATH "$ORIGIN/.cuda_libs")
+    endif()
     install(
         TARGETS _cuda
         LIBRARY DESTINATION mdescriptor

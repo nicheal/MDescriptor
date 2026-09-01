@@ -283,6 +283,54 @@ cpp/cuda/src/context.cu.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/context.cu.s
 .PHONY : cpp/cuda/src/context.cu.s
 
+cpp/cuda/src/dpa4.o: cpp/cuda/src/dpa4.cu.o
+.PHONY : cpp/cuda/src/dpa4.o
+
+# target to build an object file
+cpp/cuda/src/dpa4.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o
+.PHONY : cpp/cuda/src/dpa4.cu.o
+
+cpp/cuda/src/dpa4.i: cpp/cuda/src/dpa4.cu.i
+.PHONY : cpp/cuda/src/dpa4.i
+
+# target to preprocess a source file
+cpp/cuda/src/dpa4.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.i
+.PHONY : cpp/cuda/src/dpa4.cu.i
+
+cpp/cuda/src/dpa4.s: cpp/cuda/src/dpa4.cu.s
+.PHONY : cpp/cuda/src/dpa4.s
+
+# target to generate assembly for a file
+cpp/cuda/src/dpa4.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.s
+.PHONY : cpp/cuda/src/dpa4.cu.s
+
+cpp/cuda/src/dpa4c.o: cpp/cuda/src/dpa4c.cu.o
+.PHONY : cpp/cuda/src/dpa4c.o
+
+# target to build an object file
+cpp/cuda/src/dpa4c.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o
+.PHONY : cpp/cuda/src/dpa4c.cu.o
+
+cpp/cuda/src/dpa4c.i: cpp/cuda/src/dpa4c.cu.i
+.PHONY : cpp/cuda/src/dpa4c.i
+
+# target to preprocess a source file
+cpp/cuda/src/dpa4c.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.i
+.PHONY : cpp/cuda/src/dpa4c.cu.i
+
+cpp/cuda/src/dpa4c.s: cpp/cuda/src/dpa4c.cu.s
+.PHONY : cpp/cuda/src/dpa4c.s
+
+# target to generate assembly for a file
+cpp/cuda/src/dpa4c.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.s
+.PHONY : cpp/cuda/src/dpa4c.cu.s
+
 cpp/cuda/src/local_descriptors.o: cpp/cuda/src/local_descriptors.cu.o
 .PHONY : cpp/cuda/src/local_descriptors.o
 
@@ -330,6 +378,30 @@ cpp/cuda/src/neighbor_graph.s: cpp/cuda/src/neighbor_graph.cu.s
 cpp/cuda/src/neighbor_graph.cu.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.s
 .PHONY : cpp/cuda/src/neighbor_graph.cu.s
+
+cpp/cuda/src/nep.o: cpp/cuda/src/nep.cu.o
+.PHONY : cpp/cuda/src/nep.o
+
+# target to build an object file
+cpp/cuda/src/nep.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o
+.PHONY : cpp/cuda/src/nep.cu.o
+
+cpp/cuda/src/nep.i: cpp/cuda/src/nep.cu.i
+.PHONY : cpp/cuda/src/nep.i
+
+# target to preprocess a source file
+cpp/cuda/src/nep.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.i
+.PHONY : cpp/cuda/src/nep.cu.i
+
+cpp/cuda/src/nep.s: cpp/cuda/src/nep.cu.s
+.PHONY : cpp/cuda/src/nep.s
+
+# target to generate assembly for a file
+cpp/cuda/src/nep.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.s
+.PHONY : cpp/cuda/src/nep.cu.s
 
 cpp/src/bindings/module.o: cpp/src/bindings/module.cpp.o
 .PHONY : cpp/src/bindings/module.o
@@ -415,6 +487,7 @@ cpp/src/common/nep.o: cpp/src/common/nep.cpp.o
 # target to build an object file
 cpp/src/common/nep.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o
 .PHONY : cpp/src/common/nep.cpp.o
 
 cpp/src/common/nep.i: cpp/src/common/nep.cpp.i
@@ -423,6 +496,7 @@ cpp/src/common/nep.i: cpp/src/common/nep.cpp.i
 # target to preprocess a source file
 cpp/src/common/nep.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/common/nep.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.i
 .PHONY : cpp/src/common/nep.cpp.i
 
 cpp/src/common/nep.s: cpp/src/common/nep.cpp.s
@@ -431,6 +505,7 @@ cpp/src/common/nep.s: cpp/src/common/nep.cpp.s
 # target to generate assembly for a file
 cpp/src/common/nep.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/common/nep.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.s
 .PHONY : cpp/src/common/nep.cpp.s
 
 cpp/src/model_backed/dpa4.o: cpp/src/model_backed/dpa4.cpp.o
@@ -463,6 +538,7 @@ cpp/src/model_backed/dpa4_wigner.o: cpp/src/model_backed/dpa4_wigner.cpp.o
 # target to build an object file
 cpp/src/model_backed/dpa4_wigner.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o
 .PHONY : cpp/src/model_backed/dpa4_wigner.cpp.o
 
 cpp/src/model_backed/dpa4_wigner.i: cpp/src/model_backed/dpa4_wigner.cpp.i
@@ -471,6 +547,7 @@ cpp/src/model_backed/dpa4_wigner.i: cpp/src/model_backed/dpa4_wigner.cpp.i
 # target to preprocess a source file
 cpp/src/model_backed/dpa4_wigner.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.i
 .PHONY : cpp/src/model_backed/dpa4_wigner.cpp.i
 
 cpp/src/model_backed/dpa4_wigner.s: cpp/src/model_backed/dpa4_wigner.cpp.s
@@ -479,6 +556,7 @@ cpp/src/model_backed/dpa4_wigner.s: cpp/src/model_backed/dpa4_wigner.cpp.s
 # target to generate assembly for a file
 cpp/src/model_backed/dpa4_wigner.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.s
 .PHONY : cpp/src/model_backed/dpa4_wigner.cpp.s
 
 cpp/src/model_backed/dpa4c.o: cpp/src/model_backed/dpa4c.cpp.o
@@ -996,12 +1074,21 @@ help:
 	@echo "... cpp/cuda/src/context.o"
 	@echo "... cpp/cuda/src/context.i"
 	@echo "... cpp/cuda/src/context.s"
+	@echo "... cpp/cuda/src/dpa4.o"
+	@echo "... cpp/cuda/src/dpa4.i"
+	@echo "... cpp/cuda/src/dpa4.s"
+	@echo "... cpp/cuda/src/dpa4c.o"
+	@echo "... cpp/cuda/src/dpa4c.i"
+	@echo "... cpp/cuda/src/dpa4c.s"
 	@echo "... cpp/cuda/src/local_descriptors.o"
 	@echo "... cpp/cuda/src/local_descriptors.i"
 	@echo "... cpp/cuda/src/local_descriptors.s"
 	@echo "... cpp/cuda/src/neighbor_graph.o"
 	@echo "... cpp/cuda/src/neighbor_graph.i"
 	@echo "... cpp/cuda/src/neighbor_graph.s"
+	@echo "... cpp/cuda/src/nep.o"
+	@echo "... cpp/cuda/src/nep.i"
+	@echo "... cpp/cuda/src/nep.s"
 	@echo "... cpp/src/bindings/module.o"
 	@echo "... cpp/src/bindings/module.i"
 	@echo "... cpp/src/bindings/module.s"

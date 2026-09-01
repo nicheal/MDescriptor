@@ -4,6 +4,7 @@
 #include "mdescriptor/cuda/local_descriptors.hpp"
 #include "mdescriptor/cuda/neighbor_graph.hpp"
 #include "mdescriptor/local_descriptors.hpp"
+#include "mdescriptor/nep.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "mdescriptor/detail/batch.hpp"
 #include "local_layout.hpp"
@@ -12,6 +13,7 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -82,11 +84,40 @@ std::vector<std::int32_t> species_option(const py::dict& options) {
     return py::cast<std::vector<std::int32_t>>(options[key]);
 }
 
+py::dict dpa_payload_option(const py::dict& options, const std::string& name) {
+    const py::str key("_cuda_payload");
+    if (!options.contains(key) || options[key].is_none()) {
+        throw std::invalid_argument(
+            name + " CUDA backend requires the validated private model payload");
+    }
+    try {
+        return py::cast<py::dict>(options[key]);
+    } catch (const py::cast_error&) {
+        throw std::invalid_argument(name + " CUDA model payload is not a mapping");
+    }
+}
+
+std::int64_t dpa_feature_count(const py::dict& options, const std::string& name) {
+    const py::dict payload = dpa_payload_option(options, name);
+    const py::str key("feature_count");
+    if (!payload.contains(key)) {
+        throw std::invalid_argument(name + " CUDA model payload is missing feature_count");
+    }
+    const auto count = py::cast<std::int64_t>(payload[key]);
+    if (count <= 0) {
+        throw std::invalid_argument(name + " CUDA model payload has an invalid feature count");
+    }
+    return count;
+}
+
 std::int64_t feature_count_for(
     const std::string& name,
     const py::dict& options) {
     if (name == "NeighborList") {
         return 4;
+    }
+    if (name == "DPA4" || name == "DPA4C") {
+        return dpa_feature_count(options, name);
     }
     mdescriptor::LocalDescriptorOptions layout_options;
     layout_options.species = species_option(options);
@@ -105,6 +136,52 @@ std::int64_t feature_count_for(
             layout_options, mdescriptor::LocalDescriptorKind::SphericalExpansion);
     }
     throw std::invalid_argument("CUDA backend does not support this descriptor");
+}
+
+std::vector<std::int32_t> dpa_type_indices(
+    const py::dict& options,
+    const BatchArrays& arrays,
+    const std::string& name) {
+    const py::dict payload = dpa_payload_option(options, name);
+    const py::str key("type_numbers");
+    if (!payload.contains(key)) {
+        throw std::invalid_argument(name + " CUDA model payload is missing type_numbers");
+    }
+    auto type_numbers = I32Array::ensure(payload[key]);
+    if (!type_numbers || type_numbers.ndim() != 1 || type_numbers.shape(0) <= 0) {
+        throw std::invalid_argument(name + " CUDA model payload has invalid type_numbers");
+    }
+    std::vector<std::int32_t> result(static_cast<std::size_t>(arrays.view.atoms), -1);
+    for (std::int64_t atom = 0; atom < arrays.view.atoms; ++atom) {
+        const auto number = arrays.view.numbers[atom];
+        for (py::ssize_t type = 0; type < type_numbers.shape(0); ++type) {
+            if (type_numbers.data()[type] == number) {
+                result[static_cast<std::size_t>(atom)] = static_cast<std::int32_t>(type);
+                break;
+            }
+        }
+        if (result[static_cast<std::size_t>(atom)] < 0) {
+            throw std::invalid_argument(
+                name + " batch contains an element absent from the checkpoint type map: "
+                + std::to_string(number));
+        }
+    }
+    return result;
+}
+
+py::list generic_labels(const std::string& name, std::int64_t features);
+
+py::list dpa_labels(const py::dict& options, const std::string& name, std::int64_t features) {
+    const py::dict payload = dpa_payload_option(options, name);
+    const py::str key("labels");
+    if (payload.contains(key)) {
+        try {
+            return py::list(payload[key]);
+        } catch (const py::error_already_set&) {
+            throw std::invalid_argument(name + " CUDA model payload has invalid labels");
+        }
+    }
+    return generic_labels(name, features);
 }
 
 bool cancelled(const py::object& control) {
@@ -143,6 +220,14 @@ py::list generic_labels(const std::string& name, std::int64_t features) {
     py::list labels;
     for (std::int64_t index = 0; index < features; ++index) {
         labels.append(name + ":" + std::to_string(index));
+    }
+    return labels;
+}
+
+py::list nep_labels(std::int64_t features) {
+    py::list labels;
+    for (std::int64_t index = 0; index < features; ++index) {
+        labels.append("nep:q" + std::to_string(index + 1));
     }
     return labels;
 }
@@ -232,8 +317,28 @@ void check_cuda_backend(cudaError_t status, const char* operation) {
 
 Backend::Backend(std::string name, py::dict options)
     : name_(std::move(name)), options_(std::move(options)),
-      feature_count_(feature_count_for(name_, options_)),
+      feature_count_(name_ == "NEP" ? 0 : feature_count_for(name_, options_)),
       context_(std::make_unique<CudaExecutionContext>(0)) {
+    if (name_ == "NEP") {
+        const auto model_path = option(options_, "model_path", std::string{});
+        if (model_path.empty()) {
+            throw std::invalid_argument("CUDA NEP backend requires model_path");
+        }
+        mdescriptor::NepOptions nep_options;
+        nep_options.model_path = model_path;
+        nep_options.model_digest = option(options_, "model_digest", std::string{});
+        nep_options.num_threads = 0;
+        mdescriptor::NepCalculator calculator(nep_options);
+        const auto parameters = calculator.descriptor_parameters();
+        feature_count_ = parameters.dimension;
+        nep_model_ = std::make_unique<DeviceNepModel>(*context_, parameters);
+    } else if (name_ == "DPA4C") {
+        dpa4c_model_ = std::make_unique<DeviceDpa4cModel>(
+            *context_, dpa_payload_option(options_, name_));
+    } else if (name_ == "DPA4") {
+        dpa4_model_ = std::make_unique<DeviceDpa4Model>(
+            *context_, dpa_payload_option(options_, name_));
+    }
 }
 
 Backend::~Backend() noexcept {
@@ -241,6 +346,7 @@ Backend::~Backend() noexcept {
 }
 
 py::object Backend::compute(py::object batch_object, py::object control) {
+    std::lock_guard<std::mutex> guard(compute_mutex_);
     if (closed_ || context_ == nullptr) {
         throw std::runtime_error("CUDA backend is closed");
     }
@@ -248,7 +354,7 @@ py::object Backend::compute(py::object batch_object, py::object control) {
     reset_control(control, arrays.view.structures);
     check_cancelled(control);
 
-    {
+    if (name_ != "NEP") {
         py::gil_scoped_release release;
         device_batch_.upload(*context_, arrays.view);
     }
@@ -364,6 +470,90 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         return std::move(result);
     }
 
+    if (name_ == "NEP") {
+        if (arrays.view.atoms == 0) {
+            for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
+                mark_completed(control);
+            }
+            py::dict result;
+            result["values"] = double_array({}, 0, feature_count_);
+            result["level"] = "atom";
+            result["row_offsets"] = arrays.offsets;
+            result["labels"] = nep_labels(feature_count_);
+            result["metadata"] = result_metadata(name_, options_);
+            return std::move(result);
+        }
+        for (std::int64_t atom = 0; atom < arrays.view.atoms; ++atom) {
+            if (!nep_model_->supports_atomic_number(arrays.view.numbers[atom])) {
+                throw std::invalid_argument(
+                    "structure contains an element not present in the NEP model: "
+                    + std::to_string(arrays.view.numbers[atom]));
+            }
+        }
+        std::vector<double> values;
+        {
+            py::gil_scoped_release release;
+            const double cutoff = std::max(
+                nep_model_->radial_cutoff_max(), nep_model_->angular_cutoff_max());
+            // Keep the source batch resident on the device.  If a small
+            // periodic cell needs replicas, the expanded atom array is also
+            // generated by CUDA and later reduced there; otherwise the image
+            // enumerator handles the original batch directly.  This leaves
+            // mixed periodic/isolated batches on the same device graph path.
+            device_batch_.upload(*context_, arrays.view);
+            DeviceBatch* compute_batch = &device_batch_;
+            detail::StructureBatchView compute_view = arrays.view;
+            if (nep_expanded_batch_.expand_nep(
+                    *context_, device_batch_, arrays.view, cutoff)) {
+                compute_batch = &nep_expanded_batch_;
+                compute_view = nep_expanded_batch_.metadata_view();
+            }
+            device_graph_.build_nep(
+                *context_, *compute_batch, compute_view, cutoff);
+            const auto computed = compute_nep(
+                *context_, *compute_batch, device_graph_, *nep_model_, true);
+            values = computed;
+        }
+        check_cancelled(control);
+        for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
+            mark_completed(control);
+        }
+        py::dict result;
+        result["values"] = double_array(values, arrays.view.atoms, feature_count_);
+        result["level"] = "atom";
+        result["row_offsets"] = arrays.offsets;
+        result["labels"] = nep_labels(feature_count_);
+        result["metadata"] = result_metadata(name_, options_);
+        return std::move(result);
+    }
+
+    if (name_ == "DPA4" || name_ == "DPA4C") {
+        const auto type_indices = dpa_type_indices(options_, arrays, name_);
+        std::vector<double> values;
+        if (arrays.view.atoms > 0) {
+            py::gil_scoped_release release;
+            device_graph_.build_dpa(
+                *context_, device_batch_, arrays.view,
+                name_ == "DPA4C" ? dpa4c_model_->cutoff() : dpa4_model_->cutoff(),
+                name_ == "DPA4",
+                name_ == "DPA4");
+            values = name_ == "DPA4C"
+                ? dpa4c_model_->compute(*context_, device_batch_, device_graph_, type_indices)
+                : dpa4_model_->compute(*context_, device_batch_, device_graph_, type_indices);
+        }
+        check_cancelled(control);
+        for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
+            mark_completed(control);
+        }
+        py::dict result;
+        result["values"] = double_array(values, arrays.view.atoms, feature_count_);
+        result["level"] = "atom";
+        result["row_offsets"] = arrays.offsets;
+        result["labels"] = dpa_labels(options_, name_, feature_count_);
+        result["metadata"] = result_metadata(name_, options_);
+        return std::move(result);
+    }
+
     const auto species = species_option(options_);
     mdescriptor::LocalDescriptorOptions descriptor_options;
     descriptor_options.species = species;
@@ -417,7 +607,11 @@ void Backend::close() noexcept {
     }
     closed_ = true;
     device_graph_.clear();
+    nep_expanded_batch_.clear();
     device_batch_.clear();
+    dpa4c_model_.reset();
+    dpa4_model_.reset();
+    nep_model_.reset();
     if (context_ != nullptr) {
         context_->close();
         context_.reset();

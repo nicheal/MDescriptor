@@ -965,6 +965,35 @@ double NepCalculator::angular_cutoff() const noexcept { return model_->angular_c
 int NepCalculator::n_max_radial() const noexcept { return model_->n_max_radial; }
 int NepCalculator::n_max_angular() const noexcept { return model_->n_max_angular; }
 int NepCalculator::l_max() const noexcept { return model_->l_max; }
+
+NepDescriptorParameters NepCalculator::descriptor_parameters() const {
+    NepDescriptorParameters result;
+    result.version = model_->version;
+    result.num_types = model_->num_types;
+    result.n_max_radial = model_->n_max_radial;
+    result.n_max_angular = model_->n_max_angular;
+    result.basis_size_radial = model_->basis_size_radial;
+    result.basis_size_angular = model_->basis_size_angular;
+    result.l_max = model_->l_max;
+    result.num_l = model_->num_l;
+    result.has_q_222 = model_->has_q_222;
+    result.has_q_1111 = model_->has_q_1111;
+    result.has_q_112 = model_->has_q_112;
+    result.has_q_123 = model_->has_q_123;
+    result.has_q_233 = model_->has_q_233;
+    result.has_q_134 = model_->has_q_134;
+    result.dimension = model_->dimension;
+    result.radial_cutoff_max = model_->radial_cutoff_max;
+    result.angular_cutoff_max = model_->angular_cutoff_max;
+    result.species = model_->species;
+    result.radial_cutoff_pair = model_->radial_cutoff_pair;
+    result.angular_cutoff_pair = model_->angular_cutoff_pair;
+    result.radial_pair_coefficients = model_->radial_pair_coefficients;
+    result.angular_pair_coefficients = model_->angular_pair_coefficients;
+    result.scalers = model_->scalers;
+    return result;
+}
+
 bool NepCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
 void NepCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
 

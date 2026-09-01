@@ -1429,6 +1429,7 @@ _DESCRIPTOR_INFO = {
         "Neuroevolution potential descriptor backed by a local model.",
         "model_backed",
         {"model": _model(default="NEP")},
+        devices=("cpu", "cuda"),
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("nep89_20250409.txt",),
@@ -1442,6 +1443,7 @@ _DESCRIPTOR_INFO = {
         {"model": _model(default="DPA4")},
         spin=True,
         charge_spin=True,
+        devices=("cpu", "cuda"),
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("DPA4-Air-OMat24-v20260704.pt",),
@@ -1463,6 +1465,7 @@ _DESCRIPTOR_INFO = {
         },
         spin=True,
         charge_spin=True,
+        devices=("cpu", "cuda"),
         asset=_asset(
             AssetPolicy.REQUIRED,
             bundled=("DPA4C-Air-OMat24-v20260819.pt",),

@@ -14,7 +14,7 @@ from mdescriptor import (
     StructureBatch,
     _runtime,
 )
-from mdescriptor.descriptors import SOAP, NeighborList
+from mdescriptor.descriptors import DPA4, DPA4C, SOAP, NeighborList
 
 
 def _batch() -> StructureBatch:
@@ -26,9 +26,12 @@ def _batch() -> StructureBatch:
 def test_first_cuda_descriptors_declare_the_device_in_static_metadata() -> None:
     cuda_names = {
         "NeighborList",
+        "NEP",
         "SphericalExpansion",
         "SoapRadialSpectrum",
         "SoapPowerSpectrum",
+        "DPA4",
+        "DPA4C",
     }
     for name in mdescriptor.list_descriptors():
         devices = mdescriptor.describe_descriptor(name)["execution"]["devices"]
@@ -93,6 +96,29 @@ def test_cuda_plugin_is_lazy_and_receives_public_control(monkeypatch) -> None:
     finally:
         descriptor.close()
     assert calls[-1][0] == "close"
+
+
+@pytest.mark.parametrize("descriptor_type", [DPA4, DPA4C])
+@pytest.mark.model
+def test_dpa_cuda_payload_is_private_and_keeps_numpy_tensors(descriptor_type) -> None:
+    descriptor = descriptor_type(execution=ExecutionOptions(device="cuda"))
+    try:
+        payload = descriptor._backend.options["_cuda_payload"]
+        assert set(("feature_count", "labels", "type_numbers")) <= set(payload)
+        assert payload["feature_count"] == descriptor.feature_count
+        assert payload["labels"] == tuple(descriptor._kernel.options["_cuda_payload"]["labels"])
+        assert isinstance(payload["type_numbers"], np.ndarray)
+        assert payload["type_numbers"].dtype == np.int32
+        assert isinstance(payload["model"], dict)
+        assert any(
+            isinstance(value, np.ndarray)
+            for value in payload["model"].values()
+            if not isinstance(value, list)
+        )
+        assert "_cuda_payload" not in descriptor.configuration.to_dict()
+        assert "_cuda_payload" not in descriptor.metadata
+    finally:
+        descriptor.close()
 
 
 def test_cpu_only_descriptor_rejects_cuda_before_plugin_load(monkeypatch) -> None:

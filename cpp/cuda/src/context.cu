@@ -63,6 +63,22 @@ void CudaExecutionContext::ensure_capacity(std::size_t count) {
     output_capacity_ = count;
 }
 
+void CudaExecutionContext::ensure_workspace_capacity(std::size_t count) {
+    if (count <= workspace_capacity_) {
+        return;
+    }
+    check_cuda(cudaSetDevice(device_), "could not select the CUDA device");
+    if (workspace_ != nullptr) {
+        check_cuda(cudaFree(workspace_), "could not release the CUDA workspace");
+        workspace_ = nullptr;
+    }
+    workspace_capacity_ = 0;
+    check_cuda(
+        cudaMalloc(reinterpret_cast<void**>(&workspace_), count),
+        "could not allocate the CUDA workspace");
+    workspace_capacity_ = count;
+}
+
 double* CudaExecutionContext::output_buffer(std::size_t count) {
     if (closed_) {
         throw std::runtime_error("CUDA execution context is closed");
@@ -72,17 +88,36 @@ double* CudaExecutionContext::output_buffer(std::size_t count) {
     return output_;
 }
 
+void* CudaExecutionContext::workspace_buffer(std::size_t count) {
+    if (closed_) {
+        throw std::runtime_error("CUDA execution context is closed");
+    }
+    if (count == 0) {
+        return nullptr;
+    }
+    check_cuda(cudaSetDevice(device_), "could not select the CUDA device");
+    ensure_workspace_capacity(count);
+    return workspace_;
+}
+
 std::vector<double> CudaExecutionContext::download_output(std::size_t count) {
+    return download_output_slice(0, count);
+}
+
+std::vector<double> CudaExecutionContext::download_output_slice(
+    std::size_t offset,
+    std::size_t count) {
     if (count == 0) {
         return {};
     }
-    if (count > output_capacity_ || output_ == nullptr) {
+    if (output_ == nullptr || offset > output_capacity_
+        || count > output_capacity_ - offset) {
         throw std::runtime_error("CUDA output buffer is not large enough");
     }
     std::vector<double> result(count, 0.0);
     check_cuda(
         cudaMemcpyAsync(
-            result.data(), output_, count * sizeof(double),
+            result.data(), output_ + offset, count * sizeof(double),
             cudaMemcpyDeviceToHost, stream_),
         "could not copy descriptor data from the CUDA device");
     synchronize();
@@ -108,6 +143,11 @@ void CudaExecutionContext::close() noexcept {
         output_ = nullptr;
     }
     output_capacity_ = 0;
+    if (workspace_ != nullptr) {
+        (void)cudaFree(workspace_);
+        workspace_ = nullptr;
+    }
+    workspace_capacity_ = 0;
     if (stream_ != nullptr) {
         (void)cudaStreamDestroy(stream_);
         stream_ = nullptr;

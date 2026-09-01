@@ -79,6 +79,9 @@ def test_every_builtin_has_json_safe_static_metadata_matching_public_signature()
                 "SphericalExpansion",
                 "SoapRadialSpectrum",
                 "SoapPowerSpectrum",
+                "NEP",
+                "DPA4",
+                "DPA4C",
             }
             else ["cpu"]
         )

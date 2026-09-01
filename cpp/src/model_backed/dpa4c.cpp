@@ -622,7 +622,10 @@ void Dpa4cCalculator::compute(
             for (int radial_index = 0; radial_index < options_.n_radial; ++radial_index) {
                 const float frequency = options_.radial_freqs[static_cast<std::size_t>(radial_index)];
                 const float argument = distance * frequency;
-                const float sinc = argument == 0.0F ? 1.0F : std::sin(argument) / argument;
+                constexpr float pi = 3.1415927410125732422F;
+                const float sinc_argument = argument / pi;
+                const float sinc = sinc_argument == 0.0F
+                    ? 1.0F : std::sin(pi * sinc_argument) / (pi * sinc_argument);
                 radial_basis[static_cast<std::size_t>(radial_index)] = frequency * sinc;
             }
             for (int hidden_index = 0; hidden_index < 2 * options_.radial_hidden; ++hidden_index) {

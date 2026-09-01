@@ -129,11 +129,56 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CUDA source to assembly CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.s"
 	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_ASSEMBLY_SOURCE
 
+CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o: CMakeFiles/_cuda.dir/flags.make
+CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o: CMakeFiles/_cuda.dir/includes_CUDA.rsp
+CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o: /home/nicheal/MDescriptor/cpp/cuda/src/nep.cu
+CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o: CMakeFiles/_cuda.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o"
+	/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler $(CUDA_DEFINES) $(CUDA_INCLUDES) $(CUDA_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o -MF CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o.d -x cu -rdc=true -c /home/nicheal/MDescriptor/cpp/cuda/src/nep.cu -o CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CUDA source to CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.i"
+	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_PREPROCESSED_SOURCE
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CUDA source to assembly CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.s"
+	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_ASSEMBLY_SOURCE
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o: CMakeFiles/_cuda.dir/flags.make
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o: CMakeFiles/_cuda.dir/includes_CUDA.rsp
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o: /home/nicheal/MDescriptor/cpp/cuda/src/dpa4c.cu
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o: CMakeFiles/_cuda.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o"
+	/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler $(CUDA_DEFINES) $(CUDA_INCLUDES) $(CUDA_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o -MF CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o.d -x cu -rdc=true -c /home/nicheal/MDescriptor/cpp/cuda/src/dpa4c.cu -o CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CUDA source to CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.i"
+	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_PREPROCESSED_SOURCE
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CUDA source to assembly CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.s"
+	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_ASSEMBLY_SOURCE
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o: CMakeFiles/_cuda.dir/flags.make
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o: CMakeFiles/_cuda.dir/includes_CUDA.rsp
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o: /home/nicheal/MDescriptor/cpp/cuda/src/dpa4.cu
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o: CMakeFiles/_cuda.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o"
+	/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler $(CUDA_DEFINES) $(CUDA_INCLUDES) $(CUDA_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o -MF CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o.d -x cu -rdc=true -c /home/nicheal/MDescriptor/cpp/cuda/src/dpa4.cu -o CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CUDA source to CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.i"
+	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_PREPROCESSED_SOURCE
+
+CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CUDA source to assembly CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.s"
+	$(CMAKE_COMMAND) -E cmake_unimplemented_variable CMAKE_CUDA_CREATE_ASSEMBLY_SOURCE
+
 CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o: CMakeFiles/_cuda.dir/includes_CUDA.rsp
 CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o: /home/nicheal/MDescriptor/cpp/cuda/src/backend.cu
 CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o"
 	/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler $(CUDA_DEFINES) $(CUDA_INCLUDES) $(CUDA_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o -MF CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o.d -x cu -rdc=true -c /home/nicheal/MDescriptor/cpp/cuda/src/backend.cu -o CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o
 
 CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.i: cmake_force
@@ -148,7 +193,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o: CMakeFiles/_cuda.dir/includes_CUDA.rsp
 CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o: /home/nicheal/MDescriptor/cpp/cuda/src/bindings.cu
 CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CUDA object CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o"
 	/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler $(CUDA_DEFINES) $(CUDA_INCLUDES) $(CUDA_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o -MF CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o.d -x cu -rdc=true -c /home/nicheal/MDescriptor/cpp/cuda/src/bindings.cu -o CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o
 
 CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.i: cmake_force
@@ -162,7 +207,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.s: cmake_force
 CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o: /home/nicheal/MDescriptor/cpp/src/common/control.cpp
 CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o -c /home/nicheal/MDescriptor/cpp/src/common/control.cpp
 
 CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.i: cmake_force
@@ -176,7 +221,7 @@ CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.s: cmake_force
 CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o: /home/nicheal/MDescriptor/cpp/src/common/neighbor.cpp
 CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o -c /home/nicheal/MDescriptor/cpp/src/common/neighbor.cpp
 
 CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.i: cmake_force
@@ -187,10 +232,38 @@ CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/nicheal/MDescriptor/cpp/src/common/neighbor.cpp -o CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.s
 
+CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o: CMakeFiles/_cuda.dir/flags.make
+CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o: /home/nicheal/MDescriptor/cpp/src/common/nep.cpp
+CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o -c /home/nicheal/MDescriptor/cpp/src/common/nep.cpp
+
+CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/nicheal/MDescriptor/cpp/src/common/nep.cpp > CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.i
+
+CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/nicheal/MDescriptor/cpp/src/common/nep.cpp -o CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.s
+
+CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o: CMakeFiles/_cuda.dir/flags.make
+CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o: /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4_wigner.cpp
+CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o -c /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4_wigner.cpp
+
+CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4_wigner.cpp > CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.i
+
+CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4_wigner.cpp -o CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.s
+
 CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/neighbor_list.cpp
 CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/neighbor_list.cpp
 
 CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.i: cmake_force
@@ -204,7 +277,7 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.s: cmake_force
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion.cpp
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion.cpp
 
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.i: cmake_force
@@ -218,7 +291,7 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.s: cmake_force
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: CMakeFiles/_cuda.dir/flags.make
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion_by_pair.cpp
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: CMakeFiles/_cuda.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o -MF CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o.d -o CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion_by_pair.cpp
 
 CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.i: cmake_force
@@ -235,10 +308,15 @@ _cuda_OBJECTS = \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/batch.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.o" \
+"CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o" \
+"CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o" \
+"CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o" \
+"CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o" \
+"CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o"
@@ -250,19 +328,27 @@ CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/cont
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/batch.cu.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.o
+CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o
+CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o
+CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o
+CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o
+CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/build.make
 CMakeFiles/_cuda.dir/cmake_device_link.o: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libcudart.so
+CMakeFiles/_cuda.dir/cmake_device_link.o: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libcublas.so
+CMakeFiles/_cuda.dir/cmake_device_link.o: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libcublasLt.so
+CMakeFiles/_cuda.dir/cmake_device_link.o: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libculibos.a
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/deviceLinkLibs.rsp
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/deviceObjects1.rsp
 CMakeFiles/_cuda.dir/cmake_device_link.o: CMakeFiles/_cuda.dir/dlink.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking CUDA device code CMakeFiles/_cuda.dir/cmake_device_link.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Linking CUDA device code CMakeFiles/_cuda.dir/cmake_device_link.o"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/_cuda.dir/dlink.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -275,10 +361,15 @@ _cuda_OBJECTS = \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/batch.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.o" \
+"CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o" \
+"CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o" \
+"CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o" \
 "CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o" \
+"CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o" \
+"CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o" \
 "CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o"
@@ -290,18 +381,26 @@ _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/context
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/batch.cu.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.o
+_cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/nep.cu.o
+_cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o
+_cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/common/neighbor.cpp.o
+_cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/common/nep.cpp.o
+_cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/model_backed/dpa4_wigner.cpp.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/standalone/neighbor_list.cpp.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion.cpp.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/build.make
 _cuda.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libcudart.so
+_cuda.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libcublas.so
+_cuda.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libcublasLt.so
+_cuda.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-13.3/targets/x86_64-linux/lib/libculibos.a
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/cmake_device_link.o
 _cuda.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_cuda.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Linking CXX shared module _cuda.cpython-312-x86_64-linux-gnu.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Linking CXX shared module _cuda.cpython-312-x86_64-linux-gnu.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/_cuda.dir/link.txt --verbose=$(VERBOSE)
 	/usr/bin/strip /home/nicheal/MDescriptor/build-cuda/_cuda.cpython-312-x86_64-linux-gnu.so
 

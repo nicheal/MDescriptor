@@ -441,6 +441,13 @@ LANGUAGES_SOURCE_DIR:STATIC=/home/nicheal/MDescriptor
 //Build the optional MDescriptor CUDA plugin
 MDESCRIPTOR_BUILD_CUDA:BOOL=ON
 
+//Build the CPU native extension
+MDESCRIPTOR_BUILD_NATIVE:BOOL=ON
+
+//Bundle the CUDA runtime and cuBLAS shared libraries with the
+// CUDA plugin
+MDESCRIPTOR_BUNDLE_CUDA_RUNTIME:BOOL=OFF
+
 //Enable private DPA4 stage timing
 MDESCRIPTOR_DPA4_PROFILE:BOOL=OFF
 

@@ -78,6 +78,29 @@ structured `device_unavailable` error.
 内置描述符仍为 CPU-only。CUDA 是显式启用的独立插件目标，没有插件或不可用
 驱动时不会静默回退，而是返回结构化的 `device_unavailable` 错误。
 
+For end-user distribution, the repository also provides an independent
+`MDescriptor-CUDA` wheel. It contains the CUDA extension and the CUDA
+user-space runtime/cuBLAS libraries, while the host NVIDIA driver remains
+required. The target machine does not need a full CUDA Toolkit:
+
+```bash
+python -m build packaging/cuda --wheel --outdir dist \
+  -Ccmake.define.CMAKE_CUDA_ARCHITECTURES=75
+python -m pip install MDescriptor dist/mdescriptor_cuda-*.whl
+```
+
+The CUDA wheel currently targets Linux and must be built with an architecture
+list covering the deployment GPUs. The convenience wrapper is:
+
+```bash
+python scripts/build_cuda_wheel.py --arch 75
+```
+
+面向最终用户发布时，仓库还提供独立的 `MDescriptor-CUDA` wheel。该 wheel
+包含 CUDA 插件和 CUDA 用户态 Runtime/cuBLAS，宿主机仍必须安装 NVIDIA 驱动，
+但目标机不需要完整 CUDA Toolkit。当前 wheel 仅面向 Linux，并且构建时必须
+显式指定目标 GPU 架构。
+
 可选的外部数值对照固定使用 `deepmd-kit==3.2.0`：
 
 ```bash

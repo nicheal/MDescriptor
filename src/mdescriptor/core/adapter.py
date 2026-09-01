@@ -515,15 +515,45 @@ class DescriptorAdapter(Descriptor):
             backend_options = dict(snapshot)
             backend_options["output"] = self._output_options
             backend_options["execution"] = self._execution_options
-            backend = CudaBackend(
-                self.name,
-                _json_safe(backend_options),
-                resolved_features,
-            )
-            self._kernel = backend
-            close_validation = getattr(validation_kernel, "close", None)
-            if callable(close_validation):
-                close_validation()
+            # Keep the model tensor payload outside the public configuration
+            # snapshot and result metadata.  The builder runs while the CPU
+            # validation kernel is alive; plugin loading remains lazy until
+            # the first compute call.
+            cuda_payload_builder = getattr(validation_kernel, "_cuda_payload", None)
+            try:
+                if callable(cuda_payload_builder):
+                    try:
+                        cuda_payload = cuda_payload_builder()
+                    except (
+                        AttributeError,
+                        KeyError,
+                        TypeError,
+                        ValueError,
+                        RuntimeError,
+                    ) as exc:
+                        raise DescriptorConfigError(
+                            f"failed to prepare {self.name} CUDA payload: {exc}",
+                            code="invalid_configuration",
+                            path=configuration_path,
+                        ) from exc
+                    # JSON-safe conversion applies only to the public options.
+                    # Device model arrays must remain NumPy arrays for the
+                    # private CUDA binding, and are deliberately never put in
+                    # ``snapshot``.
+                    backend_options = _json_safe(backend_options)
+                    backend_options["_cuda_payload"] = cuda_payload
+                else:
+                    backend_options = _json_safe(backend_options)
+                backend = CudaBackend(
+                    self.name,
+                    backend_options,
+                    resolved_features,
+                )
+                self._kernel = backend
+            finally:
+                close_validation = getattr(validation_kernel, "close", None)
+                if callable(close_validation):
+                    close_validation()
         else:
             self._kernel = validation_kernel
             backend = CpuBackend(validation_kernel)

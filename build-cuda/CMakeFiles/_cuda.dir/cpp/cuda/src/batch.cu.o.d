@@ -266,4 +266,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/batch.cu.o : /home/nicheal/MDescriptor/cpp/cud
     /usr/include/c++/13/bits/stl_uninitialized.h \
     /usr/include/c++/13/bits/stl_vector.h \
     /usr/include/c++/13/bits/stl_bvector.h \
-    /usr/include/c++/13/bits/vector.tcc
+    /usr/include/c++/13/bits/vector.tcc \
+    /usr/include/c++/13/array \
+    /usr/include/c++/13/compare

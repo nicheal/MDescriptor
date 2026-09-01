@@ -156,7 +156,6 @@ def test_builtin_levels_describe_default_output_granularity():
     for name in ("DPA4", "DPA4C"):
         spec = mdescriptor.builtin_registry.get(name)
         assert spec.backend == "numpy"
-        assert "cuda" not in spec.capabilities
         assert spec.optional_extra is None
 
 
@@ -444,13 +443,19 @@ def test_model_path_string_is_a_supported_json_configuration_form(tmp_path):
 
 
 def test_dpa_public_options_do_not_expose_torch_runtime_controls():
-    from mdescriptor.descriptors import DPA4, DPA4C
+    from mdescriptor.descriptors import DPA4C
 
     assert "use_amp" not in inspect.signature(DPA4C).parameters
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         DPA4C(use_amp=False)
-    with pytest.raises(DescriptorConfigError, match="does not support execution.device"):
-        DPA4(execution=ExecutionOptions(device="cuda"))
+    assert mdescriptor.describe_descriptor("DPA4")["execution"]["devices"] == [
+        "cpu",
+        "cuda",
+    ]
+    assert mdescriptor.describe_descriptor("DPA4C")["execution"]["devices"] == [
+        "cpu",
+        "cuda",
+    ]
 
 
 def test_common_options_are_applied_or_rejected_at_the_core_boundary():

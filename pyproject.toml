@@ -71,6 +71,7 @@ inclusion-mode = "explicit"
 include = [
     "/CMakeLists.txt",
     "/cpp/**",
+    "/packaging/**",
     "/src/mdescriptor/**",
     "/tests/**",
     "/docs/**",

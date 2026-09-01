@@ -15,6 +15,7 @@ from ..model_backed.dpa import (
     load_dpa_checkpoint,
     new_runtime,
 )
+from ..model_backed.graph import _ATOMIC_SYMBOLS
 from .dpa_common import compute_native_batch
 
 
@@ -124,6 +125,16 @@ def _native_payload(descriptor: Any, *, calibrate: bool, num_threads: int) -> di
     }
 
 
+def _type_numbers(type_map: Any) -> np.ndarray:
+    """Translate the checkpoint type order to public atomic numbers."""
+
+    numbers_by_symbol = {symbol: number for number, symbol in _ATOMIC_SYMBOLS.items()}
+    return np.asarray(
+        [int(numbers_by_symbol.get(str(symbol), -1)) for symbol in type_map],
+        dtype=np.int32,
+    )
+
+
 class Dpa4cKernel:
     """Compute DPA4C through the vendored Torch-free CPU inference core."""
 
@@ -166,11 +177,23 @@ class Dpa4cKernel:
             calibrate=self.calibrate,
             num_threads=self.num_threads,
         )
+        self._cuda_model_payload = payload
         if payload is not None:
             from mdescriptor import _native as native
 
             self._cpp = native.Dpa4cCalculator(payload)
         self._closed = False
+
+    def _cuda_payload(self) -> dict[str, Any]:
+        """Return the private device handoff without changing public state."""
+
+        return {
+            "version": 1,
+            "model": self._cuda_model_payload,
+            "labels": self._labels(),
+            "type_numbers": _type_numbers(self._native.type_map),
+            "feature_count": self.feature_count,
+        }
 
     @property
     def feature_count(self) -> int:
