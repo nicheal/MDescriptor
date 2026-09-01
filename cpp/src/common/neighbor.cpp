@@ -140,6 +140,225 @@ struct LocalGraph {
     std::vector<double> distance2;
 };
 
+bool can_use_compact_periodic_graph(const Mat3& cell, double cutoff) {
+    for (int row_index = 0; row_index < 3; ++row_index) {
+        for (int column_index = 0; column_index < 3; ++column_index) {
+            if (row_index == column_index) continue;
+            if (cell.a[row_index][column_index] != 0.0) {
+                return false;
+            }
+        }
+        const double diagonal = cell.a[row_index][row_index];
+        if (diagonal <= 2.0 * cutoff
+            || diagonal / cutoff > static_cast<double>(std::numeric_limits<int>::max())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+LocalGraph build_compact_periodic_graph(
+    const StructureBatchView& batch,
+    std::int64_t structure,
+    const Mat3& cell,
+    double cutoff,
+    const std::shared_ptr<ComputeControl>& control,
+    int num_threads,
+    bool include_boundary) {
+    const std::int64_t begin = batch.offsets[structure];
+    const std::int64_t end = batch.offsets[structure + 1];
+    const std::int64_t atom_count = end - begin;
+    const double lengths[3] = {
+        cell.a[0][0], cell.a[1][1], cell.a[2][2],
+    };
+
+    // Keep one copy of the atoms in the primary cell. For a box wider than
+    // 2 * cutoff, at most one periodic image of an atom can be a neighbor of
+    // a given center, so the image shift can be recovered from the wrapped
+    // cell coordinates during the query.
+    std::vector<Vec3> wrapped_positions(static_cast<std::size_t>(atom_count));
+    for (std::int64_t local = 0; local < atom_count; ++local) {
+        const Vec3 original = position(batch, begin + local);
+        double coordinates[3] = {original.x, original.y, original.z};
+        double wrapped[3] = {};
+        for (int axis = 0; axis < 3; ++axis) {
+            wrapped[axis] = coordinates[axis]
+                - std::floor(coordinates[axis] / lengths[axis]) * lengths[axis];
+            if (wrapped[axis] >= lengths[axis]) {
+                wrapped[axis] = 0.0;
+            }
+        }
+        wrapped_positions[static_cast<std::size_t>(local)] = {
+            wrapped[0], wrapped[1], wrapped[2],
+        };
+    }
+
+    CellGrid grid;
+    grid.minimum = {0.0, 0.0, 0.0};
+    for (int axis = 0; axis < 3; ++axis) {
+        grid.dimensions[axis] = std::max(
+            2, static_cast<int>(lengths[axis] / cutoff));
+        double* spacing = axis == 0 ? &grid.spacing.x
+            : axis == 1 ? &grid.spacing.y : &grid.spacing.z;
+        *spacing = lengths[axis] / grid.dimensions[axis];
+    }
+    const std::size_t cell_count = static_cast<std::size_t>(grid.dimensions[0])
+        * static_cast<std::size_t>(grid.dimensions[1])
+        * static_cast<std::size_t>(grid.dimensions[2]);
+    std::vector<std::int32_t> counts(cell_count, 0);
+    for (const Vec3& atom : wrapped_positions) {
+        const int cell = grid.index(
+            grid.coordinate(atom.x, 0),
+            grid.coordinate(atom.y, 1),
+            grid.coordinate(atom.z, 2));
+        ++counts[static_cast<std::size_t>(cell)];
+    }
+    grid.offsets.resize(cell_count + 1, 0);
+    for (std::size_t cell = 0; cell < cell_count; ++cell) {
+        grid.offsets[cell + 1] = grid.offsets[cell] + counts[cell];
+    }
+    grid.atoms.resize(static_cast<std::size_t>(atom_count));
+    std::vector<std::int32_t> fill(cell_count, 0);
+    for (std::int64_t local = 0; local < atom_count; ++local) {
+        const Vec3& atom = wrapped_positions[static_cast<std::size_t>(local)];
+        const int cell = grid.index(
+            grid.coordinate(atom.x, 0),
+            grid.coordinate(atom.y, 1),
+            grid.coordinate(atom.z, 2));
+        grid.atoms[static_cast<std::size_t>(grid.offsets[cell] + fill[cell]++)] =
+            static_cast<std::int32_t>(local);
+    }
+
+    const double cutoff2 = cutoff * cutoff;
+    const auto within_cutoff = [cutoff2, include_boundary](double distance2) {
+        return include_boundary ? distance2 <= cutoff2 : distance2 < cutoff2;
+    };
+    auto visit_candidates = [&](std::int64_t local, auto&& visit) {
+        const Vec3 center = wrapped_positions[static_cast<std::size_t>(local)];
+        const int center_x = grid.coordinate(center.x, 0);
+        const int center_y = grid.coordinate(center.y, 1);
+        const int center_z = grid.coordinate(center.z, 2);
+        for (int z_delta = -1; z_delta <= 1; ++z_delta) {
+            int z = center_z + z_delta;
+            int z_shift = 0;
+            if (z < 0) {
+                z += grid.dimensions[2];
+                z_shift = -1;
+            } else if (z >= grid.dimensions[2]) {
+                z -= grid.dimensions[2];
+                z_shift = 1;
+            }
+            for (int y_delta = -1; y_delta <= 1; ++y_delta) {
+                int y = center_y + y_delta;
+                int y_shift = 0;
+                if (y < 0) {
+                    y += grid.dimensions[1];
+                    y_shift = -1;
+                } else if (y >= grid.dimensions[1]) {
+                    y -= grid.dimensions[1];
+                    y_shift = 1;
+                }
+                for (int x_delta = -1; x_delta <= 1; ++x_delta) {
+                    int x = center_x + x_delta;
+                    int x_shift = 0;
+                    if (x < 0) {
+                        x += grid.dimensions[0];
+                        x_shift = -1;
+                    } else if (x >= grid.dimensions[0]) {
+                        x -= grid.dimensions[0];
+                        x_shift = 1;
+                    }
+                    const int cell = grid.index(x, y, z);
+                    for (std::int32_t offset = grid.offsets[cell];
+                         offset < grid.offsets[cell + 1]; ++offset) {
+                        const std::int32_t neighbor = grid.atoms[offset];
+                        Vec3 displacement = wrapped_positions[
+                            static_cast<std::size_t>(neighbor)] - center;
+                        displacement.x += static_cast<double>(x_shift) * lengths[0];
+                        displacement.y += static_cast<double>(y_shift) * lengths[1];
+                        displacement.z += static_cast<double>(z_shift) * lengths[2];
+                        visit(neighbor, displacement);
+                    }
+                }
+            }
+        }
+    };
+
+    LocalGraph result;
+    if (num_threads == 1) {
+        result.counts.resize(static_cast<std::size_t>(atom_count) + 1, 0);
+        for (std::int64_t local = 0; local < atom_count; ++local) {
+            if (control && control->cancelled()) continue;
+            result.counts[static_cast<std::size_t>(local)] =
+                static_cast<std::int64_t>(result.atoms.size());
+            visit_candidates(local, [&](std::int32_t neighbor, const Vec3& displacement) {
+                const double distance2 = norm2(displacement);
+                if (!within_cutoff(distance2)) return;
+                result.atoms.push_back(begin + neighbor);
+                result.displacements.push_back(displacement.x);
+                result.displacements.push_back(displacement.y);
+                result.displacements.push_back(displacement.z);
+                result.distance2.push_back(distance2);
+            });
+            result.counts[static_cast<std::size_t>(local + 1)] =
+                static_cast<std::int64_t>(result.atoms.size());
+        }
+        if (control && control->cancelled()) throw CancelledError();
+        return result;
+    }
+
+    result.counts.resize(static_cast<std::size_t>(atom_count), 0);
+    auto count_center = [&](std::int64_t local) {
+        std::int64_t count = 0;
+        visit_candidates(local, [&](std::int32_t, const Vec3& displacement) {
+            if (within_cutoff(norm2(displacement))) ++count;
+        });
+        return count;
+    };
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#endif
+    for (std::int64_t local = 0; local < atom_count; ++local) {
+        if (control && control->cancelled()) continue;
+        result.counts[static_cast<std::size_t>(local)] = count_center(local);
+    }
+    if (control && control->cancelled()) throw CancelledError();
+
+    std::vector<std::int64_t> offsets(static_cast<std::size_t>(atom_count) + 1, 0);
+    for (std::int64_t local = 0; local < atom_count; ++local) {
+        offsets[static_cast<std::size_t>(local + 1)] =
+            offsets[static_cast<std::size_t>(local)]
+            + result.counts[static_cast<std::size_t>(local)];
+    }
+    const std::size_t total = static_cast<std::size_t>(offsets.back());
+    result.atoms.resize(total);
+    result.displacements.resize(total * 3);
+    result.distance2.resize(total);
+    auto fill_center = [&](std::int64_t local) {
+        std::int64_t output = offsets[static_cast<std::size_t>(local)];
+        visit_candidates(local, [&](std::int32_t neighbor, const Vec3& displacement) {
+            const double distance2 = norm2(displacement);
+            if (!within_cutoff(distance2)) return;
+            result.atoms[static_cast<std::size_t>(output)] = begin + neighbor;
+            result.displacements[static_cast<std::size_t>(output) * 3 + 0] = displacement.x;
+            result.displacements[static_cast<std::size_t>(output) * 3 + 1] = displacement.y;
+            result.displacements[static_cast<std::size_t>(output) * 3 + 2] = displacement.z;
+            result.distance2[static_cast<std::size_t>(output)] = distance2;
+            ++output;
+        });
+    };
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#endif
+    for (std::int64_t local = 0; local < atom_count; ++local) {
+        if (control && control->cancelled()) continue;
+        fill_center(local);
+    }
+    if (control && control->cancelled()) throw CancelledError();
+    result.counts = std::move(offsets);
+    return result;
+}
+
 LocalGraph build_structure_graph(
     const StructureBatchView& batch,
     std::int64_t structure,
@@ -163,6 +382,11 @@ LocalGraph build_structure_graph(
             "mixed periodicity is not supported; use all-zero or all-one pbc");
     }
     const Mat3 cell = load_cell(batch, structure);
+    if (periodic && !use_scaled_periodic_images && !store_shifts
+        && can_use_compact_periodic_graph(cell, cutoff)) {
+        return build_compact_periodic_graph(
+            batch, structure, cell, cutoff, control, num_threads, include_boundary);
+    }
     Mat3 inv;
     double bounds[3] = {0.0, 0.0, 0.0};
     if (periodic) {

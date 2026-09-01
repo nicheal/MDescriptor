@@ -268,7 +268,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/include/c++/13/bits/stl_vector.h \
     /usr/include/c++/13/bits/stl_bvector.h \
     /usr/include/c++/13/bits/vector.tcc \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/execution_policy.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/config.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/config/config.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__cccl_config \
@@ -492,23 +492,9 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__optional/make_optional.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__optional/optional_ref.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/execution_policy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/nvtx_policy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/select_system.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/any_system_tag.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/device_system_tag.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/execution_policy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/config.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/detect_cuda_runtime.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_debug.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/config.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_arch.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_cpp_dialect.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_macro.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_namespace.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/version.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/seq.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/allocator_aware_execution_policy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/alignment.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__cmath/ceil_div.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/min.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/comp.h \
@@ -575,6 +561,27 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_unsigned.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/underlying_type.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__utility/to_underlying.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/alignment_of.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/execute_with_allocator_fwd.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/execution_policy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/execution_policy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/execution_policy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/adjacent_difference.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/adjacent_difference.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/iterator_traits.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/any_system_tag.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/device_system_tag.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/execution_policy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/config.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/detect_cuda_runtime.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_debug.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/config.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_arch.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_cpp_dialect.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_macro.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_namespace.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/version.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__cmath/round_up.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/limits \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__limits/numeric_limits.h \
@@ -619,12 +626,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/clamp.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/max.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/max_element.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/allocator_aware_execution_policy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/alignment.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/alignment_of.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/execute_with_allocator_fwd.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/seq.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/execution_policy.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/util.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_device.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_policy_wrapper_t.cuh \
@@ -828,25 +829,14 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system_error.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/system_error.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/system_error.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/minimum_system.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/minimum_type.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/tag.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/internal_functional.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/raw_reference_cast.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/raw_pointer_cast.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/pointer_traits.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/has_nested_type.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/is_thrust_pointer.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/iterator_traits.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/iterator_category_to_system.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/host_system_tag.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/execution_policy.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/iterator_categories.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/iterator_category_with_system_and_traversal.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/iterator_traversal_tags.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/iterator_category_to_traversal.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/minimum_system.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/minimum_type.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/iterator \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__iterator/constant_iterator.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__ranges/compressed_movable_box.h \
@@ -908,7 +898,52 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__iterator/ostreambuf_iterator.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__iterator/permutable.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__iterator/sortable.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/assign_value.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/assign_value.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/raw_pointer_cast.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/pointer_traits.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/has_nested_type.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/type_traits/is_thrust_pointer.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/binary_search.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/binary_search.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/function.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/raw_reference_cast.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/general_copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/trivial_copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/type_traits/is_trivially_relocatable.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/static_assert.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/type_traits/is_contiguous_iterator.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/copy_if.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/copy_if.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/count.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/extrema.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/extrema.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/find.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/find.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/for_each.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/for_each.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/get_value.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/get_value.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/iter_swap.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/iter_swap.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/malloc_and_free.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/malloc_and_free.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/cstdlib \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/aligned_alloc.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/malloc.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/div.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/merge.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/merge.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/nvtx_policy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/select_system.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/tag.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/internal_functional.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/tuple_of_iterator_references.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/reference_forward_declaration.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/use_default.h \
@@ -917,9 +952,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/for_each.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/for_each.inl \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/for_each.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/for_each.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/function.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/for_each.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/for_each.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/device_for.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_for.cuh \
@@ -931,7 +963,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_for.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_load.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_math.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/type_traits/is_contiguous_iterator.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/type_traits/unwrap_contiguous_iterator.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__mdspan/layout_left.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__mdspan/empty_base.h \
@@ -955,7 +986,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/kernels/kernel_transform.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_transform.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/common.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/type_traits/is_trivially_relocatable.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/util_vsmem.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory/discard_memory.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory/align_down.h \
@@ -983,10 +1013,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/copy.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_constant_evaluated.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/cstdlib \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/aligned_alloc.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/malloc.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/div.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__algorithm/transform.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_trivial.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/expected \
@@ -1092,10 +1118,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__functional/pointer_to_binary_function.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__functional/pointer_to_unary_function.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__functional/unary_negate.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/copy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/general_copy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/trivial_copy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/copy.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/copy.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/temporary_array.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/allocator/no_throw_allocator.h \
@@ -1112,20 +1134,12 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/malloc_and_free_fwd.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/memory.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/memory.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/malloc_and_free.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/malloc_and_free.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/malloc_and_free.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/bad_alloc.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/temporary_buffer.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/temporary_buffer.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/memory.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/reference.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/assign_value.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/get_value.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/iter_swap.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/assign_value.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/get_value.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/iter_swap.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/assign_value.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/cross_system.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/get_value.h \
@@ -1150,7 +1164,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/generate.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/generate.inl \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/generate.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/generate.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/generate.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/fill.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/fill.h \
@@ -1160,130 +1173,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/tagged_iterator.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/temporary_array.inl \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/uninitialized_copy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy_if.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy_if.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy_if.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy_if.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/scan.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/scan.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scan.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scan_by_key.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scan_by_key.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/replace.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/replace.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/replace.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/replace.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/replace.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/replace.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/scan.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/scan_by_key.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/scan.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/scan.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/device_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/device_memory_resource.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/env_dispatch.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/temporary_storage.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/get_memory_resource.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/properties.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/resource.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/get_property.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/remove_const_ref.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/semiregular.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/access.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__type_traits/is_specialization_of.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/basic_any_fwd.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/conversions.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/interfaces.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/overrides.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/inherit.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/basic_any_base.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/storage.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/tagged_ptr.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/basic_any_from.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/virtcall.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/virtual_functions.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/maybe_const.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__utility/typeid.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__string/string_view.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/single_pass_scan_operators.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/strong_load.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/strong_store.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_store.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/warp_reduce.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_operators.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_reduce.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/array_utils.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/unsafe_bitcast.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_simd.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_reduce_shfl.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__bit/countr.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_reduce_smem.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_load.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_exchange.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/warp_exchange.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_exchange_shfl.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_exchange_smem.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/iterator/cache_modified_input_iterator.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/specializations/block_scan_raking.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_raking_layout.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/warp_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_scan_shfl.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/warp \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__warp/lane_mask.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__warp/warp_match_all.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__warp/warp_shuffle.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/shfl_sync.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_scan_smem.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/static_for.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/specializations/block_scan_warp_scans.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_store.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/grid/grid_queue.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_common.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/kernels/kernel_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_scan.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_scan_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_scan_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_discontinuity.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_scan_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__execution/determinism.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__execution/require.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_one_of.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/scan_by_key.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/scan_by_key.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/scatter.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/scatter.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scatter.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scatter.inl \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/permutation_iterator.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/scatter.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/scatter.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/copy_if.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/copy_if.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/copy_if.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/device_select.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_select_if.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_select_if.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_select_if.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_unique_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/kernels/kernel_unique_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_unique_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_unique_by_key.cuh \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/execution_policy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/execution_policy.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/adjacent_difference.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/adjacent_difference.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/binary_search.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/binary_search.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/extrema.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/extrema.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/find.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/find.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/merge.h \
-    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/merge.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/partition.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/partition.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/reduce.h \
@@ -1292,6 +1181,10 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/reduce_by_key.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/remove.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/remove.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/scan.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/scan.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/scan_by_key.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/scan_by_key.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/set_operations.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/set_operations.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/sort.h \
@@ -1319,8 +1212,16 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_merge.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_merge.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_merge_sort.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_load.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_exchange.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/warp_exchange.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_exchange_shfl.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_exchange_smem.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/iterator/cache_modified_input_iterator.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_store.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_merge_sort.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_sort.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_store.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_load_to_shared.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/memory \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory/is_pointer_accessible.h \
@@ -1386,6 +1287,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/red_async.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/setmaxnreg.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/setmaxnreg.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/shfl_sync.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/st.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/st.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/st_async.h \
@@ -1424,6 +1326,104 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o : /home/nicheal/MDescripto
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/copy_backward.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/stable_primitive_sort.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/stable_radix_sort.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/copy.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy_if.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/copy_if.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy_if.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy_if.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/scan.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/scan.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scan.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scan_by_key.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scan_by_key.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/replace.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/replace.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/replace.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/replace.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/replace.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/replace.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/scan.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/device_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/device_memory_resource.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/env_dispatch.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/temporary_storage.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/get_memory_resource.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/properties.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/resource.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__memory_resource/get_property.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/remove_const_ref.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/semiregular.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/access.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__type_traits/is_specialization_of.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/basic_any_fwd.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/conversions.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/interfaces.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/overrides.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/inherit.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/basic_any_base.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/storage.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/tagged_ptr.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/basic_any_from.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/virtcall.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/virtual_functions.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/maybe_const.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__utility/typeid.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__string/string_view.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/single_pass_scan_operators.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/strong_load.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/strong_store.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/warp_reduce.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_operators.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_reduce.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/array_utils.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/unsafe_bitcast.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_simd.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_reduce_shfl.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__bit/countr.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_reduce_smem.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/specializations/block_scan_raking.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_raking_layout.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/thread/thread_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/warp_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_scan_shfl.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/warp \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__warp/lane_mask.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__warp/warp_match_all.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__warp/warp_shuffle.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/warp/specializations/warp_scan_smem.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/static_for.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/specializations/block_scan_warp_scans.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/grid/grid_queue.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_common.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/kernels/kernel_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_scan.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_scan_by_key.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_scan_by_key.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/block/block_discontinuity.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_scan_by_key.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__execution/determinism.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__execution/require.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_one_of.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/scan_by_key.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/scatter.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/scatter.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scatter.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/scatter.inl \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/permutation_iterator.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/scatter.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/scatter.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/copy_if.h \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/device_select.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_select_if.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_select_if.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_select_if.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_unique_by_key.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/kernels/kernel_unique_by_key.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_unique_by_key.cuh \
+    /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/tuning/tuning_unique_by_key.cuh \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/transform_iterator.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cpp/detail/unique.h \
     /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/unique.h \

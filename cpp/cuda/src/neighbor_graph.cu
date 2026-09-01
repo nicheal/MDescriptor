@@ -1,7 +1,6 @@
 #include "mdescriptor/cuda/neighbor_graph.hpp"
 
 #include <cuda_runtime.h>
-#include <thrust/copy.h>
 #include <thrust/execution_policy.h>
 #include <thrust/gather.h>
 #include <thrust/reduce.h>
@@ -212,12 +211,20 @@ __global__ void assign_nep_cells_kernel(
 }
 
 __global__ void make_nep_lane_major_order_kernel(
-    int atoms, int block_count, std::int32_t* order_keys) {
+    int atoms,
+    int block_count,
+    const std::int32_t* atom_cells,
+    std::int32_t* cell_atoms,
+    std::int32_t* cell_keys) {
     const std::int64_t atom = static_cast<std::int64_t>(blockIdx.x)
         * blockDim.x + threadIdx.x;
     if (atom >= atoms) return;
-    order_keys[atom] = static_cast<std::int32_t>(
-        (atom % blockDim.x) * block_count + atom / blockDim.x);
+    const int lane = static_cast<int>(threadIdx.x);
+    const int tail = atoms % blockDim.x == 0 ? blockDim.x : atoms % blockDim.x;
+    const int missing_lanes_before = max(0, lane - tail);
+    const int rank = lane * block_count - missing_lanes_before + blockIdx.x;
+    cell_atoms[rank] = static_cast<std::int32_t>(atom);
+    cell_keys[rank] = atom_cells[atom];
 }
 
 template <bool Fill>
@@ -1015,11 +1022,6 @@ void DeviceNeighborGraph::build_nep(
     DeviceBatch& batch,
     const detail::StructureBatchView& host_batch,
     double cutoff) {
-    if (!batch.expanded()) {
-        build_nep_images(context, batch, host_batch, cutoff);
-        return;
-    }
-
     if (host_batch.structures != batch.structures() || host_batch.atoms != batch.atoms()) {
         throw std::invalid_argument("CUDA NEP host and device batches have different shapes");
     }
@@ -1166,21 +1168,14 @@ void DeviceNeighborGraph::build_nep(
         "could not upload final CUDA NEP cell offset");
     thrust::sequence(
         execution_policy, cell_atoms_, cell_atoms_ + atom_count, std::int32_t{0});
-    // Use the same 32-thread lane/block decomposition as the reference CUDA
-    // builders before making the list cell-major.  The second stable sort
-    // keeps that order for atoms sharing a cell while remaining deterministic
-    // across descriptor evaluations.
+    // Construct the same compact lane-major source order used by the previous
+    // implementation, then stable-sort it once by cell.  This preserves the
+    // deterministic order within each cell while removing the extra radix sort
+    // and gather.
     make_nep_lane_major_order_kernel<<<blocks, block_size, 0, stream>>>(
-        static_cast<int>(atom_count), static_cast<int>(blocks), cell_sort_keys_);
+        static_cast<int>(atom_count), static_cast<int>(blocks), atom_cells_,
+        cell_atoms_, cell_sort_keys_);
     check_cuda(cudaGetLastError(), "CUDA NEP atom order construction failed");
-    thrust::stable_sort_by_key(
-        execution_policy,
-        cell_sort_keys_, cell_sort_keys_ + atom_count,
-        cell_atoms_);
-    thrust::gather(
-        execution_policy,
-        cell_atoms_, cell_atoms_ + atom_count,
-        atom_cells_, cell_sort_keys_);
     thrust::stable_sort_by_key(
         execution_policy,
         cell_sort_keys_, cell_sort_keys_ + atom_count,

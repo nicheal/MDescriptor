@@ -35,20 +35,33 @@ float sigmoid(float value) {
     return 1.0F / (1.0F + std::exp(-value));
 }
 
-float affine_value(
+void affine_values(
     const std::vector<float>& weights,
     int input_width,
     int output_width,
     const float* input,
-    int output
+    float* output,
+    double* accumulators
 ) {
-    double result = 0.0;
-    for (int input_index = 0; input_index < input_width; ++input_index) {
-        result += static_cast<double>(input[input_index])
-            * static_cast<double>(weights[static_cast<std::size_t>(
-                input_index * output_width + output)]);
+    if (output_width <= 0) {
+        return;
     }
-    return static_cast<float>(result);
+    // Weights are row-major [input, output].  Traverse each input row once
+    // so the inner loop is contiguous while each output keeps its original
+    // input accumulation order.
+    std::fill(accumulators, accumulators + output_width, 0.0);
+    for (int input_index = 0; input_index < input_width; ++input_index) {
+        const double input_value = static_cast<double>(input[input_index]);
+        const float* row = weights.data()
+            + static_cast<std::size_t>(input_index * output_width);
+        for (int output_index = 0; output_index < output_width; ++output_index) {
+            accumulators[output_index] += input_value
+                * static_cast<double>(row[output_index]);
+        }
+    }
+    for (int output_index = 0; output_index < output_width; ++output_index) {
+        output[output_index] = static_cast<float>(accumulators[output_index]);
+    }
 }
 
 void validate_vector_size(
@@ -407,6 +420,8 @@ void Dpa4cCalculator::ensure_pair_cache(
     std::vector<float> pre_activation(static_cast<std::size_t>(2 * options_.pair_hidden));
     std::vector<float> hidden(static_cast<std::size_t>(options_.pair_hidden));
     std::vector<float> logits(static_cast<std::size_t>(pair_output));
+    std::vector<double> affine_accumulators(static_cast<std::size_t>(
+        std::max(2 * options_.pair_hidden, pair_output)));
     for (const std::size_t pair_index : pair_indices) {
         if (pair_index >= pair_cache_.size() || pair_cache_[pair_index]) {
             continue;
@@ -422,27 +437,28 @@ void Dpa4cCalculator::ensure_pair_cache(
             neighbor,
             neighbor + options_.channels,
             input.begin() + options_.channels);
-        for (int output = 0; output < 2 * options_.pair_hidden; ++output) {
-            pre_activation[static_cast<std::size_t>(output)] = affine_value(
-                options_.pair_w0,
-                2 * options_.channels,
-                2 * options_.pair_hidden,
-                input.data(),
-                output);
-        }
+        affine_values(
+            options_.pair_w0,
+            2 * options_.channels,
+            2 * options_.pair_hidden,
+            input.data(),
+            pre_activation.data(),
+            affine_accumulators.data());
         for (int index = 0; index < options_.pair_hidden; ++index) {
             const float gate = pre_activation[static_cast<std::size_t>(index)];
             const float value = pre_activation[static_cast<std::size_t>(
                 options_.pair_hidden + index)];
             hidden[static_cast<std::size_t>(index)] = gate * sigmoid(gate) * value;
         }
-        for (int output = 0; output < pair_output; ++output) {
-            logits[static_cast<std::size_t>(output)] = 0.1F * affine_value(
-                options_.pair_w1,
-                options_.pair_hidden,
-                pair_output,
-                hidden.data(),
-                output);
+        affine_values(
+            options_.pair_w1,
+            options_.pair_hidden,
+            pair_output,
+            hidden.data(),
+            logits.data(),
+            affine_accumulators.data());
+        for (float& value : logits) {
+            value *= 0.1F;
         }
         auto coefficients = std::make_unique<PairCoefficients>();
         coefficients->scale.resize(static_cast<std::size_t>(options_.channels));
@@ -579,6 +595,9 @@ void Dpa4cCalculator::compute(
         std::vector<float> radial_hidden(static_cast<std::size_t>(options_.radial_hidden));
         std::vector<float> radial(static_cast<std::size_t>(options_.channels));
         std::vector<float> modes(static_cast<std::size_t>(options_.radial_modes));
+        std::vector<double> affine_accumulators(static_cast<std::size_t>(std::max(
+            2 * options_.radial_hidden,
+            std::max(options_.channels, options_.radial_modes))));
         std::vector<float> basis(static_cast<std::size_t>(angular_width));
         std::vector<double> amplitudes(static_cast<std::size_t>(options_.channels));
         const NeighborView neighbors = graph.for_center(center_atom);
@@ -628,14 +647,13 @@ void Dpa4cCalculator::compute(
                     ? 1.0F : std::sin(pi * sinc_argument) / (pi * sinc_argument);
                 radial_basis[static_cast<std::size_t>(radial_index)] = frequency * sinc;
             }
-            for (int hidden_index = 0; hidden_index < 2 * options_.radial_hidden; ++hidden_index) {
-                radial_pre[static_cast<std::size_t>(hidden_index)] = affine_value(
-                    options_.radial_w0,
-                    options_.n_radial,
-                    2 * options_.radial_hidden,
-                    radial_basis.data(),
-                    hidden_index);
-            }
+            affine_values(
+                options_.radial_w0,
+                options_.n_radial,
+                2 * options_.radial_hidden,
+                radial_basis.data(),
+                radial_pre.data(),
+                affine_accumulators.data());
             for (int hidden_index = 0; hidden_index < options_.radial_hidden; ++hidden_index) {
                 const float gate = radial_pre[static_cast<std::size_t>(hidden_index)];
                 const float value = radial_pre[static_cast<std::size_t>(
@@ -643,22 +661,20 @@ void Dpa4cCalculator::compute(
                 radial_hidden[static_cast<std::size_t>(hidden_index)] =
                     gate * sigmoid(gate) * value;
             }
-            for (int channel = 0; channel < options_.channels; ++channel) {
-                radial[static_cast<std::size_t>(channel)] = affine_value(
-                    options_.radial_w1,
-                    options_.radial_hidden,
-                    options_.channels,
-                    radial_hidden.data(),
-                    channel);
-            }
-            for (int mode = 0; mode < options_.radial_modes; ++mode) {
-                modes[static_cast<std::size_t>(mode)] = affine_value(
-                    options_.radial_mode_w,
-                    options_.radial_hidden,
-                    options_.radial_modes,
-                    radial_hidden.data(),
-                    mode);
-            }
+            affine_values(
+                options_.radial_w1,
+                options_.radial_hidden,
+                options_.channels,
+                radial_hidden.data(),
+                radial.data(),
+                affine_accumulators.data());
+            affine_values(
+                options_.radial_mode_w,
+                options_.radial_hidden,
+                options_.radial_modes,
+                radial_hidden.data(),
+                modes.data(),
+                affine_accumulators.data());
 
             const std::size_t pair_index = static_cast<std::size_t>(
                 center_type * (options_.ntypes + 1) + neighbor_type);

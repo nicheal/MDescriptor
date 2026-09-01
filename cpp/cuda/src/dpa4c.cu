@@ -260,7 +260,6 @@ HostPayload parse_payload(const py::dict& payload) {
 struct Dpa4cCudaLayout {
     std::int64_t stride = 0;
     std::int64_t fixed_bytes = 0;
-    std::int64_t order_offset = 0;
     std::int64_t reduced = 0;
     std::int64_t radial_basis = 0;
     std::int64_t radial_pre = 0;
@@ -412,7 +411,7 @@ __device__ __forceinline__ int projected_offset_for_degree(const KernelModel& m,
 __global__ void dpa4c_kernel(
     const std::int64_t* graph_offsets, const std::int32_t* graph_atoms,
     const std::int32_t* graph_shifts, const double* displacements,
-    const double* distance2, const std::int32_t* type_indices,
+    const std::int32_t* type_indices,
     std::int64_t atoms, unsigned char* workspace, Dpa4cCudaLayout layout,
     KernelModel m,
     double* output) {
@@ -433,21 +432,14 @@ __global__ void dpa4c_kernel(
     auto* descriptor = reinterpret_cast<float*>(base + layout.descriptor);
     auto* full = reinterpret_cast<float*>(base + layout.full);
     auto* matrices = reinterpret_cast<float*>(base + layout.matrices);
-    auto* order = reinterpret_cast<std::int32_t*>(base + layout.order_offset);
     const int center_type = type_indices[center];
     const std::int64_t begin = graph_offsets[center], end = graph_offsets[center + 1];
-    const int neighbor_count = static_cast<int>(end - begin);
-    for (int index = 0; index < neighbor_count; ++index) {
-        order[index] = index;
-        int current = index;
-        while (current > 0 && distance2[begin + order[current]] < distance2[begin + order[current - 1]]) {
-            const int saved = order[current - 1]; order[current - 1] = order[current]; order[current] = saved; --current;
-        }
-    }
     for (std::int64_t index = 0; index < 2 + m.moment_count; ++index) reduced[index] = 0.0;
-    for (int index = 0; index < m.channels; ++index) amplitudes[index] = 0.0;
-    for (int sorted = 0; sorted < neighbor_count; ++sorted) {
-        const std::int64_t edge = begin + order[sorted];
+    // DeviceNeighborGraph::build_dpa orders every row by distance before
+    // this kernel launches.  Reusing that order avoids a second per-center
+    // insertion sort here; it also preserves the graph's deterministic
+    // tie-break order.
+    for (std::int64_t edge = begin; edge < end; ++edge) {
         const std::int32_t neighbor = graph_atoms[edge];
         if (neighbor == center && graph_shifts != nullptr
             && graph_shifts[edge * 3] == 0 && graph_shifts[edge * 3 + 1] == 0 && graph_shifts[edge * 3 + 2] == 0) continue;
@@ -762,27 +754,14 @@ std::vector<double> DeviceDpa4cModel::compute(
     for (std::int32_t value : type_indices) if (value < 0 || value >= ntypes_) throw std::invalid_argument("DPA4C CUDA type index is outside the checkpoint type map");
     if (batch.atoms() == 0) return {};
     if (graph.offsets() == nullptr) throw std::invalid_argument("DPA4C CUDA received an invalid neighbor graph");
-    // The GPU graph builder records this compact scalar while it is already
-    // reducing the device-side row counts.  Avoid copying the complete CSR
-    // offsets back just to size the per-atom ordering workspace.
-    const std::int64_t max_neighbors = graph.max_neighbors();
-    if (max_neighbors < 0) {
-        throw std::invalid_argument("DPA4C CUDA neighbor graph has an invalid row length");
-    }
-    if (max_neighbors > static_cast<std::int64_t>(std::numeric_limits<int>::max()))
-        throw CudaOutOfMemory("DPA4C CUDA neighbor row is too large for the ordering workspace");
+    // The graph rows are already ordered by DeviceNeighborGraph::build_dpa;
+    // the per-atom workspace therefore only needs the fixed descriptor state.
     const std::size_t fixed_bytes = static_cast<std::size_t>(layout_->fixed_bytes);
-    const std::size_t order_bytes = static_cast<std::size_t>(max_neighbors) * sizeof(std::int32_t);
-    if (order_bytes > std::numeric_limits<std::size_t>::max() - fixed_bytes)
-        throw CudaOutOfMemory("DPA4C CUDA workspace is too large");
-    // Each atom owns a slot containing double-valued accumulators.  Padding
-    // the per-atom slot keeps those accumulators aligned even when the
-    // maximum neighbor row has an odd number of int32 ordering entries.
-    const std::size_t stride = align_bytes(
-        fixed_bytes + order_bytes, alignof(double));
+    const std::size_t stride = align_bytes(fixed_bytes, alignof(double));
     if (stride == 0 || static_cast<std::size_t>(batch.atoms()) > std::numeric_limits<std::size_t>::max() / stride)
         throw CudaOutOfMemory("DPA4C CUDA workspace is too large");
-    Dpa4cCudaLayout layout = *layout_; layout.order_offset = static_cast<std::int64_t>(layout_->fixed_bytes); layout.stride = static_cast<std::int64_t>(stride);
+    Dpa4cCudaLayout layout = *layout_;
+    layout.stride = static_cast<std::int64_t>(stride);
     const std::size_t atom_count = static_cast<std::size_t>(batch.atoms());
     const std::size_t feature_count = static_cast<std::size_t>(feature_count_);
     if (feature_count != 0 && atom_count > std::numeric_limits<std::size_t>::max() / feature_count)
@@ -819,7 +798,7 @@ std::vector<double> DeviceDpa4cModel::compute(
     model.gram_index = device_gram_index; model.gram_scale = device_gram_scale;
     const auto blocks = static_cast<unsigned int>((static_cast<std::size_t>(batch.atoms()) + 127) / 128);
     dpa4c_kernel<<<blocks, 128, 0, context.stream()>>>(
-        graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(), device_types,
+        graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(), device_types,
         batch.atoms(), workspace, layout, model, output);
     check_cuda(cudaGetLastError(), "DPA4C CUDA descriptor kernel launch failed");
     std::vector<double> result = context.download_output(output_count);

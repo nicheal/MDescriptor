@@ -1,11 +1,13 @@
 #include "mdescriptor/neighbor.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -91,6 +93,86 @@ void test_neighbor_graph_rejects_invalid_or_cancelled_work() {
         "pre-cancelled work must raise CancelledError");
 }
 
+struct NeighborRecord {
+    std::int32_t atom = 0;
+    std::array<double, 3> displacement{};
+    double distance2 = 0.0;
+};
+
+std::vector<NeighborRecord> records(const mdescriptor::NeighborView& view) {
+    std::vector<NeighborRecord> result;
+    result.reserve(view.size);
+    for (std::size_t index = 0; index < view.size; ++index) {
+        result.push_back({
+            view.atoms[index],
+            {view.displacements[index * 3 + 0], view.displacements[index * 3 + 1],
+             view.displacements[index * 3 + 2]},
+            view.distance2[index],
+        });
+    }
+    return result;
+}
+
+void test_compact_periodic_graph_matches_image_graph() {
+    const std::array<std::int32_t, 5> numbers{1, 6, 8, 14, 1};
+    const std::array<double, 15> positions{
+        -0.2, 0.1, 0.2,
+        19.8, 0.2, 0.1,
+        0.4, 21.7, 0.3,
+        0.3, 0.4, 23.8,
+        10.0, 11.0, 12.0,
+    };
+    const std::array<double, 9> cell{
+        20.0, 0.0, 0.0,
+        0.0, 22.0, 0.0,
+        0.0, 0.0, 24.0,
+    };
+    const std::array<std::int32_t, 3> pbc{1, 1, 1};
+    const std::array<std::int64_t, 2> offsets{0, 5};
+    const mdescriptor::StructureBatchView batch{
+        numbers.data(), positions.data(), cell.data(), pbc.data(), offsets.data(), 1, 5,
+    };
+    const auto compact = mdescriptor::build_neighbor_graph(
+        batch, 6.0, nullptr, 1, true, false, false);
+    const auto image_graph = mdescriptor::build_neighbor_graph(
+        batch, 6.0, nullptr, 1, true, false, true);
+    require(compact.shifts().empty(), "compact NEP graph must not allocate shifts");
+    require(compact.offsets().back() == image_graph.offsets().back(),
+            "compact and image graph edge counts must match");
+
+    for (std::int64_t center = 0; center < batch.atoms; ++center) {
+        const auto compact_records = records(compact.for_center(center));
+        const auto image_records = records(image_graph.for_center(center));
+        require(compact_records.size() == image_records.size(),
+                "compact and image graph row sizes must match");
+        std::vector<bool> matched(image_records.size(), false);
+        for (const auto& compact_record : compact_records) {
+            bool found = false;
+            for (std::size_t index = 0; index < image_records.size(); ++index) {
+                const auto& image_record = image_records[index];
+                if (matched[index] || compact_record.atom != image_record.atom) continue;
+                if (std::abs(compact_record.distance2 - image_record.distance2) > 1e-12) {
+                    continue;
+                }
+                bool same_displacement = true;
+                for (int component = 0; component < 3; ++component) {
+                    if (std::abs(compact_record.displacement[component]
+                                 - image_record.displacement[component]) > 1e-12) {
+                        same_displacement = false;
+                        break;
+                    }
+                }
+                if (same_displacement) {
+                    matched[index] = true;
+                    found = true;
+                    break;
+                }
+            }
+            require(found, "compact graph lost or changed a periodic neighbor");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -98,6 +180,7 @@ int main() {
         test_compute_control_contract();
         test_neighbor_graph_boundary_contract();
         test_neighbor_graph_rejects_invalid_or_cancelled_work();
+        test_compact_periodic_graph_matches_image_graph();
     } catch (const std::exception& error) {
         std::cerr << "C++ public API test failed: " << error.what() << '\n';
         return 1;

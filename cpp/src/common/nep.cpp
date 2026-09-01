@@ -877,7 +877,12 @@ void compute_nep(
             if (!parallel_error) parallel_error = std::move(error);
         };
 #ifdef _OPENMP
-        const int workers = num_threads > 0 ? num_threads : omp_get_max_threads();
+        const int requested_workers = num_threads > 0 ? num_threads : omp_get_max_threads();
+        // Each structure is one independent unit of work in this branch. Do
+        // not create idle OpenMP workers when a small batch has fewer
+        // structures than the machine's thread count.
+        const int workers = static_cast<int>(std::min<std::int64_t>(
+            requested_workers, batch.structures));
 #pragma omp parallel num_threads(workers)
         {
             std::vector<double> radial(radial_n);
