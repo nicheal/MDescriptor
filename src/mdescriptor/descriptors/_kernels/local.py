@@ -145,7 +145,7 @@ class SphericalExpansionKernel(_AtomKernel):
     _kind = 0
     k_cutoff = 2.5
     exponent = 1
-    radial_radius = None
+    radial_radius: float | None = None
 
     def __init__(self, species: Iterable[int] | None = None, cutoff: float = 6.0, density_width: float = 0.3, max_radial: int = 6, max_angular: int = 4, num_threads: int | None = None):
         super().__init__(species, num_threads)
