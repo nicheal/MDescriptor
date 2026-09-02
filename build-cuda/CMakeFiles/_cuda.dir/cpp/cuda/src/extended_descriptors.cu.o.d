@@ -1,4 +1,4 @@
-CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/cuda/src/bindings.cu \
+CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o : /home/nicheal/MDescriptor/cpp/cuda/src/extended_descriptors.cu \
     /usr/include/stdc-predef.h \
     /usr/local/cuda/targets/x86_64-linux/include/cuda_runtime.h \
     /usr/local/cuda/targets/x86_64-linux/include/crt/host_config.h \
@@ -194,9 +194,9 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /usr/include/c++/13/utility \
     /usr/include/c++/13/bits/stl_relops.h \
     /usr/include/c++/13/initializer_list \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/backend.hpp \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/context.hpp \
-    /usr/include/c++/13/cstddef \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/extended_descriptors.hpp \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/batch.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp \
     /usr/include/c++/13/cstdint \
     /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h \
     /usr/include/stdint.h \
@@ -258,17 +258,16 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /usr/include/c++/13/bits/charconv.h \
     /usr/include/c++/13/bits/basic_string.tcc \
     /usr/include/c++/13/bits/memory_resource.h \
+    /usr/include/c++/13/cstddef \
     /usr/include/c++/13/bits/uses_allocator.h \
     /usr/include/c++/13/bits/uses_allocator_args.h \
     /usr/include/c++/13/tuple \
+    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/context.hpp \
     /usr/include/c++/13/vector \
     /usr/include/c++/13/bits/stl_uninitialized.h \
     /usr/include/c++/13/bits/stl_vector.h \
     /usr/include/c++/13/bits/stl_bvector.h \
     /usr/include/c++/13/bits/vector.tcc \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/batch.hpp \
-    /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/dpa4.hpp \
     /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/neighbor_graph.hpp \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/pytypes.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h \
@@ -472,10 +471,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
     /usr/include/c++/13/bits/streambuf.tcc \
     /usr/include/c++/13/optional \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/dpa4c.hpp \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/extended_descriptors.hpp \
-    /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/nep.hpp \
-    /home/nicheal/MDescriptor/cpp/include/mdescriptor/nep.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
     /usr/include/c++/13/atomic \
     /usr/include/c++/13/mutex \
@@ -487,11 +483,11 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /usr/include/c++/13/bits/unique_lock.h \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp \
-    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/pybind11.h \
-    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/class.h \
-    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/attr.h \
-    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/cast.h \
-    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/argument_vector.h \
+    /home/nicheal/MDescriptor/cpp/src/common/local_spherical_common.hpp \
+    /home/nicheal/MDescriptor/cpp/src/common/local_common.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
+    /home/nicheal/MDescriptor/cpp/src/common/local_layout.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/math3.hpp \
     /usr/include/c++/13/algorithm \
     /usr/include/c++/13/bits/stl_algo.h \
     /usr/include/c++/13/bits/algorithmfwd.h \
@@ -500,6 +496,19 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /usr/include/c++/13/pstl/glue_algorithm_defs.h \
     /usr/include/c++/13/array \
     /usr/include/c++/13/compare \
+    /usr/include/c++/13/numeric \
+    /usr/include/c++/13/bits/stl_numeric.h \
+    /usr/include/c++/13/pstl/glue_numeric_defs.h \
+    /usr/include/c++/13/cfloat \
+    /usr/lib/gcc/x86_64-linux-gnu/13/include/float.h \
+    /usr/include/c++/13/functional \
+    /usr/include/c++/13/bits/std_function.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/numpy.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/pybind11.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/class.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/attr.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/cast.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/argument_vector.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/descr.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/holder_caster_foreign_helpers.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/gil.h \
@@ -510,8 +519,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/trampoline_self_life_support.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/using_smart_holder.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/struct_smart_holder.h \
-    /usr/include/c++/13/functional \
-    /usr/include/c++/13/bits/std_function.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/value_and_holder.h \
     /usr/include/c++/13/thread \
     /usr/include/c++/13/bits/std_thread.h \
@@ -550,4 +557,28 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o : /home/nicheal/MDescriptor/cpp/
     /usr/include/c++/13/deque \
     /usr/include/c++/13/bits/stl_deque.h \
     /usr/include/c++/13/bits/deque.tcc \
-    /usr/include/c++/13/bits/stl_stack.h
+    /usr/include/c++/13/bits/stl_stack.h \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/complex.h \
+    /usr/include/c++/13/complex \
+    /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/stl.h \
+    /usr/include/c++/13/list \
+    /usr/include/c++/13/bits/stl_list.h \
+    /usr/include/c++/13/bits/list.tcc \
+    /usr/include/c++/13/map \
+    /usr/include/c++/13/bits/stl_tree.h \
+    /usr/include/c++/13/bits/stl_map.h \
+    /usr/include/c++/13/bits/stl_multimap.h \
+    /usr/include/c++/13/set \
+    /usr/include/c++/13/bits/stl_set.h \
+    /usr/include/c++/13/bits/stl_multiset.h \
+    /usr/include/c++/13/valarray \
+    /usr/include/c++/13/bits/valarray_array.h \
+    /usr/include/c++/13/bits/valarray_array.tcc \
+    /usr/include/c++/13/bits/valarray_before.h \
+    /usr/include/c++/13/bits/slice_array.h \
+    /usr/include/c++/13/bits/valarray_after.h \
+    /usr/include/c++/13/bits/gslice.h \
+    /usr/include/c++/13/bits/gslice_array.h \
+    /usr/include/c++/13/bits/mask_array.h \
+    /usr/include/c++/13/bits/indirect_array.h \
+    /usr/include/c++/13/variant

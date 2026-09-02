@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/_cuda.dir/cmake_device_link.o"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o.d"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/batch.cu.o"
@@ -12,6 +11,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o.d"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.o.d"
+  "CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o"
+  "CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o.d"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.o"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/local_descriptors.cu.o.d"
   "CMakeFiles/_cuda.dir/cpp/cuda/src/neighbor_graph.cu.o"

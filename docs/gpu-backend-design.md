@@ -15,7 +15,10 @@ CUDA contract 回归通过；完整发布矩阵仍需按目标平台执行。本
 当前实现包含 backend seam、惰性 CUDA plugin loader、可复用的 CUDA context /
 batch / CSR+SoA graph、NeighborList CUDA kernel，以及
 SphericalExpansion / SOAP radial / SOAP power 的共享 device coefficient
-pipeline，以及普通 NEP descriptor 的 device model/kernel。普通 NEP 的全周期
+pipeline，以及普通 NEP descriptor 的 device model/kernel。扩展 CUDA 模块
+`cpp/cuda/src/extended_descriptors.cu` 已覆盖本文件 11 节列出的全部 21 个
+原 CPU-only 描述符；其中 SOAPTurbo、ACE、MTP 和 C00PSMLFF 会把 CPU parser
+生成的扁平系数/evaluator payload 上传到 device。普通 NEP 的全周期
 路径使用 NEPAdapters-compatible 的 device cell-list、周期小盒展开和 float32
 中间算术；混合周期/孤立 batch 已切换到统一 CUDA neighbor path。周期小胞的物理
 replica atom array 由 CUDA kernel 生成，孤立结构使用非周期 cell-list/image path，
@@ -327,6 +330,7 @@ CUDA plugin 依赖匹配版本的基础包，并提供 `_cuda` 扩展和 backend
 | NEP | `cpp/cuda/src/nep.cu` 自有 descriptor/device kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
 | DPA4 | `cpp/cuda/src/dpa4.cu` 自有 FP32 tiled GEMM 和 descriptor kernels | 无（已移除 cuBLAS/cuBLASLt） | `libcudart`；`libcuda` 由宿主驱动提供 |
 | DPA4C | `cpp/cuda/src/dpa4c.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
+| 21 个 standalone 描述符 | `cpp/cuda/src/extended_descriptors.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
 
 三者共享 CUDA context、batch/CSR graph 和 Python lazy plugin loader，但不共享
 BLAS runtime。CPU `_native` 路径仍可使用 SciPy/OpenBLAS；这与独立 CUDA wheel
@@ -356,19 +360,46 @@ SoapPowerSpectrum
 NEP
 DPA4
 DPA4C
+SOAP
+SOAPTurbo
+ACSF
+ACE
+CoulombMatrix
+SineMatrix
+EwaldSumMatrix
+MBTR
+LMBTR
+ValleOganov
+AtomicComposition
+SortedDistances
+SphericalExpansionByPair
+LodeSphericalExpansion
+EAD
+SO3
+SO4
+SNAP
+LBispectrum
+MTP
+C00PSMLFF
 ```
+
+因此当前 registry 的 CUDA 支持矩阵为 28 个描述符；上面的 21 个扩展描述符
+统一由 `extended_descriptors.cu` dispatch，并保持各自 CPU kernel 的 feature
+layout、labels、周期 exact-self 语义和结果 level。
 
 以下内容仍明确排除在 standalone GPU 第一阶段之外：
 
-- 所有模型权重的 GPU 化；
+- 未列入支持矩阵的模型权重 GPU 化；已支持的 SOAPTurbo、ACE、MTP 和
+  C00PSMLFF 只上传 descriptor 计算所需的扁平参数，不改变 CPU parser；
 - GPU tensor 或异步公共接口；
 - 多 GPU 和跨设备 graph cache。
 
 本任务在上述共识之外增加了普通（非 spin/charge/dipole/polar）NEP descriptor
-扩展。它只把 descriptor 所需的 model coefficients 上传到 device，不上传 ANN
-预测权重；NEP 的模型解析仍复用 CPU parser，NEPAdapters 的 GPU parity 已在
-具备 NVIDIA runner 的环境中完成，性能门禁按下文的多数据集协议复核；其他模型
-权重 GPU 化仍单独规划。
+扩展，并完成了 21 个原 CPU-only 描述符的 CUDA 路径。它们沿用 CPU parser，
+只把 descriptor 所需的扁平 coefficients/evaluator 数据上传到 device；不支持
+的 ANN 或其他模型权重仍单独规划。NEP 的模型解析仍复用 CPU parser，
+NEPAdapters 的 GPU parity 已在具备 NVIDIA runner 的环境中完成，性能门禁按
+下文的多数据集协议复核。
 
 模型 GPU 化未来沿用 `CudaExecutionContext`，但单独处理 `ModelSession`、device weights、checkpoint ABI 和模型数值验证。
 
@@ -540,6 +571,7 @@ MDESCRIPTOR_CUDA_PLUGIN_DIR="$PWD/build-cuda" \
 | G7 | CUDA wheel、GPU CI、benchmark | plugin 可发布并可验证 |
 | G8 | 普通 NEP descriptor GPU 扩展 | coefficients device model、CUDA kernel、parity benchmark |
 | G9 | DPA4/DPA4C CUDA descriptor path | 自有 FP32 kernels、GPU 权重上传、parity gate 和 CUDA wheel 依赖审计 |
+| G10 | 21 个 CPU-only 描述符 CUDA path | `extended_descriptors.cu`、payload flattening、CPU/CUDA contract 和 golden parity |
 
 本文件记录设计共识和当前实现边界；standalone CUDA runner、GPU 数值 tolerance、
 wheel 发布和跨平台 benchmark 仍应按上述门禁在目标硬件上完成验证。

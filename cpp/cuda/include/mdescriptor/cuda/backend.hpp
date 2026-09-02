@@ -4,6 +4,7 @@
 #include "mdescriptor/cuda/batch.hpp"
 #include "mdescriptor/cuda/dpa4.hpp"
 #include "mdescriptor/cuda/dpa4c.hpp"
+#include "mdescriptor/cuda/extended_descriptors.hpp"
 #include "mdescriptor/cuda/nep.hpp"
 #include "mdescriptor/cuda/neighbor_graph.hpp"
 

@@ -221,6 +221,7 @@ if(MDESCRIPTOR_BUILD_CUDA)
         cpp/cuda/src/batch.cu
         cpp/cuda/src/neighbor_graph.cu
         cpp/cuda/src/local_descriptors.cu
+        cpp/cuda/src/extended_descriptors.cu
         cpp/cuda/src/nep.cu
         cpp/cuda/src/dpa4c.cu
         cpp/cuda/src/dpa4.cu

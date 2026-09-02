@@ -48,6 +48,22 @@ public:
     const std::vector<std::int64_t>& feature_counts() const noexcept;
     std::int32_t max_angular() const noexcept;
     std::int32_t max_radial() const noexcept;
+    const std::vector<std::int32_t>& base_species() const noexcept;
+    const std::vector<std::int32_t>& base_radial() const noexcept;
+    const std::vector<std::int32_t>& base_angular() const noexcept;
+    const std::vector<std::int32_t>& base_magnetic() const noexcept;
+    const std::vector<double>& radial_a() const noexcept;
+    const std::vector<double>& radial_b() const noexcept;
+    const std::vector<double>& radial_c() const noexcept;
+    double radial_t_left() const noexcept;
+    double radial_t_right() const noexcept;
+    std::int32_t radial_p_left() const noexcept;
+    std::int32_t radial_p_right() const noexcept;
+    const std::vector<std::int64_t>& center_feature_offsets() const noexcept;
+    const std::vector<std::int64_t>& feature_term_offsets() const noexcept;
+    const std::vector<std::int64_t>& term_channel_offsets() const noexcept;
+    const std::vector<std::int32_t>& term_channels() const noexcept;
+    const std::vector<double>& term_coefficients() const noexcept;
     void close() noexcept;
     bool closed() const noexcept;
 
@@ -63,6 +79,22 @@ private:
     std::int64_t feature_count_ = 0;
     std::int32_t max_angular_ = 0;
     std::int32_t max_radial_ = 0;
+    std::vector<std::int32_t> base_species_;
+    std::vector<std::int32_t> base_radial_;
+    std::vector<std::int32_t> base_angular_;
+    std::vector<std::int32_t> base_magnetic_;
+    std::vector<double> radial_a_;
+    std::vector<double> radial_b_;
+    std::vector<double> radial_c_;
+    double radial_t_left_ = 0.0;
+    double radial_t_right_ = 0.0;
+    std::int32_t radial_p_left_ = 0;
+    std::int32_t radial_p_right_ = 0;
+    std::vector<std::int64_t> center_feature_offsets_;
+    std::vector<std::int64_t> feature_term_offsets_;
+    std::vector<std::int64_t> term_channel_offsets_;
+    std::vector<std::int32_t> term_channels_;
+    std::vector<double> term_coefficients_;
     mutable std::mutex compute_mutex_;
     std::atomic<bool> closed_{false};
 

@@ -73,6 +73,35 @@ def test_mtp_native_mlip4_json_matches_official_radial_prefix():
     )
 
 
+def test_mtp_native_mlip2_fixture_preserves_official_model_metadata():
+    potential = Path(__file__).parent / "data" / "mlip2_test.mtp"
+    system = Atoms(
+        "H3",
+        positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        cell=np.diag([6.0, 6.0, 6.0]),
+        pbc=True,
+    )
+    calculator = MTP(
+        species=[1], model=potential, execution=ExecutionOptions(num_threads=1)
+    )
+    result = calculator.compute(StructureBatch.from_ase([system]))
+
+    assert result.values.shape == (3, 3)
+    assert result.labels == (
+        "mlip2:constant",
+        "mlip2:moment=0",
+        "mlip2:moment=1",
+    )
+    assert result.metadata["details"]["official_format"] == "MLIP-2"
+    assert result.metadata["details"]["official_mlip4"] is False
+    np.testing.assert_allclose(
+        result.values[0],
+        [1.0, 25.875, 12.9375],
+        rtol=1e-12,
+        atol=1e-13,
+    )
+
+
 def test_mtp_reloads_replaced_model_at_same_path(tmp_path):
     source = Path(__file__).parent / "data" / "mlip4_test_mtp.json"
     potential = json.loads(source.read_text(encoding="utf-8"))

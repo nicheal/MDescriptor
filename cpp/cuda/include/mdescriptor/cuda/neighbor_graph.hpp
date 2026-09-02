@@ -39,7 +39,9 @@ public:
         const detail::StructureBatchView& host_batch,
         double cutoff,
         bool tie_break_shifts,
-        bool round_edge_endpoints);
+        bool round_edge_endpoints,
+        bool include_exact_self = false,
+        bool normalize_periodic_positions = true);
     // NEP's periodic path can construct the cell list and its CSR neighbor
     // graph on the device.  The host batch is used only for the small amount
     // of per-structure grid planning; positions and all pair enumeration stay

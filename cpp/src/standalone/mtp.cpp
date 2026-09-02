@@ -34,6 +34,8 @@ struct OfficialMtpModel {
     std::vector<std::array<int, 4>> alpha_index_basic;
     std::vector<std::array<int, 4>> alpha_index_times;
     std::vector<int> alpha_moment_mapping;
+    std::vector<std::int32_t> alpha_index_basic_flat;
+    std::vector<std::int32_t> alpha_index_times_flat;
     // [central species][outer species][radial function][Chebyshev term].
     std::vector<double> radial_coeffs;
 
@@ -657,6 +659,14 @@ void OfficialMtpModel::load(const std::string& path) {
     if (!std::isfinite(scaling)) {
         invalid_model(path, "scaling must be finite");
     }
+    alpha_index_basic_flat.reserve(alpha_index_basic.size() * 4);
+    for (const auto& value : alpha_index_basic) {
+        for (const int item : value) alpha_index_basic_flat.push_back(static_cast<std::int32_t>(item));
+    }
+    alpha_index_times_flat.reserve(alpha_index_times.size() * 4);
+    for (const auto& value : alpha_index_times) {
+        for (const int item : value) alpha_index_times_flat.push_back(static_cast<std::int32_t>(item));
+    }
 }
 
 std::int64_t mtp_feature_count(const MtpOptions& options) {
@@ -739,6 +749,116 @@ int MtpCalculator::official_radial_funcs_count() const noexcept {
 const std::string& MtpCalculator::official_radial_basis_type() const noexcept {
     static const std::string empty;
     return official_model_ ? official_model_->radial_basis_type : empty;
+}
+std::int32_t MtpCalculator::official_species_count() const noexcept {
+    return official_model_ ? static_cast<std::int32_t>(official_model_->species_count) : 0;
+}
+double MtpCalculator::official_scaling() const noexcept {
+    return official_model_ ? official_model_->scaling : 1.0;
+}
+std::int32_t MtpCalculator::official_alpha_moments_count() const noexcept {
+    return official_model_ ? static_cast<std::int32_t>(official_model_->alpha_moments_count) : 0;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_alpha_index_basic() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ ? official_model_->alpha_index_basic_flat : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_alpha_index_times() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ ? official_model_->alpha_index_times_flat : empty;
+}
+const std::vector<double>& MtpCalculator::official_radial_coefficients() const noexcept {
+    static const std::vector<double> empty;
+    return official_model_ ? official_model_->radial_coeffs : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_model_species() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->species_order() : empty;
+}
+const std::vector<double>& MtpCalculator::official_model_parameters() const noexcept {
+    static const std::vector<double> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->parameters() : empty;
+}
+double MtpCalculator::official_radial_scaling() const noexcept {
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_scaling() : 1.0;
+}
+const std::vector<double>& MtpCalculator::official_radial_recursive() const noexcept {
+    static const std::vector<double> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_recursive() : empty;
+}
+double MtpCalculator::official_radial_zeroth() const noexcept {
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_zeroth() : 0.0;
+}
+double MtpCalculator::official_radial_exp_ratio() const noexcept {
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_exp_ratio() : 0.0;
+}
+double MtpCalculator::official_radial_maxdist_sq() const noexcept {
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_maxdist_sq() : 0.0;
+}
+double MtpCalculator::official_radial_maxdist_sq_minus_eps() const noexcept {
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_maxdist_sq_minus_eps() : 0.0;
+}
+const std::vector<double>& MtpCalculator::official_radial_vdw_params() const noexcept {
+    static const std::vector<double> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_vdw_params() : empty;
+}
+std::int32_t MtpCalculator::official_radial_kind() const noexcept {
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->radial_kind() : 0;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_moments() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->moments() : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_eval_kinds() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_kinds() : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_eval_linear_ids() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_linear_ids() : empty;
+}
+const std::vector<double>& MtpCalculator::official_eval_linear_coefficients() const noexcept {
+    static const std::vector<double> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_linear_coefficients() : empty;
+}
+const std::vector<std::int64_t>& MtpCalculator::official_eval_product_offsets() const noexcept {
+    static const std::vector<std::int64_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_product_offsets() : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_eval_product_left() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_product_left() : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_eval_product_right() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_product_right() : empty;
+}
+const std::vector<double>& MtpCalculator::official_eval_product_coefficients() const noexcept {
+    static const std::vector<double> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->eval_product_coefficients() : empty;
+}
+const std::vector<std::int32_t>& MtpCalculator::official_scalar_output_ids() const noexcept {
+    static const std::vector<std::int32_t> empty;
+    return official_model_ && official_model_->native_mlip4
+        ? official_model_->native_model->scalar_output_ids() : empty;
 }
 void MtpCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
 bool MtpCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }

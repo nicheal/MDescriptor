@@ -431,6 +431,18 @@ const std::vector<std::int32_t>& C00PSMlffCalculator::radial_counts() const noex
     return radial_counts_;
 }
 
+const std::vector<std::vector<double>>& C00PSMlffCalculator::basis_zeros() const noexcept {
+    return zeros_;
+}
+
+const std::vector<std::vector<double>>& C00PSMlffCalculator::basis_norms() const noexcept {
+    return norms_;
+}
+
+const std::vector<std::vector<double>>& C00PSMlffCalculator::basis_values() const noexcept {
+    return radial_values_;
+}
+
 void C00PSMlffCalculator::close() noexcept {
     closed_.store(true, std::memory_order_release);
 }

@@ -61,6 +61,22 @@ class AceCalculator:
     species: list[int]
     max_angular: int
     max_radial: int
+    base_species: list[int]
+    base_radial: list[int]
+    base_angular: list[int]
+    base_magnetic: list[int]
+    radial_a: list[float]
+    radial_b: list[float]
+    radial_c: list[float]
+    radial_t_left: float
+    radial_t_right: float
+    radial_p_left: int
+    radial_p_right: int
+    center_feature_offsets: list[int]
+    feature_term_offsets: list[int]
+    term_channel_offsets: list[int]
+    term_channels: list[int]
+    term_coefficients: list[float]
 
     def __init__(self, options: AceOptions) -> None: ...
 

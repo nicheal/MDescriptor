@@ -136,6 +136,9 @@ public:
     std::int64_t feature_count() const noexcept;
     const std::vector<std::int32_t>& species() const noexcept;
     const std::vector<std::int32_t>& radial_counts() const noexcept;
+    const std::vector<std::vector<double>>& basis_zeros() const noexcept;
+    const std::vector<std::vector<double>>& basis_norms() const noexcept;
+    const std::vector<std::vector<double>>& basis_values() const noexcept;
     void close() noexcept;
     bool closed() const noexcept;
 
@@ -193,6 +196,17 @@ public:
 
     std::int64_t feature_count() const noexcept;
     const std::vector<std::int32_t>& species() const noexcept;
+    const std::vector<std::int32_t>& alpha_max() const noexcept;
+    const std::vector<std::int32_t>& channel_offsets() const noexcept;
+    const std::vector<std::int32_t>& central_allowed() const noexcept;
+    const std::vector<std::int32_t>& basis_offsets() const noexcept;
+    const std::vector<double>& basis_transforms() const noexcept;
+    const std::vector<double>& gaussian_columns() const noexcept;
+    const std::vector<std::int64_t>& compression_offsets() const noexcept;
+    const std::vector<std::int64_t>& compression_sources() const noexcept;
+    const std::vector<double>& compression_factors() const noexcept;
+    std::int32_t packed_count() const noexcept;
+    std::int64_t dense_feature_count() const noexcept;
     void close() noexcept;
     bool closed() const noexcept;
 
@@ -206,6 +220,15 @@ private:
     SoapTurboOptions options_;
     mutable std::mutex compute_mutex_;
     mutable std::shared_ptr<SoapTurboPrepared> prepared_;
+    std::vector<std::int32_t> prepared_alpha_max_;
+    std::vector<std::int32_t> prepared_channel_offsets_;
+    std::vector<std::int32_t> prepared_central_allowed_;
+    std::vector<std::int32_t> prepared_basis_offsets_;
+    std::vector<double> prepared_basis_transforms_;
+    std::vector<double> prepared_gaussian_columns_;
+    std::vector<std::int64_t> prepared_compression_offsets_;
+    std::vector<std::int64_t> prepared_compression_sources_;
+    std::vector<double> prepared_compression_factors_;
     std::atomic<bool> closed_{false};
 };
 

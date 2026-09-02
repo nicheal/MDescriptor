@@ -1475,6 +1475,52 @@ _DESCRIPTOR_INFO = {
 }
 
 
+# The CUDA plugin owns the second implementation for the descriptors in this
+# family.  Keep the declaration in one place so the GUI-facing registry and
+# the backend dispatch cannot drift apart while the individual descriptors
+# continue to use their existing CPU kernels.
+_CUDA_EXTENDED_DESCRIPTORS = frozenset(
+    {
+        "SOAP",
+        "SOAPTurbo",
+        "ACSF",
+        "ACE",
+        "CoulombMatrix",
+        "SineMatrix",
+        "EwaldSumMatrix",
+        "MBTR",
+        "LMBTR",
+        "ValleOganov",
+        "AtomicComposition",
+        "SortedDistances",
+        "SphericalExpansionByPair",
+        "LodeSphericalExpansion",
+        "EAD",
+        "SO3",
+        "SO4",
+        "SNAP",
+        "LBispectrum",
+        "MTP",
+        "C00PSMLFF",
+    }
+)
+for _name in _CUDA_EXTENDED_DESCRIPTORS:
+    _descriptor_info = _DESCRIPTOR_INFO[_name]
+    _payload = _descriptor_info.to_dict()
+    _execution = dict(_payload["execution"])
+    _execution["devices"] = ["cpu", "cuda"]
+    _DESCRIPTOR_INFO[_name] = DescriptorInfo(
+        _payload["display_name"],
+        _payload["description"],
+        _payload["category"],
+        _payload["parameters"],
+        _execution,
+        _payload["input"],
+        _payload["output"],
+        _payload["asset"],
+    )
+
+
 def _capabilities(info: DescriptorInfo) -> frozenset[str]:
     """Derive runtime capabilities from the GUI-facing metadata record."""
 

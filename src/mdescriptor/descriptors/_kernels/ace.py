@@ -366,6 +366,32 @@ class AceKernel:
     def feature_count(self) -> int:
         return int(self._native.feature_count)
 
+    def _cuda_payload(self) -> dict[str, Any]:
+        """Return the generated ACE basis and invariant contraction map."""
+
+        return {
+            "feature_count": self.feature_count,
+            "feature_counts": np.asarray(self._native.feature_counts, dtype=np.int64),
+            "base_species": np.asarray(self._native.base_species, dtype=np.int32),
+            "base_radial": np.asarray(self._native.base_radial, dtype=np.int32),
+            "base_angular": np.asarray(self._native.base_angular, dtype=np.int32),
+            "base_magnetic": np.asarray(self._native.base_magnetic, dtype=np.int32),
+            "radial_a": np.asarray(self._native.radial_a, dtype=np.float64),
+            "radial_b": np.asarray(self._native.radial_b, dtype=np.float64),
+            "radial_c": np.asarray(self._native.radial_c, dtype=np.float64),
+            "radial_t_left": float(self._native.radial_t_left),
+            "radial_t_right": float(self._native.radial_t_right),
+            "radial_p_left": int(self._native.radial_p_left),
+            "radial_p_right": int(self._native.radial_p_right),
+            "center_feature_offsets": np.asarray(self._native.center_feature_offsets, dtype=np.int64),
+            "feature_term_offsets": np.asarray(self._native.feature_term_offsets, dtype=np.int64),
+            "term_channel_offsets": np.asarray(self._native.term_channel_offsets, dtype=np.int64),
+            "term_channels": np.asarray(self._native.term_channels, dtype=np.int32),
+            "term_coefficients": np.asarray(self._native.term_coefficients, dtype=np.float64),
+            "max_radial": int(self._native.max_radial),
+            "max_angular": int(self._native.max_angular),
+        }
+
     def compute(
         self,
         value: StructureBatch | Any,

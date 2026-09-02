@@ -786,6 +786,38 @@ AceCalculator::AceCalculator(AceOptions options) : options_(std::move(options)) 
     feature_count_ = feature_counts_.empty() ? 0 : *std::max_element(feature_counts_.begin(), feature_counts_.end());
     max_angular_ = impl->max_l;
     max_radial_ = impl->max_n;
+    base_species_.reserve(impl->base_spec.size());
+    base_radial_.reserve(impl->base_spec.size());
+    base_angular_.reserve(impl->base_spec.size());
+    base_magnetic_.reserve(impl->base_spec.size());
+    for (const auto& value : impl->base_spec) {
+        base_species_.push_back(static_cast<std::int32_t>(value.species));
+        base_radial_.push_back(static_cast<std::int32_t>(value.n));
+        base_angular_.push_back(static_cast<std::int32_t>(value.l));
+        base_magnetic_.push_back(static_cast<std::int32_t>(value.m));
+    }
+    radial_a_ = impl->radial_a;
+    radial_b_ = impl->radial_b;
+    radial_c_ = impl->radial_c;
+    radial_t_left_ = impl->t_left;
+    radial_t_right_ = impl->t_right;
+    radial_p_left_ = static_cast<std::int32_t>(impl->p_left);
+    radial_p_right_ = static_cast<std::int32_t>(impl->p_right);
+    center_feature_offsets_.push_back(0);
+    feature_term_offsets_.push_back(0);
+    term_channel_offsets_.push_back(0);
+    for (const auto& center_features : impl->features) {
+        for (const auto& feature : center_features) {
+            for (const auto& term : feature.terms) {
+                term_coefficients_.push_back(term.coefficient);
+                term_channels_.insert(term_channels_.end(), term.channels.begin(), term.channels.end());
+                term_channel_offsets_.push_back(static_cast<std::int64_t>(term_channels_.size()));
+            }
+            feature_term_offsets_.push_back(static_cast<std::int64_t>(term_coefficients_.size()));
+        }
+        center_feature_offsets_.push_back(
+            static_cast<std::int64_t>(feature_term_offsets_.size() - 1));
+    }
     impl_ = std::move(impl);
 }
 
@@ -794,6 +826,22 @@ const std::vector<std::int32_t>& AceCalculator::species() const noexcept { retur
 const std::vector<std::int64_t>& AceCalculator::feature_counts() const noexcept { return feature_counts_; }
 std::int32_t AceCalculator::max_angular() const noexcept { return max_angular_; }
 std::int32_t AceCalculator::max_radial() const noexcept { return max_radial_; }
+const std::vector<std::int32_t>& AceCalculator::base_species() const noexcept { return base_species_; }
+const std::vector<std::int32_t>& AceCalculator::base_radial() const noexcept { return base_radial_; }
+const std::vector<std::int32_t>& AceCalculator::base_angular() const noexcept { return base_angular_; }
+const std::vector<std::int32_t>& AceCalculator::base_magnetic() const noexcept { return base_magnetic_; }
+const std::vector<double>& AceCalculator::radial_a() const noexcept { return radial_a_; }
+const std::vector<double>& AceCalculator::radial_b() const noexcept { return radial_b_; }
+const std::vector<double>& AceCalculator::radial_c() const noexcept { return radial_c_; }
+double AceCalculator::radial_t_left() const noexcept { return radial_t_left_; }
+double AceCalculator::radial_t_right() const noexcept { return radial_t_right_; }
+std::int32_t AceCalculator::radial_p_left() const noexcept { return radial_p_left_; }
+std::int32_t AceCalculator::radial_p_right() const noexcept { return radial_p_right_; }
+const std::vector<std::int64_t>& AceCalculator::center_feature_offsets() const noexcept { return center_feature_offsets_; }
+const std::vector<std::int64_t>& AceCalculator::feature_term_offsets() const noexcept { return feature_term_offsets_; }
+const std::vector<std::int64_t>& AceCalculator::term_channel_offsets() const noexcept { return term_channel_offsets_; }
+const std::vector<std::int32_t>& AceCalculator::term_channels() const noexcept { return term_channels_; }
+const std::vector<double>& AceCalculator::term_coefficients() const noexcept { return term_coefficients_; }
 void AceCalculator::close() noexcept {
     closed_.store(true, std::memory_order_release);
 }

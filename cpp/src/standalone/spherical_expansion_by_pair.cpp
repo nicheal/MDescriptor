@@ -27,7 +27,12 @@ DescriptorPairTable compute_spherical_expansion_by_pair(
     // made the dense adapter memory-bound for large feature sets.
     const std::int64_t features = static_cast<std::int64_t>(
         (options.max_angular + 1) * (options.max_angular + 1) * n_radial);
-    const NeighborGraph graph = build_neighbor_graph(batch, options.cutoff, control, options.num_threads);
+    // Pair samples expose the image shift as part of the public result.  Keep
+    // the same canonical graph order as the other local descriptors, but ask
+    // the graph to materialize shifts instead of dereferencing its optional
+    // storage while assembling pair records.
+    const NeighborGraph graph = build_neighbor_graph(
+        batch, options.cutoff, control, options.num_threads, false, false, true);
     std::vector<GtoRadialBasis> radial_bases;
     radial_bases.reserve(static_cast<std::size_t>(options.max_angular + 1));
     for (int l = 0; l <= options.max_angular; ++l) {

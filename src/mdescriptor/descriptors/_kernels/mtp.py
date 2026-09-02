@@ -123,6 +123,55 @@ class MtpKernel:
         self._native = _cpp.MtpCalculator(options)
         self._feature_count = int(self._native.feature_count)
 
+    def _cuda_payload(self) -> dict[str, Any]:
+        """Return the flattened official MLIP-4 evaluator for CUDA."""
+
+        if not self._official or self._native is None:
+            return {"feature_count": self.feature_count}
+        if not bool(self._native.official_mlip4):
+            return {
+                "feature_count": self.feature_count,
+                "format": "MLIP-2",
+                "species_count": int(self._native.official_species_count),
+                "scaling": float(self._native.official_scaling),
+                "radial_basis_type": str(self._native.official_radial_basis_type),
+                "radial_coefficients": np.asarray(self._native.official_radial_coefficients, dtype=np.float64),
+                "alpha_index_basic": np.asarray(self._native.official_alpha_index_basic, dtype=np.int32),
+                "alpha_index_times": np.asarray(self._native.official_alpha_index_times, dtype=np.int32),
+                "alpha_moment_mapping": np.asarray(self._native.official_alpha_moment_mapping, dtype=np.int32),
+                "alpha_moments_count": int(self._native.official_alpha_moments_count),
+                "radial_basis_size": int(self._native.official_radial_basis_size),
+                "radial_funcs_count": int(self._native.official_radial_funcs_count),
+                "radial_min_dist": float(self._native.official_min_dist),
+                "radial_max_dist": float(self._native.official_max_dist),
+            }
+        return {
+            "feature_count": self.feature_count,
+            "model_species": np.asarray(self._native.official_model_species, dtype=np.int32),
+            "model_parameters": np.asarray(self._native.official_model_parameters, dtype=np.float64),
+            "radial_scaling": float(self._native.official_radial_scaling),
+            "radial_kind": int(self._native.official_radial_kind),
+            "radial_basis_size": int(self._native.official_radial_basis_size),
+            "radial_funcs_count": int(self._native.official_radial_funcs_count),
+            "radial_min_dist": float(self._native.official_min_dist),
+            "radial_max_dist": float(self._native.official_max_dist),
+            "radial_recursive": np.asarray(self._native.official_radial_recursive, dtype=np.float64),
+            "radial_zeroth": float(self._native.official_radial_zeroth),
+            "radial_exp_ratio": float(self._native.official_radial_exp_ratio),
+            "radial_maxdist_sq": float(self._native.official_radial_maxdist_sq),
+            "radial_maxdist_sq_minus_eps": float(self._native.official_radial_maxdist_sq_minus_eps),
+            "radial_vdw_params": np.asarray(self._native.official_radial_vdw_params, dtype=np.float64),
+            "moments": np.asarray(self._native.official_moments, dtype=np.int32),
+            "eval_kinds": np.asarray(self._native.official_eval_kinds, dtype=np.int32),
+            "eval_linear_ids": np.asarray(self._native.official_eval_linear_ids, dtype=np.int32),
+            "eval_linear_coefficients": np.asarray(self._native.official_eval_linear_coefficients, dtype=np.float64),
+            "eval_product_offsets": np.asarray(self._native.official_eval_product_offsets, dtype=np.int64),
+            "eval_product_left": np.asarray(self._native.official_eval_product_left, dtype=np.int32),
+            "eval_product_right": np.asarray(self._native.official_eval_product_right, dtype=np.int32),
+            "eval_product_coefficients": np.asarray(self._native.official_eval_product_coefficients, dtype=np.float64),
+            "scalar_output_ids": np.asarray(self._native.official_scalar_output_ids, dtype=np.int32),
+        }
+
     def _ensure_native(self, batch: StructureBatch) -> None:
         if self._closed:
             raise RuntimeError("MTP calculator is closed")

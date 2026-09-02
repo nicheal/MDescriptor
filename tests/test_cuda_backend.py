@@ -23,13 +23,34 @@ def _batch() -> StructureBatch:
     )
 
 
-def test_first_cuda_descriptors_declare_the_device_in_static_metadata() -> None:
+def test_cuda_descriptors_declare_the_device_in_static_metadata() -> None:
     cuda_names = {
+        "SOAP",
+        "SOAPTurbo",
+        "ACSF",
+        "ACE",
+        "CoulombMatrix",
+        "SineMatrix",
+        "EwaldSumMatrix",
+        "MBTR",
+        "LMBTR",
+        "ValleOganov",
+        "AtomicComposition",
         "NeighborList",
-        "NEP",
+        "SortedDistances",
         "SphericalExpansion",
+        "SphericalExpansionByPair",
         "SoapRadialSpectrum",
         "SoapPowerSpectrum",
+        "LodeSphericalExpansion",
+        "EAD",
+        "SO3",
+        "SO4",
+        "SNAP",
+        "LBispectrum",
+        "MTP",
+        "C00PSMLFF",
+        "NEP",
         "DPA4",
         "DPA4C",
     }
@@ -121,16 +142,17 @@ def test_dpa_cuda_payload_is_private_and_keeps_numpy_tensors(descriptor_type) ->
         descriptor.close()
 
 
-def test_cpu_only_descriptor_rejects_cuda_before_plugin_load(monkeypatch) -> None:
-    called = False
+def test_extended_descriptor_cuda_path_is_lazy(monkeypatch) -> None:
+    calls = []
 
     def factory(name, options):
-        nonlocal called
-        called = True
-        raise AssertionError(f"unexpected CUDA factory call for {name}: {options}")
+        calls.append((name, options))
+        raise AssertionError("the CUDA plugin must remain lazy during construction")
 
     monkeypatch.setattr(_runtime, "create_cuda_backend", factory)
-    with pytest.raises(DescriptorConfigError) as caught:
-        SOAP(species=[1], execution=ExecutionOptions(device="cuda"))
-    assert caught.value.code == "unsupported_device"
-    assert not called
+    descriptor = SOAP(species=[1], execution=ExecutionOptions(device="cuda"))
+    try:
+        assert calls == []
+        assert descriptor._backend.options["_cuda_feature_count"] > 0
+    finally:
+        descriptor.close()

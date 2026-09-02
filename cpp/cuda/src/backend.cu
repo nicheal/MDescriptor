@@ -135,6 +135,26 @@ std::int64_t feature_count_for(
         return detail::local_layout_feature_count(
             layout_options, mdescriptor::LocalDescriptorKind::SphericalExpansion);
     }
+    // The validation kernel supplies the canonical feature count for the
+    // descriptors whose layout is owned by Python/native CPU code.  Keeping
+    // that value private lets the CUDA plugin add a family without duplicating
+    // every label/layout formula in this dispatch seam (matrix descriptors
+    // may legitimately resolve their width only after seeing a batch).
+    const py::str feature_key("_cuda_feature_count");
+    if (options.contains(feature_key) && !options[feature_key].is_none()) {
+        const auto value = py::cast<std::int64_t>(options[feature_key]);
+        return value > 0 ? value : 0;
+    }
+    if (name == "AtomicComposition" || name == "SortedDistances"
+        || name == "SphericalExpansionByPair" || name == "SOAP"
+        || name == "SOAPTurbo" || name == "ACSF" || name == "ACE"
+        || name == "LodeSphericalExpansion" || name == "CoulombMatrix"
+        || name == "SineMatrix" || name == "EwaldSumMatrix" || name == "MBTR"
+        || name == "LMBTR" || name == "ValleOganov" || name == "EAD"
+        || name == "SO3" || name == "SO4" || name == "SNAP"
+        || name == "LBispectrum" || name == "MTP" || name == "C00PSMLFF") {
+        return 0;
+    }
     throw std::invalid_argument("CUDA backend does not support this descriptor");
 }
 
@@ -552,6 +572,30 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         result["labels"] = dpa_labels(options_, name_, feature_count_);
         result["metadata"] = result_metadata(name_, options_);
         return std::move(result);
+    }
+
+    if (name_ == "AtomicComposition" || name_ == "SortedDistances"
+        || name_ == "SphericalExpansionByPair" || name_ == "SOAP"
+        || name_ == "SOAPTurbo" || name_ == "ACSF" || name_ == "ACE"
+        || name_ == "LodeSphericalExpansion" || name_ == "CoulombMatrix"
+        || name_ == "SineMatrix" || name_ == "EwaldSumMatrix" || name_ == "MBTR"
+        || name_ == "LMBTR" || name_ == "ValleOganov" || name_ == "EAD"
+        || name_ == "SO3" || name_ == "SO4" || name_ == "SNAP"
+        || name_ == "LBispectrum" || name_ == "MTP" || name_ == "C00PSMLFF") {
+        const auto result = compute_extended_descriptor(
+            *context_, device_batch_, device_graph_, arrays.view,
+            name_, options_, control);
+        check_cancelled(control);
+        for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
+            mark_completed(control);
+        }
+        if (feature_count_ <= 0 && result.contains("values")) {
+            const auto values = py::cast<py::array>(result["values"]);
+            if (values.ndim() == 2) {
+                feature_count_ = static_cast<std::int64_t>(values.shape(1));
+            }
+        }
+        return result;
     }
 
     const auto species = species_option(options_);

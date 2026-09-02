@@ -856,11 +856,63 @@ void compute_soap_turbo(
     });
 }
 
-SoapTurboCalculator::SoapTurboCalculator(SoapTurboOptions options) : options_(std::move(options)) {}
+SoapTurboCalculator::SoapTurboCalculator(SoapTurboOptions options) : options_(std::move(options)) {
+    // The CUDA adapter consumes the normalized radial basis and compression
+    // map before the first compute call.  Prepare them eagerly so validation
+    // remains lazy with respect to the CUDA driver while the CPU and CUDA
+    // paths share exactly the same basis construction.
+    validate_options(options_);
+    prepared_ = make_soap_turbo_prepared(options_);
+    prepared_alpha_max_ = options_.alpha_max;
+    prepared_channel_offsets_.reserve(prepared_->channel_offsets.size());
+    for (const auto value : prepared_->channel_offsets) {
+        prepared_channel_offsets_.push_back(static_cast<std::int32_t>(value));
+    }
+    prepared_central_allowed_.reserve(prepared_->central_allowed.size());
+    for (const auto value : prepared_->central_allowed) {
+        prepared_central_allowed_.push_back(static_cast<std::int32_t>(value));
+    }
+    prepared_basis_offsets_.assign(options_.species.size() + 1, 0);
+    for (std::size_t type = 0; type < prepared_->bases.size(); ++type) {
+        prepared_basis_offsets_[type + 1] = prepared_basis_offsets_[type]
+            + static_cast<std::int32_t>(prepared_->bases[type].size);
+    }
+    for (const auto& basis : prepared_->bases) {
+        prepared_basis_transforms_.insert(
+            prepared_basis_transforms_.end(), basis.transform.begin(), basis.transform.end());
+        prepared_gaussian_columns_.insert(
+            prepared_gaussian_columns_.end(), basis.gaussian_column.begin(), basis.gaussian_column.end());
+    }
+    if (prepared_->compression.identity) {
+        prepared_compression_offsets_ = {0};
+    } else {
+        prepared_compression_offsets_.reserve(prepared_->compression.rows.size() + 1);
+        prepared_compression_offsets_.push_back(0);
+        for (const auto& row : prepared_->compression.rows) {
+            for (const auto [source, factor] : row) {
+                prepared_compression_sources_.push_back(source);
+                prepared_compression_factors_.push_back(factor);
+            }
+            prepared_compression_offsets_.push_back(
+                static_cast<std::int64_t>(prepared_compression_sources_.size()));
+        }
+    }
+}
 std::int64_t SoapTurboCalculator::feature_count() const noexcept {
     return compression_feature_count(options_);
 }
 const std::vector<std::int32_t>& SoapTurboCalculator::species() const noexcept { return options_.species; }
+const std::vector<std::int32_t>& SoapTurboCalculator::alpha_max() const noexcept { return prepared_alpha_max_; }
+const std::vector<std::int32_t>& SoapTurboCalculator::channel_offsets() const noexcept { return prepared_channel_offsets_; }
+const std::vector<std::int32_t>& SoapTurboCalculator::central_allowed() const noexcept { return prepared_central_allowed_; }
+const std::vector<std::int32_t>& SoapTurboCalculator::basis_offsets() const noexcept { return prepared_basis_offsets_; }
+const std::vector<double>& SoapTurboCalculator::basis_transforms() const noexcept { return prepared_basis_transforms_; }
+const std::vector<double>& SoapTurboCalculator::gaussian_columns() const noexcept { return prepared_gaussian_columns_; }
+const std::vector<std::int64_t>& SoapTurboCalculator::compression_offsets() const noexcept { return prepared_compression_offsets_; }
+const std::vector<std::int64_t>& SoapTurboCalculator::compression_sources() const noexcept { return prepared_compression_sources_; }
+const std::vector<double>& SoapTurboCalculator::compression_factors() const noexcept { return prepared_compression_factors_; }
+std::int32_t SoapTurboCalculator::packed_count() const noexcept { return prepared_->packed_count; }
+std::int64_t SoapTurboCalculator::dense_feature_count() const noexcept { return prepared_->dense_features; }
 void SoapTurboCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
 bool SoapTurboCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
 void SoapTurboCalculator::compute(
@@ -871,10 +923,7 @@ void SoapTurboCalculator::compute(
         throw std::runtime_error("SOAPTurbo calculator is closed");
     }
     std::lock_guard<std::mutex> lock(compute_mutex_);
-    if (!prepared_) {
-        validate_options(options_);
-        prepared_ = make_soap_turbo_prepared(options_);
-    }
+    if (!prepared_) prepared_ = make_soap_turbo_prepared(options_);
     compute_soap_turbo(batch, options_, *prepared_, output, control);
 }
 

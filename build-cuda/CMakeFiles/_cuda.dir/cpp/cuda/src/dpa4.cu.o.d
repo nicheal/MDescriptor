@@ -472,16 +472,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4.cu.o : /home/nicheal/MDescriptor/cpp/cuda
     /usr/include/c++/13/bits/streambuf.tcc \
     /usr/include/c++/13/optional \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/dpa4_wigner.hpp \
-    /usr/local/cuda/targets/x86_64-linux/include/cublas_v2.h \
-    /usr/local/cuda/targets/x86_64-linux/include/cublas_api.h \
-    /usr/local/cuda/targets/x86_64-linux/include/cuComplex.h \
-    /usr/local/cuda/targets/x86_64-linux/include/cuda_fp16.h \
-    /usr/local/cuda/targets/x86_64-linux/include/nv/target \
-    /usr/local/cuda/targets/x86_64-linux/include/nv/detail/__target_macros \
-    /usr/local/cuda/targets/x86_64-linux/include/nv/detail/__preprocessor \
-    /usr/local/cuda/targets/x86_64-linux/include/cuda_fp16.hpp \
-    /usr/local/cuda/targets/x86_64-linux/include/cuda_bf16.h \
-    /usr/local/cuda/targets/x86_64-linux/include/cuda_bf16.hpp \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/numpy.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/pybind11.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/class.h \

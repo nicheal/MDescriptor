@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+import numpy as np
+
 from ...core.result import format_values
 from ...core.species import require_species, validate_batch_species
 from .core import (
@@ -100,6 +102,34 @@ class C00PSMlffKernel:
         if not self.species or self._native is None:
             return 0
         return int(self._native.feature_count)
+
+    def _cuda_payload(self) -> dict[str, Any]:
+        """Return the prepared radial basis for the CUDA implementation.
+
+        The basis tables are deliberately kept out of the public configuration:
+        constructing a C00/PS descriptor already performs the expensive reference
+        quadrature, so reusing those tables is both more accurate and cheaper than
+        rebuilding a second approximation in the CUDA plugin.
+        """
+
+        if self._native is None:
+            raise RuntimeError("C00PSMLFF native calculator is not initialized")
+        return {
+            "feature_count": self.feature_count,
+            "radial_counts": np.asarray(self._native.radial_counts, dtype=np.int32),
+            "basis_zeros": tuple(
+                np.asarray(values, dtype=np.float64)
+                for values in self._native.basis_zeros
+            ),
+            "basis_norms": tuple(
+                np.asarray(values, dtype=np.float64)
+                for values in self._native.basis_norms
+            ),
+            "basis_values": tuple(
+                np.asarray(values, dtype=np.float64)
+                for values in self._native.basis_values
+            ),
+        }
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)

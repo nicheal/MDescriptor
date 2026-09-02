@@ -468,7 +468,8 @@ __global__ void normalize_dpa_positions_kernel(
     const std::int32_t* pbc,
     const std::int32_t* atom_to_structure,
     const double* inverses,
-    double* normalized) {
+    double* normalized,
+    bool normalize_periodic_positions) {
     const std::int64_t atom = static_cast<std::int64_t>(blockIdx.x)
         * blockDim.x + threadIdx.x;
     if (atom >= atoms) return;
@@ -477,7 +478,7 @@ __global__ void normalize_dpa_positions_kernel(
     const std::int32_t* structure_pbc = pbc + structure * 3;
     const bool periodic = structure_pbc[0] == 1
         && structure_pbc[1] == 1 && structure_pbc[2] == 1;
-    if (!periodic) {
+    if (!periodic || !normalize_periodic_positions) {
         normalized[atom * 3 + 0] = source[0];
         normalized[atom * 3 + 1] = source[1];
         normalized[atom * 3 + 2] = source[2];
@@ -517,7 +518,8 @@ __device__ std::int64_t enumerate_dpa_candidates(
     double* graph_distance2,
     std::int64_t output_base,
     std::int32_t* overflow,
-    bool round_edge_endpoints) {
+    bool round_edge_endpoints,
+    bool include_exact_self) {
     constexpr std::int64_t kMaxCount = 0x7fffffffLL;
     const std::int32_t structure = atom_to_structure[center];
     const std::int32_t* structure_pbc = pbc + structure * 3;
@@ -556,7 +558,8 @@ __device__ std::int64_t enumerate_dpa_candidates(
                 }
                 for (std::int64_t neighbor = begin + thread;
                      neighbor < end; neighbor += blockDim.x) {
-                    if (neighbor == center && sx == 0 && sy == 0 && sz == 0) {
+                    if (!include_exact_self && neighbor == center
+                        && sx == 0 && sy == 0 && sz == 0) {
                         continue;
                     }
                     const double raw_dx = normalized[neighbor * 3 + 0] + tx - cx;
@@ -666,7 +669,8 @@ __global__ void count_dpa_neighbors_kernel(
     double cutoff2,
     std::int32_t* neighbor_counts,
     std::int32_t* overflow,
-    bool round_edge_endpoints) {
+    bool round_edge_endpoints,
+    bool include_exact_self) {
     const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
     if (center >= atoms) return;
     __shared__ std::int64_t counts[128];
@@ -674,7 +678,7 @@ __global__ void count_dpa_neighbors_kernel(
     counts[thread] = enumerate_dpa_candidates<false>(
         center, thread, normalized, structure_offsets, cells, pbc,
         atom_to_structure, image_bounds, cutoff2, nullptr, nullptr, nullptr,
-        nullptr, nullptr, 0, overflow, round_edge_endpoints);
+        nullptr, nullptr, 0, overflow, round_edge_endpoints, include_exact_self);
     __syncthreads();
     for (std::int32_t step = 64; step > 0; step >>= 1) {
         if (thread < step) counts[thread] += counts[thread + step];
@@ -706,7 +710,8 @@ __global__ void fill_dpa_neighbors_kernel(
     double* graph_displacements,
     double* graph_distance2,
     std::int32_t* overflow,
-    bool round_edge_endpoints) {
+    bool round_edge_endpoints,
+    bool include_exact_self) {
     const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
     if (center >= atoms) return;
     __shared__ std::int64_t counts[128];
@@ -714,7 +719,7 @@ __global__ void fill_dpa_neighbors_kernel(
     const std::int64_t local_count = enumerate_dpa_candidates<false>(
         center, thread, normalized, structure_offsets, cells, pbc,
         atom_to_structure, image_bounds, cutoff2, nullptr, nullptr, nullptr,
-        nullptr, nullptr, 0, overflow, round_edge_endpoints);
+        nullptr, nullptr, 0, overflow, round_edge_endpoints, include_exact_self);
     counts[thread] = local_count;
     __syncthreads();
     for (std::int32_t step = 1; step < 128; step <<= 1) {
@@ -728,7 +733,7 @@ __global__ void fill_dpa_neighbors_kernel(
         center, thread, normalized, structure_offsets, cells, pbc,
         atom_to_structure, image_bounds, cutoff2, graph_offsets, graph_atoms,
         graph_shifts, graph_displacements, graph_distance2,
-        graph_offsets[center] + prefix, overflow, round_edge_endpoints);
+        graph_offsets[center] + prefix, overflow, round_edge_endpoints, include_exact_self);
 }
 
 __global__ void sort_dpa_neighbors_kernel(
@@ -820,7 +825,9 @@ void DeviceNeighborGraph::build_dpa(
     const detail::StructureBatchView& host_batch,
     double cutoff,
     bool tie_break_shifts,
-    bool round_edge_endpoints) {
+    bool round_edge_endpoints,
+    bool include_exact_self,
+    bool normalize_periodic_positions) {
     if (host_batch.structures != batch.structures()
         || host_batch.atoms != batch.atoms()
         || host_batch.structures < 0 || host_batch.atoms < 0
@@ -930,7 +937,8 @@ void DeviceNeighborGraph::build_dpa(
     check_cuda(cudaGetLastError(), "CUDA DPA structure mapping failed");
     normalize_dpa_positions_kernel<<<atom_blocks, block_size, 0, stream>>>(
         static_cast<std::int64_t>(atom_count), batch.positions(), batch.cells(),
-        batch.pbc(), atom_to_structure_, dpa_reference_inverses_, dpa_positions_);
+        batch.pbc(), atom_to_structure_, dpa_reference_inverses_, dpa_positions_,
+        normalize_periodic_positions);
     check_cuda(cudaGetLastError(), "CUDA DPA position normalization failed");
 
     // One CTA per center follows DeepMD-kit's CUDA neighbor-list layout: the
@@ -940,7 +948,7 @@ void DeviceNeighborGraph::build_dpa(
         static_cast<std::int64_t>(atom_count), dpa_positions_, batch.offsets(),
         batch.cells(), batch.pbc(), atom_to_structure_, dpa_image_bounds_,
         cutoff * cutoff, neighbor_counts_, neighbor_overflow_,
-        round_edge_endpoints);
+        round_edge_endpoints, include_exact_self);
     check_cuda(cudaGetLastError(), "CUDA DPA graph neighbor count failed");
 
     check_cuda(
@@ -984,7 +992,7 @@ void DeviceNeighborGraph::build_dpa(
             static_cast<std::int64_t>(atom_count), dpa_positions_, batch.offsets(),
             batch.cells(), batch.pbc(), atom_to_structure_, dpa_image_bounds_,
             cutoff * cutoff, offsets_, atoms_, shifts_, displacements_, distance2_,
-            neighbor_overflow_, round_edge_endpoints);
+            neighbor_overflow_, round_edge_endpoints, include_exact_self);
         check_cuda(cudaGetLastError(), "CUDA DPA graph neighbor fill failed");
     }
     sort_dpa_neighbors_kernel<<<atom_blocks, block_size, 0, stream>>>(

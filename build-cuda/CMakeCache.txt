@@ -444,8 +444,7 @@ MDESCRIPTOR_BUILD_CUDA:BOOL=ON
 //Build the CPU native extension
 MDESCRIPTOR_BUILD_NATIVE:BOOL=ON
 
-//Bundle the CUDA runtime and cuBLAS shared libraries with the
-// CUDA plugin
+//Bundle the CUDA runtime shared library with the CUDA plugin
 MDESCRIPTOR_BUNDLE_CUDA_RUNTIME:BOOL=OFF
 
 //Enable private DPA4 stage timing

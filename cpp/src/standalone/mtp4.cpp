@@ -953,6 +953,29 @@ struct NativeMtp4Model::Impl {
     std::vector<Signature> signatures;
     std::vector<int> scalar_output_ids;
     std::vector<bool> eliminated;
+    // Flat, read-only mirror of the evaluator used by the CUDA adapter.  The
+    // native CPU evaluator keeps these values in nested STL nodes; flattening
+    // them once at load time makes the device representation independent of
+    // C++ object layout.
+    std::vector<std::int32_t> cuda_species_order;
+    std::vector<double> cuda_parameters;
+    double cuda_radial_scaling = 1.0;
+    std::int32_t cuda_radial_kind = 0;
+    std::vector<double> cuda_radial_recursive;
+    double cuda_radial_zeroth = 0.0;
+    double cuda_radial_exp_ratio = 0.0;
+    double cuda_radial_maxdist_sq = 0.0;
+    double cuda_radial_maxdist_sq_minus_eps = 0.0;
+    std::vector<double> cuda_radial_vdw_params;
+    std::vector<std::int32_t> cuda_moments;
+    std::vector<std::int32_t> cuda_eval_kinds;
+    std::vector<std::int32_t> cuda_eval_linear_ids;
+    std::vector<double> cuda_eval_linear_coefficients;
+    std::vector<std::int64_t> cuda_eval_product_offsets;
+    std::vector<std::int32_t> cuda_eval_product_left;
+    std::vector<std::int32_t> cuda_eval_product_right;
+    std::vector<double> cuda_eval_product_coefficients;
+    std::vector<std::int32_t> cuda_scalar_output_ids;
 
     Node* add(const BasisKey& key) {
         auto found = nodes.find(key);
@@ -1223,6 +1246,50 @@ void NativeMtp4Model::load(const std::string& path) {
     impl_->requested_basis.erase(std::unique(impl_->requested_basis.begin(), impl_->requested_basis.end()), impl_->requested_basis.end());
     for (const auto& value : impl_->requested_basis) impl_->add(value);
     impl_->process();
+    impl_->cuda_species_order = impl_->species_order;
+    impl_->cuda_parameters = impl_->params.values;
+    impl_->cuda_radial_scaling = impl_->params.radial_scaling;
+    impl_->cuda_radial_recursive.reserve(impl_->radial_basis.recursive.size() * 3);
+    for (const auto& row : impl_->radial_basis.recursive) {
+        impl_->cuda_radial_recursive.insert(impl_->cuda_radial_recursive.end(), row.begin(), row.end());
+    }
+    impl_->cuda_radial_zeroth = impl_->radial_basis.zeroth;
+    impl_->cuda_radial_exp_ratio = impl_->radial_basis.exp_ratio;
+    impl_->cuda_radial_maxdist_sq = impl_->radial_basis.maxdist_sq;
+    impl_->cuda_radial_maxdist_sq_minus_eps = impl_->radial_basis.maxdist_sq_minus_eps;
+    impl_->cuda_radial_vdw_params = impl_->radial_basis.vdw_damped_params;
+    impl_->cuda_radial_kind = impl_->radial_basis.type == "RadialBasisCinf" ? 0
+        : impl_->radial_basis.type == "RadialBasisChebyshev" ? 1
+        : impl_->radial_basis.type == "RadialBasisVdw" ? 2 : 3;
+    impl_->cuda_moments.reserve(impl_->moments.size() * 4);
+    for (const auto& moment : impl_->moments) {
+        impl_->cuda_moments.insert(impl_->cuda_moments.end(), moment.begin(), moment.end());
+    }
+    impl_->cuda_eval_kinds.reserve(impl_->eval.size());
+    impl_->cuda_eval_linear_ids.assign(impl_->eval.size() * 3, -1);
+    impl_->cuda_eval_linear_coefficients.assign(impl_->eval.size() * 3, 0.0);
+    impl_->cuda_eval_product_offsets.push_back(0);
+    for (std::size_t id = 0; id < impl_->eval.size(); ++id) {
+        const auto& node = impl_->eval[id];
+        const auto kind = node.kind == EvalNode::Kind::Input ? 0
+            : node.kind == EvalNode::Kind::Linear ? 1 : 2;
+        impl_->cuda_eval_kinds.push_back(static_cast<std::int32_t>(kind));
+        for (std::size_t term = 0; term < node.linear.size() && term < 3; ++term) {
+            impl_->cuda_eval_linear_ids[id * 3 + term] = node.linear[term].first;
+            impl_->cuda_eval_linear_coefficients[id * 3 + term] = node.linear[term].second;
+        }
+        for (const auto& term : node.products) {
+            impl_->cuda_eval_product_left.push_back(term[0]);
+            impl_->cuda_eval_product_right.push_back(term[1]);
+            impl_->cuda_eval_product_coefficients.push_back(static_cast<double>(term[2]));
+        }
+        impl_->cuda_eval_product_offsets.push_back(
+            static_cast<std::int64_t>(impl_->cuda_eval_product_left.size()));
+    }
+    impl_->cuda_scalar_output_ids.reserve(impl_->scalar_output_ids.size());
+    for (const int id : impl_->scalar_output_ids) {
+        impl_->cuda_scalar_output_ids.push_back(static_cast<std::int32_t>(id));
+    }
     const std::size_t radial_count = static_cast<std::size_t>(impl_->species_count) * impl_->species_count
         * static_cast<std::size_t>(impl_->radial_function_count) * impl_->radial_basis.size;
     const std::size_t required = radial_count + static_cast<std::size_t>(impl_->species_count) + impl_->scalar_output_ids.size();
@@ -1237,6 +1304,25 @@ int NativeMtp4Model::radial_basis_size() const noexcept { return impl_->radial_b
 int NativeMtp4Model::radial_funcs_count() const noexcept { return impl_->radial_function_count; }
 const std::string& NativeMtp4Model::radial_basis_type() const noexcept { return impl_->radial_basis.type; }
 bool NativeMtp4Model::orthogonalized() const noexcept { return impl_->is_orth; }
+const std::vector<std::int32_t>& NativeMtp4Model::species_order() const noexcept { return impl_->cuda_species_order; }
+const std::vector<double>& NativeMtp4Model::parameters() const noexcept { return impl_->cuda_parameters; }
+double NativeMtp4Model::radial_scaling() const noexcept { return impl_->cuda_radial_scaling; }
+const std::vector<double>& NativeMtp4Model::radial_recursive() const noexcept { return impl_->cuda_radial_recursive; }
+double NativeMtp4Model::radial_zeroth() const noexcept { return impl_->cuda_radial_zeroth; }
+double NativeMtp4Model::radial_exp_ratio() const noexcept { return impl_->cuda_radial_exp_ratio; }
+double NativeMtp4Model::radial_maxdist_sq() const noexcept { return impl_->cuda_radial_maxdist_sq; }
+double NativeMtp4Model::radial_maxdist_sq_minus_eps() const noexcept { return impl_->cuda_radial_maxdist_sq_minus_eps; }
+const std::vector<double>& NativeMtp4Model::radial_vdw_params() const noexcept { return impl_->cuda_radial_vdw_params; }
+std::int32_t NativeMtp4Model::radial_kind() const noexcept { return impl_->cuda_radial_kind; }
+const std::vector<std::int32_t>& NativeMtp4Model::moments() const noexcept { return impl_->cuda_moments; }
+const std::vector<std::int32_t>& NativeMtp4Model::eval_kinds() const noexcept { return impl_->cuda_eval_kinds; }
+const std::vector<std::int32_t>& NativeMtp4Model::eval_linear_ids() const noexcept { return impl_->cuda_eval_linear_ids; }
+const std::vector<double>& NativeMtp4Model::eval_linear_coefficients() const noexcept { return impl_->cuda_eval_linear_coefficients; }
+const std::vector<std::int64_t>& NativeMtp4Model::eval_product_offsets() const noexcept { return impl_->cuda_eval_product_offsets; }
+const std::vector<std::int32_t>& NativeMtp4Model::eval_product_left() const noexcept { return impl_->cuda_eval_product_left; }
+const std::vector<std::int32_t>& NativeMtp4Model::eval_product_right() const noexcept { return impl_->cuda_eval_product_right; }
+const std::vector<double>& NativeMtp4Model::eval_product_coefficients() const noexcept { return impl_->cuda_eval_product_coefficients; }
+const std::vector<std::int32_t>& NativeMtp4Model::scalar_output_ids() const noexcept { return impl_->cuda_scalar_output_ids; }
 
 void NativeMtp4Model::compute(
     const StructureBatchView& batch,

@@ -544,6 +544,23 @@ class DescriptorAdapter(Descriptor):
                     backend_options["_cuda_payload"] = cuda_payload
                 else:
                     backend_options = _json_safe(backend_options)
+                # CUDA result assembly lives outside the validation kernel, but
+                # labels are part of the public result contract.  Preserve the
+                # validated kernel's canonical ordering in a private option so
+                # a CUDA implementation never has to recreate Python label
+                # formatting (which is especially important for compressed,
+                # high-order, and model-derived descriptors).
+                labels_builder = getattr(validation_kernel, "_labels", None)
+                if callable(labels_builder):
+                    try:
+                        backend_options["_cuda_labels"] = tuple(labels_builder())
+                    except (AttributeError, KeyError, TypeError, ValueError, RuntimeError) as exc:
+                        raise DescriptorConfigError(
+                            f"failed to prepare {self.name} CUDA labels: {exc}",
+                            code="invalid_configuration",
+                            path=configuration_path,
+                        ) from exc
+                backend_options["_cuda_feature_count"] = resolved_features
                 backend = CudaBackend(
                     self.name,
                     backend_options,

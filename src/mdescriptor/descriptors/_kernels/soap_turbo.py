@@ -131,12 +131,13 @@ class SoapTurboKernel:
         self._metadata_template: Any = None
         self._closed = False
 
-    def _ensure_native(self, batch: StructureBatch) -> None:
+    def _initialize_native(self) -> None:
         if self._closed:
             raise RuntimeError("SOAPTurbo calculator is closed")
-        self.species = validate_batch_species(batch, self.species, descriptor=self.name)
         if self._native is not None:
             return
+        if self.species is None:
+            raise ValueError("SOAPTurbo requires an explicit species declaration")
         count = len(self.species)
         self._alpha_max = _per_species(self._alpha_max_config, count, "alpha_max", 8.0, integer=True)
         self._atom_sigma_r = _per_species(self._atom_sigma_r_config, count, "atom_sigma_r", 0.5)
@@ -170,6 +171,12 @@ class SoapTurboKernel:
         self._metadata_template = normalize_metadata(
             self._metadata(), DescriptorLevel.ATOM, self.feature_count
         )
+
+    def _ensure_native(self, batch: StructureBatch) -> None:
+        if self._closed:
+            raise RuntimeError("SOAPTurbo calculator is closed")
+        self.species = validate_batch_species(batch, self.species, descriptor=self.name)
+        self._initialize_native()
 
     @property
     def feature_count(self) -> int:
@@ -254,6 +261,26 @@ class SoapTurboKernel:
             for second in channels[first_index:]
             for degree in range(self.l_max + 1)
         )
+
+    def _cuda_payload(self) -> dict[str, Any]:
+        """Return normalized SOAPTurbo basis data for the CUDA backend."""
+
+        self._initialize_native()
+        assert self._native is not None
+        return {
+            "feature_count": self.feature_count,
+            "alpha_max": np.asarray(self._native.alpha_max, dtype=np.int32),
+            "channel_offsets": np.asarray(self._native.channel_offsets, dtype=np.int32),
+            "central_allowed": np.asarray(self._native.central_allowed, dtype=np.int32),
+            "basis_offsets": np.asarray(self._native.basis_offsets, dtype=np.int32),
+            "basis_transforms": np.asarray(self._native.basis_transforms, dtype=np.float64),
+            "gaussian_columns": np.asarray(self._native.gaussian_columns, dtype=np.float64),
+            "compression_offsets": np.asarray(self._native.compression_offsets, dtype=np.int64),
+            "compression_sources": np.asarray(self._native.compression_sources, dtype=np.int64),
+            "compression_factors": np.asarray(self._native.compression_factors, dtype=np.float64),
+            "packed_count": int(self._native.packed_count),
+            "dense_feature_count": int(self._native.dense_feature_count),
+        }
 
     def _metadata(self) -> dict[str, Any]:
         return {

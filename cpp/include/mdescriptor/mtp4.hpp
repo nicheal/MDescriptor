@@ -31,6 +31,25 @@ public:
     int radial_funcs_count() const noexcept;
     const std::string& radial_basis_type() const noexcept;
     bool orthogonalized() const noexcept;
+    const std::vector<std::int32_t>& species_order() const noexcept;
+    const std::vector<double>& parameters() const noexcept;
+    double radial_scaling() const noexcept;
+    const std::vector<double>& radial_recursive() const noexcept;
+    double radial_zeroth() const noexcept;
+    double radial_exp_ratio() const noexcept;
+    double radial_maxdist_sq() const noexcept;
+    double radial_maxdist_sq_minus_eps() const noexcept;
+    const std::vector<double>& radial_vdw_params() const noexcept;
+    std::int32_t radial_kind() const noexcept;
+    const std::vector<std::int32_t>& moments() const noexcept;
+    const std::vector<std::int32_t>& eval_kinds() const noexcept;
+    const std::vector<std::int32_t>& eval_linear_ids() const noexcept;
+    const std::vector<double>& eval_linear_coefficients() const noexcept;
+    const std::vector<std::int64_t>& eval_product_offsets() const noexcept;
+    const std::vector<std::int32_t>& eval_product_left() const noexcept;
+    const std::vector<std::int32_t>& eval_product_right() const noexcept;
+    const std::vector<double>& eval_product_coefficients() const noexcept;
+    const std::vector<std::int32_t>& scalar_output_ids() const noexcept;
 
     void compute(
         const StructureBatchView& batch,

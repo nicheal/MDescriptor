@@ -331,6 +331,30 @@ cpp/cuda/src/dpa4c.cu.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/dpa4c.cu.s
 .PHONY : cpp/cuda/src/dpa4c.cu.s
 
+cpp/cuda/src/extended_descriptors.o: cpp/cuda/src/extended_descriptors.cu.o
+.PHONY : cpp/cuda/src/extended_descriptors.o
+
+# target to build an object file
+cpp/cuda/src/extended_descriptors.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o
+.PHONY : cpp/cuda/src/extended_descriptors.cu.o
+
+cpp/cuda/src/extended_descriptors.i: cpp/cuda/src/extended_descriptors.cu.i
+.PHONY : cpp/cuda/src/extended_descriptors.i
+
+# target to preprocess a source file
+cpp/cuda/src/extended_descriptors.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.i
+.PHONY : cpp/cuda/src/extended_descriptors.cu.i
+
+cpp/cuda/src/extended_descriptors.s: cpp/cuda/src/extended_descriptors.cu.s
+.PHONY : cpp/cuda/src/extended_descriptors.s
+
+# target to generate assembly for a file
+cpp/cuda/src/extended_descriptors.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.s
+.PHONY : cpp/cuda/src/extended_descriptors.cu.s
+
 cpp/cuda/src/local_descriptors.o: cpp/cuda/src/local_descriptors.cu.o
 .PHONY : cpp/cuda/src/local_descriptors.o
 
@@ -1080,6 +1104,9 @@ help:
 	@echo "... cpp/cuda/src/dpa4c.o"
 	@echo "... cpp/cuda/src/dpa4c.i"
 	@echo "... cpp/cuda/src/dpa4c.s"
+	@echo "... cpp/cuda/src/extended_descriptors.o"
+	@echo "... cpp/cuda/src/extended_descriptors.i"
+	@echo "... cpp/cuda/src/extended_descriptors.s"
 	@echo "... cpp/cuda/src/local_descriptors.o"
 	@echo "... cpp/cuda/src/local_descriptors.i"
 	@echo "... cpp/cuda/src/local_descriptors.s"

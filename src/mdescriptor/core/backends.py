@@ -129,6 +129,9 @@ class CudaBackend:
             # constructor cannot be used as the CUDA validation kernel.
             _ = self.feature_count
             raw = implementation.compute(batch, control)
+            value = getattr(implementation, "feature_count", None)
+            if value is not None and int(value) > 0:
+                self._feature_count = int(value)
         except CancelledError:
             raise
         except MDescriptorError:
