@@ -6,9 +6,9 @@ WSL2/RTX 2080 SUPER runner 已完成普通 NEP 的正式 NEPAdapters 精度/速�
 float32 cutoff、距离和累加顺序，并固定周期 cell-list 的 lane-major 邻居顺序，避免
 atomic scatter 导致结果漂移。多数据集结果也已记录；小批量按预期受 launch/建图开销
 影响，CPU 的 double canonical path 与 GPU 的 NEP float32 path 不应混用为严格 bitwise
-基准。DPA4/DPA4C
-的 Python payload sidecar 已接入，CUDA contract 回归通过，但完整发布矩阵仍需
-按目标平台执行。本次重测使用 `.venv` 的 `torch 2.13.0+cu126`（
+基准。DPA4/DPA4C 的 Python payload sidecar 和自有 CUDA descriptor path 已接入，
+CUDA contract 回归通过；完整发布矩阵仍需按目标平台执行。本次重测使用 `.venv` 的
+`torch 2.13.0+cu126`（
 `torch.cuda.is_available()=True`，设备为 NVIDIA GeForce RTX 2080 SUPER），CUDA
 矩阵 smoke test 通过。
 
@@ -315,10 +315,23 @@ MDescriptor-CUDA  # CUDA backend plugin
 ```
 
 CUDA plugin 依赖匹配版本的基础包，并提供 `_cuda` 扩展和 backend entry point；不覆盖基础包的 Python 实现文件。
-独立 CUDA wheel 将 CUDA 用户态 Runtime/cuBLAS 放在 `mdescriptor/.cuda_libs`，并
+独立 CUDA wheel 将 CUDA 用户态 Runtime 放在 `mdescriptor/.cuda_libs`，并
 通过 `$ORIGIN/.cuda_libs` 加载；宿主机 NVIDIA 驱动提供 `libcuda`，不随 wheel
 分发。CUDA wheel 的构建入口为 `packaging/cuda/pyproject.toml`，需要在构建时
 显式传入 `CMAKE_CUDA_ARCHITECTURES`。
+
+### GPU 描述符依赖审计
+
+| 描述符 | CUDA 实现 | BLAS 依赖 | 发布时的动态库 |
+|---|---|---|---|
+| NEP | `cpp/cuda/src/nep.cu` 自有 descriptor/device kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
+| DPA4 | `cpp/cuda/src/dpa4.cu` 自有 FP32 tiled GEMM 和 descriptor kernels | 无（已移除 cuBLAS/cuBLASLt） | `libcudart`；`libcuda` 由宿主驱动提供 |
+| DPA4C | `cpp/cuda/src/dpa4c.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
+
+三者共享 CUDA context、batch/CSR graph 和 Python lazy plugin loader，但不共享
+BLAS runtime。CPU `_native` 路径仍可使用 SciPy/OpenBLAS；这与独立 CUDA wheel
+的依赖边界无关。`MDESCRIPTOR_BUNDLE_CUDA_RUNTIME=ON` 现在只复制
+`libcudart.so.*`，并由 wheel verifier 拒绝 cuBLAS/cuBLASLt 文件或 ELF 依赖。
 
 第一阶段支持矩阵：
 
@@ -333,19 +346,20 @@ CUDA plugin 依赖匹配版本的基础包，并提供 `_cuda` 扩展和 backend
 
 ## 11. 第一阶段范围
 
-只实现以下四个描述符：
+当前 CUDA plugin 已覆盖以下描述符：
 
 ```text
 NeighborList
 SphericalExpansion
 SoapRadialSpectrum
 SoapPowerSpectrum
+NEP
+DPA4
+DPA4C
 ```
 
 以下内容仍明确排除在 standalone GPU 第一阶段之外：
 
-- DPA4/DPA4C 的实际 CUDA kernel、GPU 权重上传和数值 parity gate；Python
-  payload sidecar 已准备，但不把 sidecar 误报为 GPU 执行完成；
 - 所有模型权重的 GPU 化；
 - GPU tensor 或异步公共接口；
 - 多 GPU 和跨设备 graph cache。
@@ -525,7 +539,7 @@ MDESCRIPTOR_CUDA_PLUGIN_DIR="$PWD/build-cuda" \
 | G6 | SOAP radial/power spectrum | 三个描述符通过 GPU 回归 |
 | G7 | CUDA wheel、GPU CI、benchmark | plugin 可发布并可验证 |
 | G8 | 普通 NEP descriptor GPU 扩展 | coefficients device model、CUDA kernel、parity benchmark |
-| G9 | 单独规划 DPA4/DPA4C | 不与 standalone GPU 版本耦合 |
+| G9 | DPA4/DPA4C CUDA descriptor path | 自有 FP32 kernels、GPU 权重上传、parity gate 和 CUDA wheel 依赖审计 |
 
 本文件记录设计共识和当前实现边界；standalone CUDA runner、GPU 数值 tolerance、
 wheel 发布和跨平台 benchmark 仍应按上述门禁在目标硬件上完成验证。

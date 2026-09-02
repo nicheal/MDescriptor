@@ -2,7 +2,6 @@
 
 #include "mdescriptor/dpa4_wigner.hpp"
 
-#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
@@ -45,12 +44,12 @@ constexpr int kGridCoeff = 48;
 constexpr int kGridScratchChannels = 384;
 constexpr std::size_t kGridScratchStride =
     static_cast<std::size_t>(kGridSize) * kGridScratchChannels;
-// Keep enough nodes in each grid batch for cuBLAS to amortize launch and
-// dispatch overhead.  The previous 16-node tiles left the 152x48 grid
+// Keep enough nodes in each grid batch to amortize launch and dispatch
+// overhead.  The previous 16-node tiles left the 152x48 grid
 // contractions launch-bound on small and medium batches.  This scratch tile
 // is still bounded independently of the atom count, so increasing it does
 // not make the descriptor workspace scale quadratically with a batch.
-constexpr int kGridTileNodes = 64;
+constexpr int kGridTileNodes = 128;
 constexpr float kEpsilon = 1.0e-7F;
 constexpr float kNormEpsilon = 1.0e-5F;
 
@@ -168,15 +167,6 @@ void check_cuda(cudaError_t status, const char* operation) {
         throw CudaUnavailable(message.c_str());
     }
     throw std::runtime_error(message);
-}
-
-void check_cublas(cublasStatus_t status, const char* operation) {
-    if (status == CUBLAS_STATUS_SUCCESS) {
-        return;
-    }
-    throw std::runtime_error(
-        std::string(operation) + ": cuBLAS status "
-        + std::to_string(static_cast<int>(status)));
 }
 
 template <typename Value>
@@ -366,13 +356,6 @@ struct DeviceDpa4Model::Model {
     // so a single cached buffer is sufficient.
     mutable std::unique_ptr<DeviceDpa4Model::DeviceArray> type_indices_device;
     mutable std::unique_ptr<DeviceDpa4Model::DeviceArray> active_nodes_device;
-    cublasHandle_t cublas = nullptr;
-
-    ~Model() noexcept {
-        if (cublas != nullptr) {
-            (void)cublasDestroy(cublas);
-        }
-    }
 };
 
 namespace {
@@ -460,6 +443,367 @@ template <typename Value>
 Value* workspace_data(void* workspace, std::size_t offset) {
     return reinterpret_cast<Value*>(
         static_cast<unsigned char*>(workspace) + offset);
+}
+
+constexpr int kMatmulTile = 16;
+constexpr int kLargeMatmulTile = 64;
+constexpr int kMatmulThreadTile = 4;
+
+// Row-major GEMM used by the fixed DPA4 graph.  The descriptor only needs a
+// small, known set of FP32 projections, so a tiled kernel avoids carrying an
+// external BLAS runtime into the CUDA wheel while keeping the same FP32
+// accumulation boundary as the previous implementation.
+__global__ void row_major_strided_gemm_kernel(
+    const float* __restrict__ left,
+    const float* __restrict__ right,
+    float* __restrict__ product,
+    std::int64_t rows,
+    std::int64_t columns,
+    std::int64_t inner,
+    std::int64_t left_row_stride,
+    std::int64_t right_row_stride,
+    std::int64_t product_row_stride,
+    std::int64_t left_batch_stride,
+    std::int64_t right_batch_stride,
+    std::int64_t product_batch_stride,
+    std::int64_t batch_count) {
+    __shared__ float left_tile[kMatmulTile][kMatmulTile];
+    __shared__ float right_tile[kMatmulTile][kMatmulTile];
+
+    const std::int64_t row =
+        static_cast<std::int64_t>(blockIdx.y) * kMatmulTile + threadIdx.y;
+    const std::int64_t column =
+        static_cast<std::int64_t>(blockIdx.x) * kMatmulTile + threadIdx.x;
+    const std::int64_t batch = static_cast<std::int64_t>(blockIdx.z);
+    if (batch >= batch_count) {
+        return;
+    }
+
+    const float* left_batch = left + batch * left_batch_stride;
+    const float* right_batch = right + batch * right_batch_stride;
+    float* product_batch = product + batch * product_batch_stride;
+    float value = 0.0F;
+    for (std::int64_t start = 0; start < inner; start += kMatmulTile) {
+        const std::int64_t left_column = start + threadIdx.x;
+        const std::int64_t right_row = start + threadIdx.y;
+        left_tile[threadIdx.y][threadIdx.x] =
+            row < rows && left_column < inner
+            ? left_batch[row * left_row_stride + left_column]
+            : 0.0F;
+        right_tile[threadIdx.y][threadIdx.x] =
+            right_row < inner && column < columns
+            ? right_batch[right_row * right_row_stride + column]
+            : 0.0F;
+        __syncthreads();
+        // The tile loaders already zero-pad the last K tile.  Always walking
+        // the fixed tile lets nvcc fully unroll this hot loop and avoids a
+        // per-element bounds branch in the wide projections.
+#pragma unroll
+        for (int index = 0; index < kMatmulTile; ++index) {
+            value = fmaf(
+                left_tile[threadIdx.y][index],
+                right_tile[index][threadIdx.x],
+                value);
+        }
+        __syncthreads();
+    }
+    if (row < rows && column < columns) {
+        product_batch[row * product_row_stride + column] = value;
+    }
+}
+
+// The wide DPA4 projections have at least 64 output columns.  Giving each
+// thread a 4x4 output tile cuts the number of blocks and reuses the same
+// weight tile across sixteen accumulators.  The small kernel above remains
+// the better choice for the 25/32-column radial projections and tiny batches.
+__global__ void row_major_wide_gemm_kernel(
+    const float* __restrict__ left,
+    const float* __restrict__ right,
+    float* __restrict__ product,
+    int rows,
+    int columns,
+    int inner,
+    int left_row_stride,
+    int right_row_stride,
+    int product_row_stride,
+    int left_batch_stride,
+    int right_batch_stride,
+    int product_batch_stride,
+    int batch_count) {
+    constexpr int kThreadsPerRow = kLargeMatmulTile / kMatmulThreadTile;
+    __shared__ float left_tile[kLargeMatmulTile][kMatmulTile];
+    __shared__ float right_tile[kMatmulTile][kLargeMatmulTile];
+
+    const int thread = static_cast<int>(threadIdx.x);
+    const int thread_row = thread / kThreadsPerRow;
+    const int thread_column = thread % kThreadsPerRow;
+    const int row =
+        static_cast<int>(blockIdx.y) * kLargeMatmulTile
+        + thread_row * kMatmulThreadTile;
+    const int column =
+        static_cast<int>(blockIdx.x) * kLargeMatmulTile
+        + thread_column * kMatmulThreadTile;
+    const int batch = static_cast<int>(blockIdx.z);
+    if (batch >= batch_count) {
+        return;
+    }
+
+    const float* left_batch = left + batch * left_batch_stride;
+    const float* right_batch = right + batch * right_batch_stride;
+    float* product_batch = product + batch * product_batch_stride;
+    float values[kMatmulThreadTile][kMatmulThreadTile] = {};
+
+    for (int start = 0; start < inner; start += kMatmulTile) {
+        for (int index = thread; index < kLargeMatmulTile * kMatmulTile;
+             index += blockDim.x) {
+            const int tile_row = index / kMatmulTile;
+            const int tile_column = index % kMatmulTile;
+            const int source_row =
+                static_cast<int>(blockIdx.y) * kLargeMatmulTile
+                + tile_row;
+            const int source_column = start + tile_column;
+            left_tile[tile_row][tile_column] =
+                source_row < rows && source_column < inner
+                ? left_batch[source_row * left_row_stride + source_column]
+                : 0.0F;
+        }
+        for (int index = thread; index < kMatmulTile * kLargeMatmulTile;
+             index += blockDim.x) {
+            const int tile_row = index / kLargeMatmulTile;
+            const int tile_column = index % kLargeMatmulTile;
+            const int source_row = start + tile_row;
+            const int source_column =
+                static_cast<int>(blockIdx.x) * kLargeMatmulTile
+                + tile_column;
+            right_tile[tile_row][tile_column] =
+                source_row < inner && source_column < columns
+                ? right_batch[source_row * right_row_stride + source_column]
+                : 0.0F;
+        }
+        __syncthreads();
+        // As above, the last K tile is zero-padded, so keep the reduction
+        // fixed-width and let nvcc unroll it.
+#pragma unroll
+        for (int index = 0; index < kMatmulTile; ++index) {
+#pragma unroll
+            for (int output_row = 0; output_row < kMatmulThreadTile;
+                 ++output_row) {
+                const float left_value = left_tile[thread_row * kMatmulThreadTile
+                    + output_row][index];
+#pragma unroll
+                for (int output_column = 0;
+                     output_column < kMatmulThreadTile; ++output_column) {
+                    values[output_row][output_column] = fmaf(
+                        left_value,
+                        right_tile[index][thread_column * kMatmulThreadTile
+                            + output_column],
+                        values[output_row][output_column]);
+                }
+            }
+        }
+        __syncthreads();
+    }
+    for (int output_row = 0; output_row < kMatmulThreadTile; ++output_row) {
+        for (int output_column = 0;
+             output_column < kMatmulThreadTile; ++output_column) {
+            const int destination_row = row + output_row;
+            const int destination_column = column + output_column;
+            if (destination_row < rows && destination_column < columns) {
+                product_batch[destination_row * product_row_stride
+                    + destination_column] = values[output_row][output_column];
+            }
+        }
+    }
+}
+
+// A 128-column tile is a better fit for the large radial projections and
+// grid/readout matrices: each block reuses the weight tile over twice as many
+// output columns without increasing the 32 accumulators held by a thread.
+template <int kRowTile, int kColumnTile, int kThreads>
+__global__ void row_major_wide_columns_gemm_kernel(
+    const float* __restrict__ left,
+    const float* __restrict__ right,
+    float* __restrict__ product,
+    int rows,
+    int columns,
+    int inner,
+    int left_row_stride,
+    int right_row_stride,
+    int product_row_stride,
+    int left_batch_stride,
+    int right_batch_stride,
+    int product_batch_stride,
+    int batch_count) {
+    constexpr int kThreadsPerRow = kColumnTile / kMatmulThreadTile;
+    constexpr int kThreadRows = kThreads / kThreadsPerRow;
+    constexpr int kThreadTileRows =
+        kRowTile / kThreadRows;
+    __shared__ float left_tile[kRowTile][kMatmulTile];
+    __shared__ float right_tile[kMatmulTile][kColumnTile];
+
+    const int thread = static_cast<int>(threadIdx.x);
+    const int thread_row = thread / kThreadsPerRow;
+    const int thread_column = thread % kThreadsPerRow;
+    const int row =
+        static_cast<int>(blockIdx.y) * kRowTile
+        + thread_row * kThreadTileRows;
+    const int column =
+        static_cast<int>(blockIdx.x) * kColumnTile
+        + thread_column * kMatmulThreadTile;
+    const int batch = static_cast<int>(blockIdx.z);
+    if (batch >= batch_count) {
+        return;
+    }
+
+    const float* left_batch = left + batch * left_batch_stride;
+    const float* right_batch = right + batch * right_batch_stride;
+    float* product_batch = product + batch * product_batch_stride;
+    float values[kThreadTileRows][kMatmulThreadTile] = {};
+
+    for (int start = 0; start < inner; start += kMatmulTile) {
+        for (int index = thread; index < kRowTile * kMatmulTile;
+             index += blockDim.x) {
+            const int tile_row = index / kMatmulTile;
+            const int tile_column = index % kMatmulTile;
+            const int source_row =
+                static_cast<int>(blockIdx.y) * kRowTile
+                + tile_row;
+            const int source_column = start + tile_column;
+            left_tile[tile_row][tile_column] =
+                source_row < rows && source_column < inner
+                ? left_batch[source_row * left_row_stride + source_column]
+                : 0.0F;
+        }
+        for (int index = thread; index < kMatmulTile * kColumnTile;
+             index += blockDim.x) {
+            const int tile_row = index / kColumnTile;
+            const int tile_column = index % kColumnTile;
+            const int source_row = start + tile_row;
+            const int source_column =
+                static_cast<int>(blockIdx.x) * kColumnTile
+                + tile_column;
+            right_tile[tile_row][tile_column] =
+                source_row < inner && source_column < columns
+                ? right_batch[source_row * right_row_stride + source_column]
+                : 0.0F;
+        }
+        __syncthreads();
+#pragma unroll
+        for (int index = 0; index < kMatmulTile; ++index) {
+#pragma unroll
+            for (int output_row = 0; output_row < kThreadTileRows;
+                 ++output_row) {
+                const float left_value = left_tile[
+                    thread_row * kThreadTileRows + output_row][index];
+#pragma unroll
+                for (int output_column = 0;
+                     output_column < kMatmulThreadTile; ++output_column) {
+                    values[output_row][output_column] = fmaf(
+                        left_value,
+                        right_tile[index][thread_column * kMatmulThreadTile
+                            + output_column],
+                        values[output_row][output_column]);
+                }
+            }
+        }
+        __syncthreads();
+    }
+    for (int output_row = 0; output_row < kThreadTileRows; ++output_row) {
+        for (int output_column = 0;
+             output_column < kMatmulThreadTile; ++output_column) {
+            const int destination_row = row + output_row;
+            const int destination_column = column + output_column;
+            if (destination_row < rows && destination_column < columns) {
+                product_batch[destination_row * product_row_stride
+                    + destination_column] = values[output_row][output_column];
+            }
+        }
+    }
+}
+
+void launch_row_major_gemm(
+    const float* left,
+    const float* right,
+    float* product,
+    std::int64_t rows,
+    std::int64_t columns,
+    std::int64_t inner,
+    std::int64_t left_row_stride,
+    std::int64_t right_row_stride,
+    std::int64_t product_row_stride,
+    std::int64_t left_batch_stride,
+    std::int64_t right_batch_stride,
+    std::int64_t product_batch_stride,
+    std::int64_t batch_count,
+    cudaStream_t stream,
+    const char* operation) {
+    if (rows <= 0 || columns <= 0 || inner <= 0 || batch_count <= 0) {
+        return;
+    }
+    const auto fits_fast_index = [](std::int64_t value) {
+        return value <= static_cast<std::int64_t>(
+            std::numeric_limits<int>::max());
+    };
+    const bool fast_indexable =
+        fits_fast_index(rows) && fits_fast_index(columns)
+        && fits_fast_index(inner) && fits_fast_index(left_row_stride)
+        && fits_fast_index(right_row_stride)
+        && fits_fast_index(product_row_stride)
+        && fits_fast_index(left_batch_stride)
+        && fits_fast_index(right_batch_stride)
+        && fits_fast_index(product_batch_stride)
+        && fits_fast_index(batch_count);
+    if (fast_indexable && columns >= 128 && rows >= 32) {
+        constexpr int kColumnTile = 128;
+        const dim3 grid(
+            static_cast<unsigned int>(
+                (columns + kColumnTile - 1) / kColumnTile),
+            static_cast<unsigned int>(
+                (rows + kLargeMatmulTile - 1) / kLargeMatmulTile),
+            static_cast<unsigned int>(batch_count));
+        row_major_wide_columns_gemm_kernel<
+            kLargeMatmulTile, kColumnTile, 256><<<
+            grid, dim3(16 * 16, 1, 1), 0, stream>>>(
+            left, right, product,
+            static_cast<int>(rows), static_cast<int>(columns),
+            static_cast<int>(inner), static_cast<int>(left_row_stride),
+            static_cast<int>(right_row_stride),
+            static_cast<int>(product_row_stride),
+            static_cast<int>(left_batch_stride),
+            static_cast<int>(right_batch_stride),
+            static_cast<int>(product_batch_stride),
+            static_cast<int>(batch_count));
+    } else if (fast_indexable && columns >= kLargeMatmulTile && rows >= 32) {
+        const dim3 grid(
+            static_cast<unsigned int>(
+                (columns + kLargeMatmulTile - 1) / kLargeMatmulTile),
+            static_cast<unsigned int>(
+                (rows + kLargeMatmulTile - 1) / kLargeMatmulTile),
+            static_cast<unsigned int>(batch_count));
+        row_major_wide_gemm_kernel<<<
+            grid, dim3(16 * 16, 1, 1), 0, stream>>>(
+            left, right, product,
+            static_cast<int>(rows), static_cast<int>(columns),
+            static_cast<int>(inner), static_cast<int>(left_row_stride),
+            static_cast<int>(right_row_stride),
+            static_cast<int>(product_row_stride),
+            static_cast<int>(left_batch_stride),
+            static_cast<int>(right_batch_stride),
+            static_cast<int>(product_batch_stride),
+            static_cast<int>(batch_count));
+    } else {
+        const dim3 grid(
+            static_cast<unsigned int>((columns + kMatmulTile - 1) / kMatmulTile),
+            static_cast<unsigned int>((rows + kMatmulTile - 1) / kMatmulTile),
+            static_cast<unsigned int>(batch_count));
+        row_major_strided_gemm_kernel<<<
+            grid, dim3(kMatmulTile, kMatmulTile, 1), 0, stream>>>(
+            left, right, product, rows, columns, inner,
+            left_row_stride, right_row_stride, product_row_stride,
+            left_batch_stride, right_batch_stride, product_batch_stride,
+            batch_count);
+    }
+    check_cuda(cudaGetLastError(), operation);
 }
 
 __device__ __forceinline__ int degree_for_row(int row) {
@@ -786,7 +1130,7 @@ __global__ void prepare_film_kernel(
 // The environment MLP is shared by every edge, so doing all of its matrix
 // products inside one thread per center leaves the GPU mostly idle.  Keep the
 // geometry/radial work as a light edge kernel, then use the same edge-major
-// layout as the rest of the descriptor for batched cuBLAS projections.
+// layout as the rest of the descriptor for batched tiled projections.
 __global__ void prepare_geometry_kernel(
     const std::int64_t* graph_offsets,
     const std::int32_t* graph_atoms,
@@ -1419,8 +1763,7 @@ __global__ void radial_envelope_kernel(
     }
 }
 
-void radial_initial_cublas(
-    cublasHandle_t handle,
+void radial_initial(
     std::int64_t edges,
     const float* radial_basis,
     const DeviceModel& model,
@@ -1431,41 +1774,25 @@ void radial_initial_cublas(
     if (edges <= 0) {
         return;
     }
-    const int edge_count = static_cast<int>(edges);
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
-    // The compact radial basis is stored edge-major.  Its row-major view is
-    // the column-major 16-by-edges matrix expected by cuBLAS.  Likewise, the
-    // first 64 values of each 256-value radial_input row are the output
-    // columns of the radial mixer.
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            64, edge_count, 16, &one,
-            model.radial_layer1, 64,
-            radial_basis, 25, &zero,
-            radial_input, 256),
-        "DPA4 radial layer1 projection failed");
+    launch_row_major_gemm(
+        radial_basis, model.radial_layer1, radial_input,
+        edges, 64, 16, 25, 64, 256, 0, 0, 0, 1, stream,
+        "DPA4 radial layer1 projection launch failed");
     radial_pre_norm_kernel<<<
         static_cast<unsigned int>(edges), 256, 0, stream>>>(
         edges, radial_input, model.radial_norm_scale, radial_input);
     check_cuda(cudaGetLastError(), "DPA4 radial normalization launch failed");
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            256, edge_count, 64, &one,
-            model.radial_layer2, 256,
-            radial_input, 256, &zero,
-            radial, 256),
-        "DPA4 radial layer2 projection failed");
+    launch_row_major_gemm(
+        radial_input, model.radial_layer2, radial,
+        edges, 256, 64, 256, 256, 256, 0, 0, 0, 1, stream,
+        "DPA4 radial layer2 projection launch failed");
     radial_envelope_kernel<<<
         static_cast<unsigned int>(edges), 256, 0, stream>>>(
         edges, envelopes, radial);
     check_cuda(cudaGetLastError(), "DPA4 radial envelope launch failed");
 }
 
-void environment_rbf_cublas(
-    cublasHandle_t handle,
+void environment_rbf(
     std::int64_t edges,
     const float* radial_compact,
     const DeviceModel& model,
@@ -1474,17 +1801,10 @@ void environment_rbf_cublas(
     if (edges <= 0) {
         return;
     }
-    const int edge_count = static_cast<int>(edges);
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            32, edge_count, 16, &one,
-            model.env_rbf1, 32,
-            radial_compact, 25, &zero,
-            radial_input, 256),
-        "DPA4 environment radial layer1 projection failed");
+    launch_row_major_gemm(
+        radial_compact, model.env_rbf1, radial_input,
+        edges, 32, 16, 25, 32, 256, 0, 0, 0, 1, stream,
+        "DPA4 environment radial layer1 projection launch failed");
     const std::int64_t radial_hidden_values = edges * 32;
     environment_silu_kernel<<<
         static_cast<unsigned int>((radial_hidden_values + 255) / 256), 256, 0, stream>>>(
@@ -1492,18 +1812,13 @@ void environment_rbf_cublas(
     check_cuda(
         cudaGetLastError(),
         "DPA4 environment radial activation launch failed");
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            32, edge_count, 32, &one,
-            model.env_rbf2, 32,
-            radial_input, 256, &zero,
-            radial_input + 32, 256),
-        "DPA4 environment radial layer2 projection failed");
+    launch_row_major_gemm(
+        radial_input, model.env_rbf2, radial_input + 32,
+        edges, 32, 32, 256, 32, 256, 0, 0, 0, 1, stream,
+        "DPA4 environment radial layer2 projection launch failed");
 }
 
-void environment_g_cublas(
-    cublasHandle_t handle,
+void environment_g(
     std::int64_t edges,
     const DeviceModel& model,
     float* environment_input,
@@ -1512,17 +1827,10 @@ void environment_g_cublas(
     if (edges <= 0) {
         return;
     }
-    const int edge_count = static_cast<int>(edges);
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            128, edge_count, 64, &one,
-            model.env_g1, 128,
-            environment_input, 256, &zero,
-            environment_input + 64, 256),
-        "DPA4 environment layer1 projection failed");
+    launch_row_major_gemm(
+        environment_input, model.env_g1, environment_input + 64,
+        edges, 128, 64, 256, 128, 256, 0, 0, 0, 1, stream,
+        "DPA4 environment layer1 projection launch failed");
     const std::int64_t hidden_values = edges * 128;
     environment_silu_kernel<<<
         static_cast<unsigned int>((hidden_values + 255) / 256), 256, 0, stream>>>(
@@ -1530,14 +1838,10 @@ void environment_g_cublas(
     check_cuda(
         cudaGetLastError(),
         "DPA4 environment activation launch failed");
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            64, edge_count, 128, &one,
-            model.env_g2, 64,
-            environment_input + 64, 256, &zero,
-            radial_bias, 64),
-        "DPA4 environment layer2 projection failed");
+    launch_row_major_gemm(
+        environment_input + 64, model.env_g2, radial_bias,
+        edges, 64, 128, 256, 64, 64, 0, 0, 0, 1, stream,
+        "DPA4 environment layer2 projection launch failed");
 }
 
 __global__ void rotate_edge_kernel(
@@ -2080,8 +2384,7 @@ __global__ void pack_block_grid_input_kernel(
     const int lane = static_cast<int>(threadIdx.x);
     const float* input = hidden
         + (node_begin + local_node) * kFullDim * 1152;
-    float* destination = packed
-        + local_node * kGridCoeff * 384;
+    float* destination = packed;
     constexpr int channel_stride = kGridCoeff * 192;
     for (int flat = lane; flat < 2 * channel_stride; flat += blockDim.x) {
         const bool right = flat >= channel_stride;
@@ -2090,7 +2393,11 @@ __global__ void pack_block_grid_input_kernel(
         const int channel = local % 192;
         const int row = coefficient / kFrames;
         const int frame = coefficient % kFrames;
-        destination[flat] = input[
+        float* batch_destination = right
+            ? destination + tile_nodes * channel_stride
+                + local_node * channel_stride
+            : destination + local_node * channel_stride;
+        batch_destination[local] = input[
             row * 1152 + (right ? 576 : 0) + frame * 192 + channel];
     }
 }
@@ -2151,19 +2458,20 @@ __global__ void block_grid_post_kernel(
     }
     const int lane = static_cast<int>(threadIdx.x);
     constexpr int half_stride = kGridCoeff * 192;
-    const float* scalar_pair = packed
-        + local_node * 2 * half_stride;
+    const float* scalar_pair = packed + local_node * half_stride;
+    const float* value_pair = packed
+        + tile_nodes * half_stride + local_node * half_stride;
     float* destination = activation
         + (node_begin + local_node) * kGridCoeff * 192;
     for (int output = lane; output < 192; output += blockDim.x) {
         const float gate_input = scalar_pair[output];
-        const float value_input = scalar_pair[half_stride + output];
+        const float value_input = value_pair[output];
         const float scalar_output = d_silu(gate_input) * value_input;
         float gate_logit = 0.0F;
         for (int input = 0; input < 2 * 192; ++input) {
             const float scalar = input < 192
                 ? scalar_pair[input]
-                : scalar_pair[half_stride + input - 192];
+                : value_pair[input - 192];
             gate_logit += scalar * scalar_weight[input * 192 + output];
         }
         const float scalar_gate = d_sigmoid(gate_logit);
@@ -2202,22 +2510,19 @@ void launch_check(cudaError_t status, const char* operation) {
     check_cuda(cudaGetLastError(), operation);
 }
 
-void so3_linear_cublas(
-    cublasHandle_t handle,
+void so3_linear(
     const float* input,
     std::int64_t atoms,
     int input_channels,
     int output_channels,
     const float* weights,
-    float* output) {
+    float* output,
+    cudaStream_t stream) {
     if (atoms <= 0) {
         return;
     }
-    const int atom_count = static_cast<int>(atoms);
     constexpr int row_starts[4] = {0, 1, 4, 9};
     constexpr int row_counts[4] = {1, 3, 5, 7};
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
     const long long input_node_stride =
         static_cast<long long>(kFullDim) * input_channels;
     const long long output_node_stride =
@@ -2225,21 +2530,20 @@ void so3_linear_cublas(
     const long long weight_degree_stride =
         static_cast<long long>(input_channels) * output_channels;
     for (int degree = 0; degree < 4; ++degree) {
-        check_cublas(
-            cublasSgemmStridedBatched(
-                handle, CUBLAS_OP_N, CUBLAS_OP_N,
-                output_channels, atom_count, input_channels, &one,
-                weights + degree * weight_degree_stride, output_channels, 0,
-                input + row_starts[degree] * input_channels, input_node_stride,
-                input_channels, &zero,
-                output + row_starts[degree] * output_channels, output_node_stride,
-                output_channels, row_counts[degree]),
-            "DPA4 SO(3) linear projection failed");
+        const int row_count = row_counts[degree];
+        launch_row_major_gemm(
+            input + row_starts[degree] * input_channels,
+            weights + degree * weight_degree_stride,
+            output + row_starts[degree] * output_channels,
+            atoms, output_channels, input_channels,
+            input_node_stride, output_channels, output_node_stride,
+            input_channels, 0, output_channels, row_count,
+            stream,
+            "DPA4 SO(3) linear projection launch failed");
     }
 }
 
-void output_grid_cublas(
-    cublasHandle_t handle,
+void output_grid(
     const float* hidden,
     std::int64_t node_begin,
     std::int64_t tile_nodes,
@@ -2263,49 +2567,33 @@ void output_grid_cublas(
         hidden, node_begin, tile_nodes, packed);
     launch_check(cudaGetLastError(), "DPA4 output grid pack launch failed");
 
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
-    const long long input_stride = 48LL * 384LL;
     const long long grid_stride = 152LL * 384LL;
     const long long coefficient_stride = 48LL * 384LL;
-    const long long output_stride = 48LL * 192LL;
-    const int batch_count = static_cast<int>(tile_nodes);
 
-    // All tensors are row-major.  cuBLAS is column-major, so each operation
-    // is expressed as (right operand)^T * (left operand)^T; the resulting
-    // column-major matrix is the desired row-major result in memory.
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            384, 48, 384, &one,
-            left_weight, 384, 0,
-            packed, 384, input_stride, &zero,
-            scratch0, 384, coefficient_stride, batch_count),
-        "DPA4 output grid left projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            384, 48, 384, &one,
-            right_weight, 384, 0,
-            packed, 384, input_stride, &zero,
-            scratch1, 384, coefficient_stride, batch_count),
-        "DPA4 output grid right projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            384, 152, 48, &one,
-            scratch0, 384, coefficient_stride,
-            grid_to, 48, 0, &zero,
-            scratch2, 384, grid_stride, batch_count),
-        "DPA4 output grid left-to-grid projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            384, 152, 48, &one,
-            scratch1, 384, coefficient_stride,
-            grid_to, 48, 0, &zero,
-            scratch0, 384, grid_stride, batch_count),
-        "DPA4 output grid right-to-grid projection failed");
+    // The node batches are contiguous in memory.  Flatten the three
+    // (input-batched) projections into one GEMM so a weight tile is reused
+    // across nodes instead of being loaded once for every blockIdx.z batch.
+    const std::int64_t flattened_rows = tile_nodes * 48;
+    launch_row_major_gemm(
+        packed, left_weight, scratch0,
+        flattened_rows, 384, 384, 384, 384, 384,
+        0, 0, 0, 1, stream,
+        "DPA4 output grid left projection launch failed");
+    launch_row_major_gemm(
+        packed, right_weight, scratch1,
+        flattened_rows, 384, 384, 384, 384, 384,
+        0, 0, 0, 1, stream,
+        "DPA4 output grid right projection launch failed");
+    launch_row_major_gemm(
+        grid_to, scratch0, scratch2,
+        152, 384, 48, 48, 384, 384,
+        0, coefficient_stride, grid_stride, tile_nodes, stream,
+        "DPA4 output grid left-to-grid projection launch failed");
+    launch_row_major_gemm(
+        grid_to, scratch1, scratch0,
+        152, 384, 48, 48, 384, 384,
+        0, coefficient_stride, grid_stride, tile_nodes, stream,
+        "DPA4 output grid right-to-grid projection launch failed");
 
     const std::size_t product_count = static_cast<std::size_t>(tile_nodes)
         * kGridSize * 384U;
@@ -2314,31 +2602,24 @@ void output_grid_cublas(
         scratch2, scratch0, product_count, scratch1);
     launch_check(cudaGetLastError(), "DPA4 output grid product launch failed");
 
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            384, 48, 152, &one,
-            scratch1, 384, grid_stride,
-            grid_from, 152, 0, &zero,
-            scratch2, 384, coefficient_stride, batch_count),
-        "DPA4 output grid grid-to-coefficient projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 48, 384, &one,
-            output_weight, 192, 0,
-            scratch2, 384, coefficient_stride, &zero,
-            activation + static_cast<std::size_t>(node_begin) * 48U * 192U,
-            192, output_stride, batch_count),
-        "DPA4 output grid output projection failed");
+    launch_row_major_gemm(
+        grid_from, scratch1, scratch2,
+        48, 384, 152, 152, 384, 384,
+        0, grid_stride, coefficient_stride, tile_nodes, stream,
+        "DPA4 output grid grid-to-coefficient projection launch failed");
+    launch_row_major_gemm(
+        scratch2, output_weight,
+        activation + static_cast<std::size_t>(node_begin) * 48U * 192U,
+        flattened_rows, 192, 384, 384, 192, 192,
+        0, 0, 0, 1, stream,
+        "DPA4 output grid output projection launch failed");
     output_grid_post_kernel<<<
         static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
         packed, node_begin, tile_nodes, scalar_weight, activation);
     launch_check(cudaGetLastError(), "DPA4 output grid gate launch failed");
 }
 
-void block_grid_cublas(
-    cublasHandle_t handle,
+void block_grid(
     const float* hidden,
     std::int64_t node_begin,
     std::int64_t tile_nodes,
@@ -2362,47 +2643,31 @@ void block_grid_cublas(
         hidden, node_begin, tile_nodes, packed);
     launch_check(cudaGetLastError(), "DPA4 block grid pack launch failed");
 
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
     const long long half_stride = 48LL * 192LL;
-    const long long packed_stride = 2LL * half_stride;
     const long long grid_stride = 152LL * 192LL;
     const long long coefficient_stride = 48LL * 192LL;
-    const long long output_stride = 48LL * 192LL;
-    const int batch_count = static_cast<int>(tile_nodes);
+    const std::int64_t flattened_rows = tile_nodes * 48;
 
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 48, 192, &one,
-            left_weight, 192, 0,
-            packed, 192, packed_stride, &zero,
-            scratch0, 192, coefficient_stride, batch_count),
-        "DPA4 block grid left projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 48, 192, &one,
-            right_weight, 192, 0,
-            packed + half_stride, 192, packed_stride, &zero,
-            scratch1, 192, coefficient_stride, batch_count),
-        "DPA4 block grid right projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 152, 48, &one,
-            scratch0, 192, coefficient_stride,
-            grid_to, 48, 0, &zero,
-            scratch2, 192, grid_stride, batch_count),
-        "DPA4 block grid left-to-grid projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 152, 48, &one,
-            scratch1, 192, coefficient_stride,
-            grid_to, 48, 0, &zero,
-            scratch0, 192, grid_stride, batch_count),
-        "DPA4 block grid right-to-grid projection failed");
+    launch_row_major_gemm(
+        packed, left_weight, scratch0,
+        flattened_rows, 192, 192, 192, 192, 192,
+        0, 0, 0, 1, stream,
+        "DPA4 block grid left projection launch failed");
+    launch_row_major_gemm(
+        packed + tile_nodes * half_stride, right_weight, scratch1,
+        flattened_rows, 192, 192, 192, 192, 192,
+        0, 0, 0, 1, stream,
+        "DPA4 block grid right projection launch failed");
+    launch_row_major_gemm(
+        grid_to, scratch0, scratch2,
+        152, 192, 48, 48, 192, 192,
+        0, coefficient_stride, grid_stride, tile_nodes, stream,
+        "DPA4 block grid left-to-grid projection launch failed");
+    launch_row_major_gemm(
+        grid_to, scratch1, scratch0,
+        152, 192, 48, 48, 192, 192,
+        0, coefficient_stride, grid_stride, tile_nodes, stream,
+        "DPA4 block grid right-to-grid projection launch failed");
 
     const std::size_t product_count = static_cast<std::size_t>(tile_nodes)
         * kGridSize * 192U;
@@ -2411,31 +2676,24 @@ void block_grid_cublas(
         scratch2, scratch0, product_count, scratch1);
     launch_check(cudaGetLastError(), "DPA4 block grid product launch failed");
 
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 48, 152, &one,
-            scratch1, 192, grid_stride,
-            grid_from, 152, 0, &zero,
-            scratch2, 192, coefficient_stride, batch_count),
-        "DPA4 block grid grid-to-coefficient projection failed");
-    check_cublas(
-        cublasSgemmStridedBatched(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            192, 48, 192, &one,
-            output_weight, 192, 0,
-            scratch2, 192, coefficient_stride, &zero,
-            activation + static_cast<std::size_t>(node_begin) * 48U * 192U,
-            192, output_stride, batch_count),
-        "DPA4 block grid output projection failed");
+    launch_row_major_gemm(
+        grid_from, scratch1, scratch2,
+        48, 192, 152, 152, 192, 192,
+        0, grid_stride, coefficient_stride, tile_nodes, stream,
+        "DPA4 block grid grid-to-coefficient projection launch failed");
+    launch_row_major_gemm(
+        scratch2, output_weight,
+        activation + static_cast<std::size_t>(node_begin) * 48U * 192U,
+        flattened_rows, 192, 192, 192, 192, 192,
+        0, 0, 0, 1, stream,
+        "DPA4 block grid output projection launch failed");
     block_grid_post_kernel<<<
         static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
         packed, node_begin, tile_nodes, scalar_weight, activation);
     launch_check(cudaGetLastError(), "DPA4 block grid gate launch failed");
 }
 
-void radial_so2_cublas(
-    cublasHandle_t handle,
+void radial_so2(
     std::int64_t edges,
     const float* radial,
     const DeviceBlock& block,
@@ -2450,21 +2708,13 @@ void radial_so2_cublas(
     if (edges <= 0) {
         return;
     }
-    const int edge_count = static_cast<int>(edges);
-    constexpr float one = 1.0F;
-    constexpr float zero = 0.0F;
 
     // The radial mixer is shared by every edge.  Flattening the edge
-    // dimension into GEMM's M dimension replaces one 256-by-25 dot-product
-    // loop per edge with one batched matrix multiplication.
-    check_cublas(
-        cublasSgemm(
-            handle, CUBLAS_OP_N, CUBLAS_OP_N,
-            25, edge_count, 256, &one,
-            block.radial_mixer, 25,
-            radial, 256, &zero,
-            radial_compact, 25),
-        "DPA4 radial mixer projection failed");
+    // dimension into the row-major projection below.
+    launch_row_major_gemm(
+        radial, block.radial_mixer, radial_compact,
+        edges, 25, 256, 256, 25, 25, 0, 0, 0, 1, stream,
+        "DPA4 radial mixer projection launch failed");
     radial_mix_initial_kernel<<<
         static_cast<unsigned int>(edges), 256, 0, stream>>>(
         edges, radial_compact, block.radial_channel_basis, local);
@@ -2475,27 +2725,19 @@ void radial_so2_cublas(
             static_cast<unsigned int>(edges), 256, 0, stream>>>(
             edges, local, radial_input);
         launch_check(cudaGetLastError(), "DPA4 radial m0 pack launch failed");
-        check_cublas(
-            cublasSgemm(
-                handle, CUBLAS_OP_N, CUBLAS_OP_N,
-                256, edge_count, 256, &one,
-                block.so2_m0[layer], 256,
-                radial_input, 256, &zero,
-                radial_projection, 256),
-            "DPA4 radial m0 projection failed");
+        launch_row_major_gemm(
+            radial_input, block.so2_m0[layer], radial_projection,
+            edges, 256, 256, 256, 256, 256, 0, 0, 0, 1, stream,
+            "DPA4 radial m0 projection launch failed");
 
         pack_radial_m1_inputs_kernel<<<
             static_cast<unsigned int>(edges), 256, 0, stream>>>(
             edges, local, radial_sign);
         launch_check(cudaGetLastError(), "DPA4 radial m1 pack launch failed");
-        check_cublas(
-            cublasSgemm(
-                handle, CUBLAS_OP_N, CUBLAS_OP_N,
-                384, 2 * edge_count, 192, &one,
-                block.so2_m1[layer], 384,
-                radial_sign, 192, &zero,
-                radial_m1_output, 384),
-            "DPA4 radial m1 projection failed");
+        launch_row_major_gemm(
+            radial_sign, block.so2_m1[layer], radial_m1_output,
+            2 * edges, 384, 192, 192, 384, 384, 0, 0, 0, 1, stream,
+            "DPA4 radial m1 projection launch failed");
         radial_apply_kernel<<<
             static_cast<unsigned int>(edges), 256, 0, stream>>>(
             radial_projection, radial_m1_output,
@@ -2813,12 +3055,6 @@ DeviceDpa4Model::DeviceDpa4Model(
     model->device.grid_to = device_data<float>(model->top[kGridTo]);
     model->device.grid_from = device_data<float>(model->top[kGridFrom]);
     model->device.blocks = model->block_views.data();
-    check_cublas(
-        cublasCreate(&model->cublas),
-        "could not create the DPA4 cuBLAS handle");
-    check_cublas(
-        cublasSetStream(model->cublas, context.stream()),
-        "could not bind the DPA4 cuBLAS handle to the CUDA stream");
     model_ = std::move(model);
 }
 
@@ -2940,8 +3176,8 @@ std::vector<double> DeviceDpa4Model::compute(
             static_cast<std::int32_t*>(model_->active_nodes_device->pointer),
             radial_compact, envelopes);
         launch_check(cudaGetLastError(), "DPA4 geometry kernel launch failed");
-        environment_rbf_cublas(
-            model_->cublas, static_cast<std::int64_t>(edges), radial_compact,
+        environment_rbf(
+            static_cast<std::int64_t>(edges), radial_compact,
             model_->device, radial_input, context.stream());
         prepare_environment_input_kernel<<<edge_blocks, 128, 0, context.stream()>>>(
             graph.offsets(), graph.atoms(), graph.shifts(), device_type_indices,
@@ -2950,8 +3186,8 @@ std::vector<double> DeviceDpa4Model::compute(
         launch_check(
             cudaGetLastError(),
             "DPA4 environment input kernel launch failed");
-        environment_g_cublas(
-            model_->cublas, static_cast<std::int64_t>(edges), model_->device,
+        environment_g(
+            static_cast<std::int64_t>(edges), model_->device,
             radial_projection, radial_bias, context.stream());
     }
     prepare_environment_aggregate_kernel<<<
@@ -2961,8 +3197,8 @@ std::vector<double> DeviceDpa4Model::compute(
     launch_check(
         cudaGetLastError(),
         "DPA4 environment aggregation kernel launch failed");
-    radial_initial_cublas(
-        model_->cublas, static_cast<std::int64_t>(edges), radial_compact,
+    radial_initial(
+        static_cast<std::int64_t>(edges), radial_compact,
         model_->device, radial_input, radial, envelopes, context.stream());
     prepare_film_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
         batch.atoms(), state1 + 128, model_->device, state1);
@@ -2983,20 +3219,19 @@ std::vector<double> DeviceDpa4Model::compute(
             block.pre_norm_scale, block.pre_norm_bias, block.pre_norm_balance,
             state1);
         launch_check(cudaGetLastError(), "DPA4 pre-norm kernel launch failed");
-        so3_linear_cublas(
-            model_->cublas, state1, static_cast<std::int64_t>(atoms), 64, 64,
-            block.pre_focus, pre_focus);
+        so3_linear(
+            state1, static_cast<std::int64_t>(atoms), 64, 64,
+            block.pre_focus, pre_focus, context.stream());
         if (edges != 0) {
             constexpr unsigned int edge_block_size = 256;
             edge_local_from_state_kernel<<<static_cast<unsigned int>(edges), edge_block_size, 0, context.stream()>>>(
                 graph.offsets(), graph.atoms(), graph.shifts(), batch.atoms(),
                 rotation, pre_focus, radial, local, radial_bias);
             launch_check(cudaGetLastError(), "DPA4 local rotation launch failed");
-            radial_so2_cublas(
-                model_->cublas, static_cast<std::int64_t>(edges), radial, block,
+            radial_so2(
+                static_cast<std::int64_t>(edges), radial, block,
                 radial_compact, radial_input, radial_sign, radial_projection,
-                radial_m1_output, local, edge_message,
-                context.stream());
+                radial_m1_output, local, edge_message, context.stream());
             rotate_edge_kernel<<<static_cast<unsigned int>(edges), edge_block_size, 0, context.stream()>>>(
                 graph.offsets(), batch.atoms(), rotation, local, edge_message);
             launch_check(cudaGetLastError(), "DPA4 edge message launch failed");
@@ -3039,14 +3274,14 @@ std::vector<double> DeviceDpa4Model::compute(
         ffn_normalize_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
             state1, batch.atoms(), block, pre_focus);
         launch_check(cudaGetLastError(), "DPA4 FFN normalization launch failed");
-        so3_linear_cublas(
-            model_->cublas, pre_focus, static_cast<std::int64_t>(atoms), 64, 1152,
-            block.ffn_linear1, hidden);
+        so3_linear(
+            pre_focus, static_cast<std::int64_t>(atoms), 64, 1152,
+            block.ffn_linear1, hidden, context.stream());
         for (std::size_t start = 0; start < atoms; start += kGridTileNodes) {
             const std::size_t tile = std::min(
                 static_cast<std::size_t>(kGridTileNodes), atoms - start);
-            block_grid_cublas(
-                model_->cublas, hidden, static_cast<std::int64_t>(start),
+            block_grid(
+                hidden, static_cast<std::int64_t>(start),
                 static_cast<std::int64_t>(tile), model_->device.grid_to,
                 model_->device.grid_from, block.ffn_grid_left,
                 block.ffn_grid_right, block.ffn_grid_out,
@@ -3060,14 +3295,15 @@ std::vector<double> DeviceDpa4Model::compute(
             message, device_active_nodes, batch.atoms(), state0);
         launch_check(cudaGetLastError(), "DPA4 inactive-state restore failed");
     }
-    so3_linear_cublas(
-        model_->cublas, state0, static_cast<std::int64_t>(atoms), 64, 1152,
-        device_data<float>(model_->top[kOutputLinear1]), hidden);
+    so3_linear(
+        state0, static_cast<std::int64_t>(atoms), 64, 1152,
+        device_data<float>(model_->top[kOutputLinear1]), hidden,
+        context.stream());
     for (std::size_t start = 0; start < atoms; start += kGridTileNodes) {
         const std::size_t tile = std::min(
             static_cast<std::size_t>(kGridTileNodes), atoms - start);
-        output_grid_cublas(
-            model_->cublas, hidden, static_cast<std::int64_t>(start),
+        output_grid(
+            hidden, static_cast<std::int64_t>(start),
             static_cast<std::int64_t>(tile), model_->device.grid_to,
             model_->device.grid_from,
             device_data<float>(model_->top[kOutputGridLeft]),

@@ -50,11 +50,12 @@ python -m pip install ".[ase]"
 python -m pip install ".[sparse]"
 ```
 
-DPA4 and DPA4C are CPU-only implementations. Their official `.pt` checkpoints
-are parsed by the bundled restricted NumPy reader without importing or
-installing Torch; the supported default graphs run through the C++17/OpenMP
-backend and specialised configurations retain the NumPy fallback. No network
-model download is performed.
+DPA4 and DPA4C also expose CUDA execution through the optional plugin. Their
+official `.pt` checkpoints are parsed by the bundled restricted NumPy reader
+without importing or installing Torch; the supported default graphs run
+through the C++17/OpenMP backend or the custom CUDA backend, while specialised
+configurations retain the NumPy fallback. No network model download is
+performed.
 
 The base wheel keeps the CPU backend as its default. `NeighborList`,
 `SphericalExpansion`, `SoapRadialSpectrum`, and `SoapPowerSpectrum` also
@@ -73,15 +74,16 @@ The CUDA target requires a CUDA toolkit and an explicit architecture list.
 Without the plugin or a usable CUDA driver, a CUDA computation reports the
 structured `device_unavailable` error.
 
-基础 wheel 默认使用 CPU。`NeighborList`、`SphericalExpansion`、
-`SoapRadialSpectrum` 和 `SoapPowerSpectrum` 声明支持 `device="cuda"`；其他
+基础 wheel 默认使用 CPU。`NeighborList`、`NEP`、`SphericalExpansion`、
+`SoapRadialSpectrum`、`SoapPowerSpectrum`、`DPA4` 和 `DPA4C` 声明支持
+`device="cuda"`；其他
 内置描述符仍为 CPU-only。CUDA 是显式启用的独立插件目标，没有插件或不可用
 驱动时不会静默回退，而是返回结构化的 `device_unavailable` 错误。
 
 For end-user distribution, the repository also provides an independent
 `MDescriptor-CUDA` wheel. It contains the CUDA extension and the CUDA
-user-space runtime/cuBLAS libraries, while the host NVIDIA driver remains
-required. The target machine does not need a full CUDA Toolkit:
+user-space CUDA runtime library, while the host NVIDIA driver remains required.
+The target machine does not need a full CUDA Toolkit:
 
 ```bash
 python -m build packaging/cuda --wheel --outdir dist \
@@ -97,7 +99,7 @@ python scripts/build_cuda_wheel.py --arch 75
 ```
 
 面向最终用户发布时，仓库还提供独立的 `MDescriptor-CUDA` wheel。该 wheel
-包含 CUDA 插件和 CUDA 用户态 Runtime/cuBLAS，宿主机仍必须安装 NVIDIA 驱动，
+包含 CUDA 插件和 CUDA 用户态 Runtime，宿主机仍必须安装 NVIDIA 驱动，
 但目标机不需要完整 CUDA Toolkit。当前 wheel 仅面向 Linux，并且构建时必须
 显式指定目标 GPU 架构。
 

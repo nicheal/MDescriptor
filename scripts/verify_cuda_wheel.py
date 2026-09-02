@@ -8,7 +8,8 @@ import tempfile
 from pathlib import Path
 from zipfile import ZipFile
 
-RUNTIME_LIBRARY_NAMES = ("libcudart", "libcublas", "libcublasLt")
+RUNTIME_LIBRARY_NAMES = ("libcudart",)
+FORBIDDEN_LIBRARY_NAMES = ("libcublas", "libcublasLt")
 
 
 def _readelf(path: Path) -> str:
@@ -38,6 +39,19 @@ def verify(wheel: Path) -> None:
                 for prefix in RUNTIME_LIBRARY_NAMES
             )
         )
+        forbidden_files = sorted(
+            name
+            for name in names
+            if name.startswith("mdescriptor/.cuda_libs/")
+            and any(
+                Path(name).name.startswith(prefix + ".so.")
+                for prefix in FORBIDDEN_LIBRARY_NAMES
+            )
+        )
+        if forbidden_files:
+            raise SystemExit(
+                f"CUDA wheel must not contain cuBLAS runtime files: {forbidden_files}"
+            )
         expected_runtime_count = len(RUNTIME_LIBRARY_NAMES)
         if len(runtime_files) != expected_runtime_count:
             raise SystemExit(
@@ -71,6 +85,8 @@ def verify(wheel: Path) -> None:
             dynamic = _readelf(plugin)
             if "$ORIGIN/.cuda_libs" not in dynamic:
                 raise SystemExit("CUDA extension does not contain the private runtime RPATH")
+            if any(library in dynamic for library in FORBIDDEN_LIBRARY_NAMES):
+                raise SystemExit("CUDA extension still has a cuBLAS dynamic dependency")
             try:
                 resolved = subprocess.run(
                     ["ldd", str(plugin)],

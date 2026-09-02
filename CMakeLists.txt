@@ -206,7 +206,7 @@ endif()
 option(MDESCRIPTOR_BUILD_CUDA "Build the optional MDescriptor CUDA plugin" OFF)
 option(
     MDESCRIPTOR_BUNDLE_CUDA_RUNTIME
-    "Bundle the CUDA runtime and cuBLAS shared libraries with the CUDA plugin"
+    "Bundle the CUDA runtime shared library with the CUDA plugin"
     OFF)
 if(MDESCRIPTOR_BUILD_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
@@ -255,13 +255,14 @@ if(MDESCRIPTOR_BUILD_CUDA)
         unset(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
     endif()
     target_compile_features(_cuda PRIVATE cxx_std_17)
-    # pybind11 enables host LTO for its extension targets.  CUDA relocatable
-    # device code has its own device-link step; disabling host IPO here avoids
-    # the CUDA toolchain dropping the fatbin registration symbol at the final
-    # Python-module link.
+    # These CUDA translation units do not export cross-translation-unit device
+    # symbols.  Keep separable compilation off so fixed-shape DPA4 kernels are
+    # compiled as native device code instead of paying the RDC throughput
+    # penalty.  Host IPO is disabled as well because pybind11's LTO interface
+    # can otherwise drop the CUDA fatbin registration symbol at module link.
     set_target_properties(
         _cuda PROPERTIES
-        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_SEPARABLE_COMPILATION OFF
         INTERPROCEDURAL_OPTIMIZATION OFF)
     target_compile_options(_cuda PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-lto>)
     target_link_options(_cuda PRIVATE -fno-lto)
@@ -269,9 +270,7 @@ if(MDESCRIPTOR_BUILD_CUDA)
         _cuda PRIVATE
         cpp/include cpp/src cpp/src/common cpp/src/standalone
         cpp/cuda/include)
-    # Link cuBLASLt explicitly as well as through cuBLAS so the CUDA target
-    # resolves the complete cuBLAS closure from one toolkit installation.
-    target_link_libraries(_cuda PRIVATE CUDA::cudart CUDA::cublas CUDA::cublasLt)
+    target_link_libraries(_cuda PRIVATE CUDA::cudart)
     if(MDESCRIPTOR_BUNDLE_CUDA_RUNTIME)
         if(NOT UNIX OR APPLE)
             message(FATAL_ERROR
@@ -279,7 +278,7 @@ if(MDESCRIPTOR_BUILD_CUDA)
         endif()
 
         set(_MDESCRIPTOR_CUDA_RUNTIME_DIRS)
-        foreach(_cuda_target CUDA::cudart CUDA::cublas CUDA::cublasLt)
+        foreach(_cuda_target CUDA::cudart)
             get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION)
             if(NOT _cuda_location)
                 get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION_RELEASE)
@@ -293,12 +292,12 @@ if(MDESCRIPTOR_BUILD_CUDA)
         endforeach()
         list(REMOVE_DUPLICATES _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
 
-        # CUDA installs a development symlink, a SONAME symlink (for example
-        # libcublas.so.13), and a fully-versioned file.  Wheels should contain
-        # a real file under the SONAME name rather than a symlink that may be
-        # lost by a wheel/archive tool.
+        # CUDA installs a development symlink, a SONAME symlink, and a
+        # fully-versioned file.  Wheels should contain a real file under the
+        # SONAME name rather than a symlink that may be lost by an archive
+        # tool.
         set(_MDESCRIPTOR_CUDA_RUNTIME_FILES)
-        foreach(_cuda_library cudart cublas cublasLt)
+        foreach(_cuda_library cudart)
             set(_cuda_soname_link)
             foreach(_cuda_dir IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
                 file(GLOB _cuda_candidates LIST_DIRECTORIES FALSE
