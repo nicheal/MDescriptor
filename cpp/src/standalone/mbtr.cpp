@@ -98,7 +98,7 @@ void normalize_histogram(
 
 void count_structure_species(
     const StructureBatchView& batch,
-    const detail::TypeMap& mapping,
+    const std::vector<std::int32_t>& atom_types,
     int species_count,
     std::int64_t structure,
     std::vector<int>& counts,
@@ -107,7 +107,7 @@ void count_structure_species(
     const std::int64_t end = batch.offsets[structure + 1];
     counts.assign(static_cast<std::size_t>(species_count), 0);
     for (std::int64_t atom = begin; atom < end; ++atom) {
-        ++counts[static_cast<std::size_t>(mapping.at(batch.numbers[atom]))];
+        ++counts[static_cast<std::size_t>(atom_types[static_cast<std::size_t>(atom)])];
     }
     volume = detail::mbtr::cell_volume(batch.cells + structure * 9);
 }
@@ -126,7 +126,7 @@ std::vector<std::int64_t> structure_for_atoms(const StructureBatchView& batch) {
 void accumulate_nonlocal_center(
     const StructureBatchView& batch,
     const MBTROptions& options,
-    const detail::TypeMap& mapping,
+    const std::vector<std::int32_t>& atom_types,
     int species_count,
     int pair_count,
     const NeighborGraph& graph,
@@ -134,7 +134,7 @@ void accumulate_nonlocal_center(
     double* target,
     const std::shared_ptr<ComputeControl>& control) {
     const NeighborView neighbors = graph.for_center(center);
-    const int center_type = static_cast<int>(mapping.at(batch.numbers[center]));
+    const int center_type = atom_types[static_cast<std::size_t>(center)];
     for (std::size_t first_index = 0; first_index < neighbors.size; ++first_index) {
         if (cancelled(control)) {
             return;
@@ -151,7 +151,7 @@ void accumulate_nonlocal_center(
             && !first_periodic && first_atom < center) {
             continue;
         }
-        const int first_type = static_cast<int>(mapping.at(batch.numbers[first_atom]));
+        const int first_type = atom_types[static_cast<std::size_t>(first_atom)];
         if (options.geometry == MBTRGeometry::Distance || options.geometry == MBTRGeometry::InverseDistance) {
             const double weight = mbtr_weight(options, first_distance, 0.0) * (first_periodic ? 0.5 : 1.0);
             const double value = options.geometry == MBTRGeometry::Distance ? first_distance : 1.0 / first_distance;
@@ -191,7 +191,7 @@ void accumulate_nonlocal_center(
             const double value = options.geometry == MBTRGeometry::Cosine
                 ? cosine : std::acos(cosine) * 180.0 / detail::mbtr::kPi;
             const double weight = mbtr_weight(options, first_distance, second_distance, third_distance);
-            const int second_type = static_cast<int>(mapping.at(batch.numbers[second_atom]));
+            const int second_type = atom_types[static_cast<std::size_t>(second_atom)];
             const int channel = center_type * pair_count + detail::mbtr::pair_channel(first_type, second_type, species_count);
             add_histogram(target + channel * options.grid_n, value, weight, options);
         }
@@ -201,7 +201,7 @@ void accumulate_nonlocal_center(
 void accumulate_local_center(
     const StructureBatchView& batch,
     const MBTROptions& options,
-    const detail::TypeMap& mapping,
+    const std::vector<std::int32_t>& atom_types,
     int species_count,
     const NeighborGraph& graph,
     std::int64_t center,
@@ -217,7 +217,7 @@ void accumulate_local_center(
             if (distance <= 1e-12 || (neighbors.atoms[index] == center && neighbors.exact_self(index, center))) {
                 continue;
             }
-            const int channel = static_cast<int>(mapping.at(batch.numbers[neighbors.atoms[index]])) + 1;
+            const int channel = atom_types[static_cast<std::size_t>(neighbors.atoms[index])] + 1;
             const double value = options.geometry == MBTRGeometry::Distance ? distance : 1.0 / distance;
             add_histogram(target + channel * options.grid_n, value, mbtr_weight(options, distance, 0.0), options);
         }
@@ -264,8 +264,8 @@ void accumulate_local_center(
                 neighbors.displacements[second_index * 3 + 2]};
             const double third_distance = norm(first_vector - second_vector);
             const double weight = mbtr_weight(options, first_distance, second_distance, third_distance);
-            const int first_type = static_cast<int>(mapping.at(batch.numbers[neighbors.atoms[first_index]])) + 1;
-            const int second_type = static_cast<int>(mapping.at(batch.numbers[neighbors.atoms[second_index]])) + 1;
+            const int first_type = atom_types[static_cast<std::size_t>(neighbors.atoms[first_index])] + 1;
+            const int second_type = atom_types[static_cast<std::size_t>(neighbors.atoms[second_index])] + 1;
 
             // The center atom is the angle vertex: (first, X, second).
             add_angle(
@@ -285,7 +285,7 @@ void accumulate_local_center(
 void compute_nonlocal_structure(
     const StructureBatchView& batch,
     const MBTROptions& options,
-    const detail::TypeMap& mapping,
+    const std::vector<std::int32_t>& atom_types,
     int species_count,
     int pair_count,
     const NeighborGraph& graph,
@@ -309,7 +309,7 @@ void compute_nonlocal_structure(
                 return;
             }
             accumulate_nonlocal_center(
-                batch, options, mapping, species_count, pair_count, graph,
+                batch, options, atom_types, species_count, pair_count, graph,
                 begin + local, target, control);
         }
     } else {
@@ -329,7 +329,7 @@ void compute_nonlocal_structure(
             const int worker = 0;
 #endif
             accumulate_nonlocal_center(
-                batch, options, mapping, species_count, pair_count, graph,
+                batch, options, atom_types, species_count, pair_count, graph,
                 begin + local,
                 partials.data() + static_cast<std::size_t>(worker) * worker_values,
                 control);
@@ -385,6 +385,7 @@ void compute_mbtr(
         throw std::invalid_argument("invalid MBTR thread count");
     }
     const auto mapping = type_map(options.species);
+    const auto atom_types = make_atom_types(batch, mapping);
     const std::int64_t features = mbtr_feature_count(options);
     const std::int64_t rows = options.local ? batch.atoms : batch.structures;
     std::fill(output, output + rows * features, 0.0);
@@ -428,7 +429,7 @@ void compute_mbtr(
                 const std::int64_t structure = structure_for_atom[static_cast<std::size_t>(center)];
                 const int atom_count = static_cast<int>(
                     batch.offsets[structure + 1] - batch.offsets[structure]);
-                const int channel = static_cast<int>(mapping.at(batch.numbers[center]));
+                const int channel = atom_types[static_cast<std::size_t>(center)];
                 double* target = output + center * features;
                 add_histogram(
                     target + channel * options.grid_n,
@@ -461,7 +462,7 @@ void compute_mbtr(
                 if (cancelled(control)) {
                     break;
                 }
-                const int channel = static_cast<int>(mapping.at(batch.numbers[atom]));
+                const int channel = atom_types[static_cast<std::size_t>(atom)];
                 add_histogram(
                     target + channel * options.grid_n,
                     static_cast<double>(batch.numbers[atom]), 1.0, options);
@@ -493,7 +494,7 @@ void compute_mbtr(
             const int atom_count = static_cast<int>(batch.offsets[structure + 1] - begin);
             double* target = output + center * features;
             accumulate_local_center(
-                batch, options, mapping, species_count, graph,
+                batch, options, atom_types, species_count, graph,
                 center, target, control);
             if (!cancelled(control)) {
                 normalize_histogram(target, features, options, atom_count, {}, 0.0);
@@ -528,10 +529,10 @@ void compute_mbtr(
             double volume = 0.0;
             if (needs_species_counts) {
                 count_structure_species(
-                    batch, mapping, species_count, structure, species_counts, volume);
+                    batch, atom_types, species_count, structure, species_counts, volume);
             }
             compute_nonlocal_structure(
-                batch, options, mapping, species_count, pair_count, graph,
+                batch, options, atom_types, species_count, pair_count, graph,
                 structure, features, output + structure * features,
                 species_counts, volume, 1, control);
             if (!cancelled(control)) {
@@ -548,10 +549,10 @@ void compute_mbtr(
             double volume = 0.0;
             if (needs_species_counts) {
                 count_structure_species(
-                    batch, mapping, species_count, structure, species_counts, volume);
+                    batch, atom_types, species_count, structure, species_counts, volume);
             }
             compute_nonlocal_structure(
-                batch, options, mapping, species_count, pair_count, graph,
+                batch, options, atom_types, species_count, pair_count, graph,
                 structure, features, output + structure * features,
                 species_counts, volume, environment_workers, control);
             if (cancelled(control)) {

@@ -340,6 +340,13 @@ struct GtoRadialBasis {
     std::vector<double> lode_prefactors;
     double gamma_b = 0.0;
     std::vector<std::vector<double>> orthonormalization;
+    // Density-dependent factors are shared by every edge using this basis.
+    // Preparing them once removes a pow() and the common scalar setup from the
+    // radial hot loop without changing the evaluated expression.
+    double prepared_density_width = -1.0;
+    double prepared_density_constant = 0.0;
+    double prepared_global_factor = 0.0;
+    std::vector<double> prepared_radial_powers;
 
     GtoRadialBasis(int size_, double radius_, int angular_ = 0)
         : size(size_), radius(radius_), angular_channel(angular_) {
@@ -383,6 +390,61 @@ struct GtoRadialBasis {
         }
     }
 
+    void prepare_density(double density_width_) {
+        if (prepared_density_width == density_width_
+            && prepared_radial_powers.size() == static_cast<std::size_t>(size)) {
+            return;
+        }
+        const double density_width2 = density_width_ * density_width_;
+        prepared_density_width = density_width_;
+        prepared_density_constant = 1.0 / (2.0 * density_width2);
+        prepared_global_factor = std::pow(kPi / density_width2, 0.75);
+        prepared_radial_powers.resize(static_cast<std::size_t>(size));
+        for (int n = 0; n < size; ++n) {
+            const double exponent = 0.5 * (n + angular_channel + 3.0);
+            prepared_radial_powers[static_cast<std::size_t>(n)] = std::pow(
+                prepared_density_constant + gto_constants[static_cast<std::size_t>(n)],
+                -exponent);
+        }
+    }
+
+    void radial_integral_into_prepared(
+        double distance, std::vector<double>& result, std::vector<double>& raw) const {
+        const int angular = angular_channel;
+        result.resize(static_cast<std::size_t>(size));
+        std::fill(result.begin(), result.end(), 0.0);
+        raw.resize(static_cast<std::size_t>(size));
+        const double c_r = prepared_density_constant * distance;
+        const double factor = prepared_global_factor * std::exp(-distance * c_r)
+            * std::pow(c_r, angular);
+        for (int n = 0; n < size; ++n) {
+            const double gto_constant = gto_constants[static_cast<std::size_t>(n)];
+            const double z = c_r * c_r / (prepared_density_constant + gto_constant);
+            const double a = 0.5 * (n + angular + 3.0);
+            const double b = angular + 1.5;
+            if (z > 30.0) {
+                const double asymptotic = regularized_hyp1f1_positive(a, b, z);
+                const double logarithm = std::log(prepared_global_factor) - distance * c_r
+                    + static_cast<double>(angular) * std::log(c_r)
+                    - a * std::log(prepared_density_constant + gto_constant)
+                    + z + (a - b) * std::log(z);
+                raw[static_cast<std::size_t>(n)] = std::exp(logarithm) * asymptotic;
+            } else {
+                raw[static_cast<std::size_t>(n)] = gamma_a[static_cast<std::size_t>(n)] / gamma_b
+                    * hyp1f1(a, b, z)
+                    * prepared_radial_powers[static_cast<std::size_t>(n)] * factor;
+            }
+        }
+        for (int n = 0; n < size; ++n) {
+            const double raw_value = raw[static_cast<std::size_t>(n)];
+            const auto& normalization = orthonormalization[static_cast<std::size_t>(n)];
+            for (int target = 0; target < size; ++target) {
+                result[static_cast<std::size_t>(target)] += raw_value
+                    * normalization[static_cast<std::size_t>(target)];
+            }
+        }
+    }
+
     void radial_integral_into(double distance, int angular, double density_width, std::vector<double>& result) const {
         std::vector<double> raw;
         radial_integral_into(distance, angular, density_width, result, raw);
@@ -391,8 +453,9 @@ struct GtoRadialBasis {
     void radial_integral_into(
         double distance, int angular, double density_width,
         std::vector<double>& result, std::vector<double>& raw) const {
-        result.assign(static_cast<std::size_t>(size), 0.0);
-        raw.assign(static_cast<std::size_t>(size), 0.0);
+        result.resize(static_cast<std::size_t>(size));
+        std::fill(result.begin(), result.end(), 0.0);
+        raw.resize(static_cast<std::size_t>(size));
         const double density_width2 = density_width * density_width;
         const double density_constant = 1.0 / (2.0 * density_width2);
         const double global_factor = std::pow(kPi / density_width2, 0.75);
@@ -440,8 +503,9 @@ struct GtoRadialBasis {
     void lode_radial_integral_into(
         double k_norm, int angular, std::vector<double>& result,
         std::vector<double>& raw) const {
-        result.assign(static_cast<std::size_t>(size), 0.0);
-        raw.assign(static_cast<std::size_t>(size), 0.0);
+        result.resize(static_cast<std::size_t>(size));
+        std::fill(result.begin(), result.end(), 0.0);
+        raw.resize(static_cast<std::size_t>(size));
         const double global_factor = std::sqrt(kPi) / kSqrt2;
         for (int n = 0; n < size; ++n) {
             const double sigma = widths[static_cast<std::size_t>(n)];
@@ -485,6 +549,7 @@ struct RadialBasisSet {
     int max_angular = -1;
     double radius = 0.0;
     std::vector<GtoRadialBasis> bases;
+    double prepared_density_width = -1.0;
 
     bool matches(int max_radial_, int max_angular_, double radius_) const noexcept {
         return max_radial == max_radial_
@@ -496,12 +561,23 @@ struct RadialBasisSet {
         max_radial = max_radial_;
         max_angular = max_angular_;
         radius = radius_;
+        prepared_density_width = -1.0;
         const int radial_count = max_radial + 1;
         bases.clear();
         bases.reserve(static_cast<std::size_t>(max_angular + 1));
         for (int angular = 0; angular <= max_angular; ++angular) {
             bases.emplace_back(radial_count, radius, angular);
         }
+    }
+
+    void prepare_density(double density_width) {
+        if (prepared_density_width == density_width) {
+            return;
+        }
+        for (auto& basis : bases) {
+            basis.prepare_density(density_width);
+        }
+        prepared_density_width = density_width;
     }
 
     const GtoRadialBasis& operator[](std::size_t angular) const noexcept {
@@ -514,7 +590,7 @@ inline void real_spherical_harmonics_into(
     int max_angular,
     std::vector<double>& output,
     std::vector<double>& legendre) {
-    output.assign(static_cast<std::size_t>((max_angular + 1) * (max_angular + 1)), 0.0);
+    output.resize(static_cast<std::size_t>((max_angular + 1) * (max_angular + 1)));
     const double norm = std::sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
     std::array<double, 3> direction = vector;
     if (norm < 1e-6) {
@@ -524,7 +600,7 @@ inline void real_spherical_harmonics_into(
             value /= norm;
         }
     }
-    legendre.assign(static_cast<std::size_t>((max_angular + 1) * (max_angular + 2) / 2), 0.0);
+    legendre.resize(static_cast<std::size_t>((max_angular + 1) * (max_angular + 2) / 2));
     auto legendre_at = [max_angular, &legendre](int l, int m) -> double& {
         (void)max_angular;
         return legendre[static_cast<std::size_t>(m + l * (l + 1) / 2)];
@@ -609,11 +685,11 @@ inline void compute_edge_basis_into(
     const int max_angular = options.max_angular;
     const std::size_t harmonic_count = static_cast<std::size_t>(max_angular + 1)
         * static_cast<std::size_t>(max_angular + 1);
-    edge_basis.assign(harmonic_count * static_cast<std::size_t>(n_radial), 0.0);
+    edge_basis.resize(harmonic_count * static_cast<std::size_t>(n_radial));
     real_spherical_harmonics_into(displacement, max_angular, harmonics, legendre);
     for (int angular = 0; angular <= max_angular; ++angular) {
-        radial_bases[static_cast<std::size_t>(angular)].radial_integral_into(
-            distance, angular, options.density_width, radial, radial_raw);
+        radial_bases[static_cast<std::size_t>(angular)].radial_integral_into_prepared(
+            distance, radial, radial_raw);
         for (int m = -angular; m <= angular; ++m) {
             const std::size_t harmonic_offset = static_cast<std::size_t>(
                 angular * angular + angular + m) * static_cast<std::size_t>(n_radial);
@@ -637,9 +713,11 @@ inline void compute_coefficients_into(
     std::vector<double>& harmonics,
     std::vector<double>& legendre,
     std::vector<double>& radial,
-    std::vector<double>& radial_raw,
-    std::vector<double>& edge_basis) {
+    std::vector<double>& radial_raw) {
     const int n_radial = options.max_radial + 1;
+    const int angular_count = options.max_angular + 1;
+    const std::size_t angular_block = static_cast<std::size_t>(angular_count)
+        * static_cast<std::size_t>(angular_count);
     coefficients.assign(static_cast<std::size_t>(local_coefficient_count(
         options, LocalDescriptorKind::SphericalExpansion)), 0.0);
     const NeighborView neighbors = graph.for_center(center);
@@ -655,17 +733,23 @@ inline void compute_coefficients_into(
             neighbors.displacements[index * 3 + 1],
             neighbors.displacements[index * 3 + 2],
         };
-        compute_edge_basis_into(
-            distance, displacement, options, radial_bases, scaling,
-            harmonics, legendre, radial, radial_raw, edge_basis);
-        for (int angular = 0; angular <= options.max_angular; ++angular) {
+        real_spherical_harmonics_into(displacement, options.max_angular, harmonics, legendre);
+        const std::size_t species_offset = type
+            * static_cast<std::size_t>(n_radial) * angular_block;
+        for (int angular = 0; angular < angular_count; ++angular) {
+            radial_bases[static_cast<std::size_t>(angular)].radial_integral_into_prepared(
+                distance, radial, radial_raw);
+            for (double& value : radial) {
+                value *= scaling;
+            }
             for (int m = -angular; m <= angular; ++m) {
-                const std::size_t edge_offset = static_cast<std::size_t>(
-                    angular * angular + angular + m) * static_cast<std::size_t>(n_radial);
+                const std::size_t harmonic = static_cast<std::size_t>(
+                    angular * angular + angular + m);
+                const double harmonic_value = harmonics[harmonic];
+                double* coefficient = coefficients.data() + species_offset + harmonic;
                 for (int radial_index = 0; radial_index < n_radial; ++radial_index) {
-                    coefficients[local_coefficient_index(
-                        type, radial_index, angular, m, n_radial, options.max_angular)]
-                        += edge_basis[edge_offset + static_cast<std::size_t>(radial_index)];
+                    coefficient[static_cast<std::size_t>(radial_index) * angular_block]
+                        += radial[static_cast<std::size_t>(radial_index)] * harmonic_value;
                 }
             }
         }

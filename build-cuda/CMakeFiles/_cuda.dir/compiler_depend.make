@@ -49,6 +49,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o: /home/nicheal/MDescriptor/cpp/cu
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp \
+  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
@@ -903,6 +904,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o: /home/nicheal/MDescriptor/cpp/c
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp \
+  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/nep.hpp \
   /usr/include/alloca.h \
@@ -8934,15 +8936,19 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/multimem_st.h:
 
-/usr/include/python3.12/cpython/pylifecycle.h:
+/usr/include/x86_64-linux-gnu/sys/types.h:
 
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/functional.h:
+/usr/include/python3.12/bytesobject.h:
 
-/usr/include/c++/13/bits/shared_ptr.h:
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/relation.h:
 
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/uninitialized_fill.inl:
+/usr/include/python3.12/cpython/pystate.h:
 
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/pybind11_namespace_macros.h:
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__memory/allocator_arg_t.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_scan.cuh:
+
+/usr/include/c++/13/unordered_set:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__event/timed_event.h:
 
@@ -8988,23 +8994,7 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/mbarrier_arrive.h:
 
-/usr/include/python3.12/pyerrors.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cccl/is_non_narrowing_convertible.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cccl/preprocessor.h:
-
-/usr/include/sched.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/maybe_const.h:
-
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/native_enum_data.h:
-
 /usr/include/python3.12/boolobject.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/crt/host_config.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/multimem_red.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__utility/pod_tuple.h:
 
@@ -9192,6 +9182,14 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/include/c++/13/algorithm:
 
+/usr/include/asm-generic/posix_types.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/common_reference_with.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/replace.h:
+
+/usr/include/c++/13/tr1/poly_laguerre.tcc:
+
 /usr/include/x86_64-linux-gnu/gnu/stubs-64.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/device/dispatch/dispatch_find.cuh:
@@ -9236,6 +9234,16 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/include/c++/13/bits/stringfwd.h:
 
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/uninitialized_fill.inl:
+
+/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/pybind11_namespace_macros.h:
+
+/usr/include/python3.12/cpython/pylifecycle.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/functional.h:
+
+/usr/include/c++/13/bits/shared_ptr.h:
+
 /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/function_ref.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/malloc.h:
@@ -9255,20 +9263,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/local/cuda/targets/x86_64-linux/include/cuda_runtime_api.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cccl/host_std_lib.h:
-
-/usr/include/c++/13/bits/ostream_insert.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/static_assert.h:
-
-/usr/include/c++/13/variant:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/cp_async_bulk_commit_group.h:
-
-/usr/include/c++/13/system_error:
-
-/usr/include/c++/13/bits/stl_set.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__fwd/complex.h:
 
 /usr/include/c++/13/valarray:
 
@@ -9442,6 +9436,32 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/pybind11.h:
 
+/usr/include/python3.12/pyerrors.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cccl/is_non_narrowing_convertible.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cccl/preprocessor.h:
+
+/usr/include/sched.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/maybe_const.h:
+
+/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/native_enum_data.h:
+
+/usr/include/c++/13/bits/stl_set.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__fwd/complex.h:
+
+/usr/include/c++/13/bits/ostream_insert.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/detail/static_assert.h:
+
+/usr/include/c++/13/variant:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/cp_async_bulk_commit_group.h:
+
+/usr/include/c++/13/system_error:
+
 /usr/include/c++/13/bits/shared_ptr_atomic.h:
 
 /usr/include/x86_64-linux-gnu/bits/endian.h:
@@ -9602,6 +9622,10 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__utility/__basic_any/interfaces.h:
 
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_copy_constructible.h:
+
+/home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp:
+
 /usr/include/x86_64-linux-gnu/sys/cdefs.h:
 
 /usr/include/c++/13/atomic:
@@ -9724,14 +9748,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/include/c++/13/bits/hash_bytes.h:
 
-/usr/include/asm-generic/posix_types.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/common_reference_with.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/cuda/detail/replace.h:
-
-/usr/include/c++/13/tr1/poly_laguerre.tcc:
-
 /usr/include/c++/13/bits/valarray_array.h:
 
 /usr/include/c++/13/bits/char_traits.h:
@@ -9823,20 +9839,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/iterator/detail/host_system_tag.h:
 
 /usr/include/c++/13/bits/stl_tree.h:
-
-/usr/include/x86_64-linux-gnu/sys/types.h:
-
-/usr/include/python3.12/bytesobject.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/relation.h:
-
-/usr/include/python3.12/cpython/pystate.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__memory/allocator_arg_t.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_scan.cuh:
-
-/usr/include/c++/13/unordered_set:
 
 /usr/include/python3.12/cpython/cellobject.h:
 
@@ -10044,6 +10046,10 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/agent/agent_radix_sort_downsweep.cuh:
 
+/usr/local/cuda/targets/x86_64-linux/include/crt/host_config.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/multimem_red.h:
+
 /usr/include/python3.12/cpython/listobject.h:
 
 /usr/local/cuda/targets/x86_64-linux/include/crt/sm_100_rt.h:
@@ -10163,10 +10169,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/copy.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/array_utils.cuh:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_copy_constructible.h:
-
-/home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__iterator/reverse_iterator.h:
 

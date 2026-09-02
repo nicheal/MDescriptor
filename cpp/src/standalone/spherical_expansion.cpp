@@ -20,17 +20,22 @@ void assemble_spherical_expansion_row(
     std::size_t radial_count,
     int max_angular) {
     const std::size_t angular_count = static_cast<std::size_t>(max_angular + 1);
+    const std::size_t angular_block = angular_count * angular_count;
+    const std::size_t species_block = radial_count * angular_block;
     const std::size_t center_block = species_count * radial_count
-        * angular_count * angular_count;
+        * angular_block;
     row += center_type * center_block;
     std::size_t offset = 0;
     for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
+        const double* species_coefficients = coefficients.data() + neighbor_type * species_block;
         for (int angular = 0; angular <= max_angular; ++angular) {
             for (int m = -angular; m <= angular; ++m) {
+                const std::size_t harmonic = static_cast<std::size_t>(
+                    angular * angular + angular + m);
+                const double* harmonic_coefficients = species_coefficients + harmonic;
                 for (int radial = 0; radial < static_cast<int>(radial_count); ++radial) {
-                    row[offset++] = coefficients[local_coefficient_index(
-                        neighbor_type, radial, angular, m,
-                        static_cast<int>(radial_count), max_angular)];
+                    row[offset++] = harmonic_coefficients[
+                        static_cast<std::size_t>(radial) * angular_block];
                 }
             }
         }
@@ -45,12 +50,10 @@ void assemble_soap_radial_spectrum_row(
     std::size_t radial_count) {
     row += center_type * species_count * radial_count;
     for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
-        for (int radial = 0; radial < static_cast<int>(radial_count); ++radial) {
-            row[neighbor_type * radial_count + static_cast<std::size_t>(radial)]
-                = coefficients[local_coefficient_index(
-                    neighbor_type, radial, 0, 0,
-                    static_cast<int>(radial_count), 0)];
-        }
+        std::copy_n(
+            coefficients.data() + neighbor_type * radial_count,
+            radial_count,
+            row + neighbor_type * radial_count);
     }
 }
 
@@ -63,6 +66,8 @@ void assemble_soap_power_spectrum_row(
     int max_angular,
     const std::vector<double>& angular_scales) {
     const std::size_t angular_count = static_cast<std::size_t>(max_angular + 1);
+    const std::size_t angular_block = angular_count * angular_count;
+    const std::size_t species_block = radial_count * angular_block;
     const std::size_t pair_count = species_count * (species_count + 1) / 2;
     const std::size_t center_block = pair_count * angular_count
         * radial_count * radial_count;
@@ -71,20 +76,25 @@ void assemble_soap_power_spectrum_row(
     const int radial_count_int = static_cast<int>(radial_count);
     for (std::size_t first = 0; first < species_count; ++first) {
         for (std::size_t second = first; second < species_count; ++second) {
+            const double* first_coefficients = coefficients.data() + first * species_block;
+            const double* second_coefficients = coefficients.data() + second * species_block;
             const double pair_scale = first == second ? 1.0 : kSqrt2;
             for (int angular = 0; angular <= max_angular; ++angular) {
                 const double scale = pair_scale
                     * angular_scales[static_cast<std::size_t>(angular)];
+                const std::size_t harmonic_start = static_cast<std::size_t>(angular * angular);
                 for (int first_radial = 0; first_radial < radial_count_int; ++first_radial) {
+                    const double* first_harmonics = first_coefficients
+                        + static_cast<std::size_t>(first_radial) * angular_block
+                        + harmonic_start;
                     for (int second_radial = 0; second_radial < radial_count_int; ++second_radial) {
+                        const double* second_harmonics = second_coefficients
+                            + static_cast<std::size_t>(second_radial) * angular_block
+                            + harmonic_start;
                         double value = 0.0;
-                        for (int m = -angular; m <= angular; ++m) {
-                            value += coefficients[local_coefficient_index(
-                                first, first_radial, angular, m,
-                                radial_count_int, max_angular)]
-                                * coefficients[local_coefficient_index(
-                                    second, second_radial, angular, m,
-                                    radial_count_int, max_angular)];
+                        for (int m = 0; m < 2 * angular + 1; ++m) {
+                            value += first_harmonics[static_cast<std::size_t>(m)]
+                                * second_harmonics[static_cast<std::size_t>(m)];
                         }
                         row[offset++] = scale * value;
                     }
@@ -143,6 +153,7 @@ void compute_spherical_expansion(
         cached_radial_bases.reset(
             options.max_radial, coefficient_max_angular, options.cutoff);
     }
+    cached_radial_bases.prepare_density(options.density_width);
     const auto& radial_bases = cached_radial_bases;
     const std::size_t species_count = options.species.size();
     const std::size_t radial_count = static_cast<std::size_t>(n_radial);
@@ -169,14 +180,13 @@ void compute_spherical_expansion(
         std::vector<double> legendre;
         std::vector<double> radial;
         std::vector<double> radial_raw;
-        std::vector<double> edge_basis;
         coefficients.reserve(static_cast<std::size_t>(local_coefficient_count(
             coefficient_options, LocalDescriptorKind::SphericalExpansion)));
         for (std::int64_t center = begin; center < end; ++center) {
             const auto center_type = static_cast<std::size_t>(atom_types[static_cast<std::size_t>(center)]);
             compute_coefficients_into(
                 graph, center, coefficient_options, atom_types, radial_bases,
-                coefficients, harmonics, legendre, radial, radial_raw, edge_basis);
+                coefficients, harmonics, legendre, radial, radial_raw);
             double* row = output + center * features;
             if (kind == LocalDescriptorKind::SoapRadialSpectrum) {
                 assemble_soap_radial_spectrum_row(

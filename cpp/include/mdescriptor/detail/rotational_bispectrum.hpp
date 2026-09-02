@@ -355,6 +355,7 @@ inline BispectrumPlan make_bispectrum_plan(
 // recomputes CG coefficients or component enumeration per center.
 struct FlattenedBispectrumPlan {
     std::vector<std::int64_t> z_inner_offsets{0};
+    std::vector<std::int64_t> component_z_offsets{0};
     std::vector<std::int64_t> inner_term_offsets{0};
     std::vector<double> inner_outer_coefficients;
     std::vector<std::int64_t> term_first_indices;
@@ -394,6 +395,7 @@ inline FlattenedBispectrumPlan flatten(const BispectrumPlan& plan) {
         }
         result.projection_offsets.push_back(
             static_cast<std::int64_t>(result.projection_u_indices.size()));
+        result.component_z_offsets.push_back(z_base);
     }
     return result;
 }

@@ -42,6 +42,8 @@ constexpr int kMatrixKindCoulomb = static_cast<int>(::mdescriptor::MatrixKind::C
 constexpr int kMatrixPermutationNone = static_cast<int>(::mdescriptor::MatrixPermutation::None);
 constexpr int kMatrixPermutationSortedL2 = static_cast<int>(::mdescriptor::MatrixPermutation::SortedL2);
 constexpr int kMatrixPermutationEigenspectrum = static_cast<int>(::mdescriptor::MatrixPermutation::Eigenspectrum);
+constexpr int kRotationalUCapacity = static_cast<int>(
+    mdescriptor::detail::rotational::u_total_size(10));
 
 void check_cuda(cudaError_t status, const char* operation) {
     if (status == cudaSuccess) return;
@@ -59,11 +61,14 @@ public:
     DeviceBuffer() = default;
     DeviceBuffer(const DeviceBuffer&) = delete;
     DeviceBuffer& operator=(const DeviceBuffer&) = delete;
-    ~DeviceBuffer() noexcept {
-        if (data_ != nullptr) (void)cudaFree(data_);
-    }
+    ~DeviceBuffer() noexcept { clear(); }
 
     T* get() const noexcept { return data_; }
+
+    void clear() noexcept {
+        if (data_ != nullptr) (void)cudaFree(data_);
+        data_ = nullptr;
+    }
 
     void allocate(std::size_t count, const char* operation) {
         if (count == 0) return;
@@ -1542,15 +1547,22 @@ __device__ double sine_matrix_off_diagonal(
 __device__ double ewald_off_diagonal(
     const I32* numbers,
     const double* positions,
+    const double* wrapped_positions,
     const double* cell,
     const double* inverse,
-    int count,
+    const double* reciprocal_vectors,
     int first,
     int second,
     double alpha,
     double r_cut,
     double g_cut,
-    double volume) {
+    double volume,
+    double inverse_norm_x,
+    double inverse_norm_y,
+    double inverse_norm_z,
+    int gx,
+    int gy,
+    int gz) {
     const double xi = positions[first * 3 + 0];
     const double yi = positions[first * 3 + 1];
     const double zi = positions[first * 3 + 2];
@@ -1560,28 +1572,13 @@ __device__ double ewald_off_diagonal(
     double fi_x = 0.0;
     double fi_y = 0.0;
     double fi_z = 0.0;
-    double fj_x = 0.0;
-    double fj_y = 0.0;
-    double fj_z = 0.0;
     fractional_device(inverse, xi, yi, zi, fi_x, fi_y, fi_z);
-    fractional_device(inverse, xj, yj, zj, fj_x, fj_y, fj_z);
     fi_x -= floor(fi_x);
     fi_y -= floor(fi_y);
     fi_z -= floor(fi_z);
-    fj_x -= floor(fj_x);
-    fj_y -= floor(fj_y);
-    fj_z -= floor(fj_z);
-    double wi_x = 0.0;
-    double wi_y = 0.0;
-    double wi_z = 0.0;
-    double wj_x = 0.0;
-    double wj_y = 0.0;
-    double wj_z = 0.0;
-    cartesian_from_fractional(cell, fi_x, fi_y, fi_z, wi_x, wi_y, wi_z);
-    cartesian_from_fractional(cell, fj_x, fj_y, fj_z, wj_x, wj_y, wj_z);
-    const double inverse_norm_x = sqrt(inverse[0] * inverse[0] + inverse[3] * inverse[3] + inverse[6] * inverse[6]);
-    const double inverse_norm_y = sqrt(inverse[1] * inverse[1] + inverse[4] * inverse[4] + inverse[7] * inverse[7]);
-    const double inverse_norm_z = sqrt(inverse[2] * inverse[2] + inverse[5] * inverse[5] + inverse[8] * inverse[8]);
+    const double wj_x = wrapped_positions[second * 3 + 0];
+    const double wj_y = wrapped_positions[second * 3 + 1];
+    const double wj_z = wrapped_positions[second * 3 + 2];
     double real = 0.0;
     for (int sx = static_cast<int>(floor(fi_x - r_cut * inverse_norm_x));
          sx < static_cast<int>(ceil(fi_x + r_cut * inverse_norm_x)); ++sx) {
@@ -1599,21 +1596,16 @@ __device__ double ewald_off_diagonal(
             }
         }
     }
-    const double reciprocal_x = 2.0 * kPi * inverse[0];
-    const double reciprocal_y = 2.0 * kPi * inverse[3];
-    const double reciprocal_z = 2.0 * kPi * inverse[6];
-    const double reciprocal2_x = 2.0 * kPi * inverse[1];
-    const double reciprocal2_y = 2.0 * kPi * inverse[4];
-    const double reciprocal2_z = 2.0 * kPi * inverse[7];
-    const double reciprocal3_x = 2.0 * kPi * inverse[2];
-    const double reciprocal3_y = 2.0 * kPi * inverse[5];
-    const double reciprocal3_z = 2.0 * kPi * inverse[8];
-    const int gx = static_cast<int>(ceil(g_cut / sqrt(reciprocal_x * reciprocal_x + reciprocal_y * reciprocal_y + reciprocal_z * reciprocal_z))) + 1;
-    const int gy = static_cast<int>(ceil(g_cut / sqrt(reciprocal2_x * reciprocal2_x + reciprocal2_y * reciprocal2_y + reciprocal2_z * reciprocal2_z))) + 1;
-    const int gz = static_cast<int>(ceil(g_cut / sqrt(reciprocal3_x * reciprocal3_x + reciprocal3_y * reciprocal3_y + reciprocal3_z * reciprocal3_z))) + 1;
+    const double reciprocal_x = reciprocal_vectors[0];
+    const double reciprocal_y = reciprocal_vectors[1];
+    const double reciprocal_z = reciprocal_vectors[2];
+    const double reciprocal2_x = reciprocal_vectors[3];
+    const double reciprocal2_y = reciprocal_vectors[4];
+    const double reciprocal2_z = reciprocal_vectors[5];
+    const double reciprocal3_x = reciprocal_vectors[6];
+    const double reciprocal3_y = reciprocal_vectors[7];
+    const double reciprocal3_z = reciprocal_vectors[8];
     double reciprocal = 0.0;
-    const double phase_i_base = 0.0;
-    (void)phase_i_base;
     for (int gx_i = -gx; gx_i <= gx; ++gx_i) {
         for (int gy_i = -gy; gy_i <= gy; ++gy_i) {
             for (int gz_i = -gz; gz_i <= gz; ++gz_i) {
@@ -1635,6 +1627,147 @@ __device__ double ewald_off_diagonal(
     return scale * (real + reciprocal * (4.0 * kPi / volume) * sqrt(2.0));
 }
 
+__device__ void eigenvalues_symmetric_device(
+    double* matrix,
+    int size,
+    int stride,
+    double* output,
+    int output_size) {
+    if (size <= 0) {
+        for (int index = 0; index < output_size; ++index) output[index] = 0.0;
+        return;
+    }
+
+    // Householder reduction followed by implicit-shift QL is O(n^3).  The
+    // former CUDA path used a maximum-pivot Jacobi loop whose repeated O(n^2)
+    // pivot scans made the practical cost approach O(n^4) for eigenspectra.
+    // Keep the matrix in the existing n_atoms_max-strided workspace so this
+    // change does not add a second matrix allocation or alter the output ABI.
+    double diagonal[256]{};
+    double off_diagonal[256]{};
+    for (int row = size - 1; row > 0; --row) {
+        const int last = row - 1;
+        double scale = 0.0;
+        for (int column = 0; column <= last; ++column) {
+            scale += fabs(matrix[row * stride + column]);
+        }
+        if (scale == 0.0) {
+            off_diagonal[row] = matrix[row * stride + last];
+            continue;
+        }
+
+        double squared_norm = 0.0;
+        for (int column = 0; column <= last; ++column) {
+            double& value = matrix[row * stride + column];
+            value /= scale;
+            squared_norm += value * value;
+        }
+        const double first = matrix[row * stride + last];
+        double reflector = sqrt(squared_norm);
+        if (first > 0.0) reflector = -reflector;
+        off_diagonal[row] = scale * reflector;
+        squared_norm -= first * reflector;
+        matrix[row * stride + last] = first - reflector;
+
+        double projection = 0.0;
+        for (int column = 0; column <= last; ++column) {
+            double value = 0.0;
+            for (int index = 0; index <= column; ++index) {
+                value += matrix[column * stride + index]
+                    * matrix[row * stride + index];
+            }
+            for (int index = column + 1; index <= last; ++index) {
+                value += matrix[index * stride + column]
+                    * matrix[row * stride + index];
+            }
+            off_diagonal[column] = value / squared_norm;
+            projection += off_diagonal[column] * matrix[row * stride + column];
+        }
+
+        const double correction = projection / (squared_norm + squared_norm);
+        for (int column = 0; column <= last; ++column) {
+            const double row_value = matrix[row * stride + column];
+            off_diagonal[column] -= correction * row_value;
+            const double column_value = off_diagonal[column];
+            for (int index = 0; index <= column; ++index) {
+                matrix[column * stride + index] -= row_value
+                    * off_diagonal[index]
+                    + column_value * matrix[row * stride + index];
+            }
+        }
+    }
+    for (int index = 0; index < size; ++index) {
+        diagonal[index] = matrix[index * stride + index];
+    }
+    off_diagonal[0] = 0.0;
+    for (int index = 1; index < size; ++index) {
+        off_diagonal[index - 1] = off_diagonal[index];
+    }
+    off_diagonal[size - 1] = 0.0;
+
+    for (int lower = 0; lower < size; ++lower) {
+        int upper;
+        int iteration = 0;
+        do {
+            for (upper = lower; upper < size - 1; ++upper) {
+                const double scale = fabs(diagonal[upper]) + fabs(diagonal[upper + 1]);
+                if (fabs(off_diagonal[upper]) + scale == scale) break;
+            }
+            if (upper == lower) break;
+            if (++iteration > 100) break;
+
+            double shift = (diagonal[lower + 1] - diagonal[lower])
+                / (2.0 * off_diagonal[lower]);
+            double radius = hypot(shift, 1.0);
+            shift = diagonal[upper] - diagonal[lower]
+                + off_diagonal[lower]
+                    / (shift + copysign(radius, shift));
+
+            double sine = 1.0;
+            double cosine = 1.0;
+            double carry = 0.0;
+            for (int index = upper - 1; index >= lower; --index) {
+                const double first = sine * off_diagonal[index];
+                const double second = cosine * off_diagonal[index];
+                double ratio;
+                if (fabs(first) >= fabs(shift)) {
+                    cosine = shift / first;
+                    radius = hypot(cosine, 1.0);
+                    off_diagonal[index + 1] = first * radius;
+                    sine = 1.0 / radius;
+                    cosine *= sine;
+                } else {
+                    sine = first / shift;
+                    radius = hypot(sine, 1.0);
+                    off_diagonal[index + 1] = shift * radius;
+                    cosine = 1.0 / radius;
+                    sine *= cosine;
+                }
+                const double gap = diagonal[index + 1] - carry;
+                ratio = (diagonal[index] - gap) * sine + 2.0 * cosine * second;
+                carry = sine * ratio;
+                diagonal[index + 1] = gap + carry;
+                shift = cosine * ratio - second;
+            }
+            diagonal[lower] -= carry;
+            off_diagonal[lower] = shift;
+            off_diagonal[upper] = 0.0;
+        } while (upper != lower);
+    }
+
+    for (int index = 0; index < size; ++index) output[index] = diagonal[index];
+    for (int index = 1; index < size; ++index) {
+        int current = index;
+        while (current > 0 && fabs(output[current]) > fabs(output[current - 1])) {
+            const double saved = output[current];
+            output[current] = output[current - 1];
+            output[current - 1] = saved;
+            --current;
+        }
+    }
+    for (int index = size; index < output_size; ++index) output[index] = 0.0;
+}
+
 __global__ void matrix_kernel(
     const I32* numbers,
     const double* positions,
@@ -1642,6 +1775,7 @@ __global__ void matrix_kernel(
     const I64* offsets,
     I64 structures,
     int n_atoms_max,
+    I64 workspace_stride,
     int kind,
     int permutation,
     double exponent,
@@ -1657,10 +1791,80 @@ __global__ void matrix_kernel(
     const I64 begin = offsets[structure];
     const I64 end = offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
-    double* matrix = matrices + structure * static_cast<I64>(n_atoms_max) * n_atoms_max;
+    double* matrix = matrices + structure * workspace_stride;
+    double* wrapped_positions = matrix
+        + static_cast<I64>(n_atoms_max) * n_atoms_max;
     double* row = output + structure * (permutation == kMatrixPermutationEigenspectrum
         ? n_atoms_max : n_atoms_max * n_atoms_max);
-    for (int index = 0; index < n_atoms_max * n_atoms_max; ++index) matrix[index] = 0.0;
+
+    const double* cell = cells + structure * 9;
+    double inverse[9]{};
+    const bool inverse_valid = kind == kMatrixKindCoulomb || inverse3_device(cell, inverse);
+    double volume = 0.0;
+    double alpha = 0.0;
+    double r_cut = 0.0;
+    double g_cut = 0.0;
+    double inverse_norm_x = 0.0;
+    double inverse_norm_y = 0.0;
+    double inverse_norm_z = 0.0;
+    double reciprocal_vectors[9]{};
+    int gx = 0;
+    int gy = 0;
+    int gz = 0;
+    if (kind == kMatrixKindEwald && inverse_valid) {
+        volume = cell_volume_device(cell);
+        alpha = a_option > 0.0
+            ? a_option : pow(static_cast<double>(count) * w / (volume * volume), 1.0 / 6.0) * sqrt(kPi);
+        const double factor = sqrt(-log(accuracy));
+        r_cut = r_cut_option > 0.0 ? r_cut_option : factor / alpha;
+        g_cut = g_cut_option > 0.0 ? g_cut_option : 2.0 * alpha * factor;
+        inverse_norm_x = sqrt(inverse[0] * inverse[0] + inverse[3] * inverse[3] + inverse[6] * inverse[6]);
+        inverse_norm_y = sqrt(inverse[1] * inverse[1] + inverse[4] * inverse[4] + inverse[7] * inverse[7]);
+        inverse_norm_z = sqrt(inverse[2] * inverse[2] + inverse[5] * inverse[5] + inverse[8] * inverse[8]);
+        reciprocal_vectors[0] = 2.0 * kPi * inverse[0];
+        reciprocal_vectors[1] = 2.0 * kPi * inverse[3];
+        reciprocal_vectors[2] = 2.0 * kPi * inverse[6];
+        reciprocal_vectors[3] = 2.0 * kPi * inverse[1];
+        reciprocal_vectors[4] = 2.0 * kPi * inverse[4];
+        reciprocal_vectors[5] = 2.0 * kPi * inverse[7];
+        reciprocal_vectors[6] = 2.0 * kPi * inverse[2];
+        reciprocal_vectors[7] = 2.0 * kPi * inverse[5];
+        reciprocal_vectors[8] = 2.0 * kPi * inverse[8];
+        gx = static_cast<int>(ceil(g_cut / sqrt(
+            reciprocal_vectors[0] * reciprocal_vectors[0]
+            + reciprocal_vectors[1] * reciprocal_vectors[1]
+            + reciprocal_vectors[2] * reciprocal_vectors[2]))) + 1;
+        gy = static_cast<int>(ceil(g_cut / sqrt(
+            reciprocal_vectors[3] * reciprocal_vectors[3]
+            + reciprocal_vectors[4] * reciprocal_vectors[4]
+            + reciprocal_vectors[5] * reciprocal_vectors[5]))) + 1;
+        gz = static_cast<int>(ceil(g_cut / sqrt(
+            reciprocal_vectors[6] * reciprocal_vectors[6]
+            + reciprocal_vectors[7] * reciprocal_vectors[7]
+            + reciprocal_vectors[8] * reciprocal_vectors[8]))) + 1;
+        for (int atom = 0; atom < count; ++atom) {
+            double fractional_x = 0.0;
+            double fractional_y = 0.0;
+            double fractional_z = 0.0;
+            const double* position = positions + (begin + atom) * 3;
+            fractional_device(
+                inverse, position[0], position[1], position[2],
+                fractional_x, fractional_y, fractional_z);
+            fractional_x -= floor(fractional_x);
+            fractional_y -= floor(fractional_y);
+            fractional_z -= floor(fractional_z);
+            cartesian_from_fractional(
+                cell, fractional_x, fractional_y, fractional_z,
+                wrapped_positions[atom * 3 + 0],
+                wrapped_positions[atom * 3 + 1],
+                wrapped_positions[atom * 3 + 2]);
+        }
+    }
+    // Only the rows that can be read below need clearing.  The old kernel
+    // cleared the full n_atoms_max square even when structures were smaller.
+    for (int i = 0; i < count; ++i) {
+        for (int j = 0; j < n_atoms_max; ++j) matrix[i * n_atoms_max + j] = 0.0;
+    }
     for (int i = 0; i < count; ++i) {
         const double zi = static_cast<double>(numbers[begin + i]);
         for (int j = 0; j < count; ++j) {
@@ -1674,28 +1878,20 @@ __global__ void matrix_kernel(
                 const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
                 value = zi * zj / sqrt(dx * dx + dy * dy + dz * dz);
             } else if (kind == kMatrixKindSine) {
-                double inverse[9]{};
-                if (inverse3_device(cells + structure * 9, inverse)) {
+                if (inverse_valid) {
                     const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
                     const double dy = positions[(begin + i) * 3 + 1] - positions[(begin + j) * 3 + 1];
                     const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
                     const double denominator = sine_matrix_off_diagonal(
-                        cells + structure * 9, inverse, dx, dy, dz);
+                        cell, inverse, dx, dy, dz);
                     value = denominator > 1e-14 ? zi * zj / denominator : 0.0;
                 }
-            } else {
-                const double* cell = cells + structure * 9;
-                double inverse[9]{};
-                if (!inverse3_device(cell, inverse)) continue;
-                const double volume = cell_volume_device(cell);
-                const double alpha = a_option > 0.0
-                    ? a_option : pow(static_cast<double>(count) * w / (volume * volume), 1.0 / 6.0) * sqrt(kPi);
-                const double factor = sqrt(-log(accuracy));
-                const double r_cut = r_cut_option > 0.0 ? r_cut_option : factor / alpha;
-                const double g_cut = g_cut_option > 0.0 ? g_cut_option : 2.0 * alpha * factor;
+            } else if (kind == kMatrixKindEwald && inverse_valid) {
                 value = ewald_off_diagonal(
-                    numbers + begin, positions + begin * 3,
-                    cell, inverse, count, i, j, alpha, r_cut, g_cut, volume);
+                    numbers + begin, positions + begin * 3, wrapped_positions,
+                    cell, inverse, reciprocal_vectors, i, j, alpha, r_cut, g_cut,
+                    volume, inverse_norm_x, inverse_norm_y, inverse_norm_z,
+                    gx, gy, gz);
                 // The CPU Ewald implementation applies the half self term and
                 // the neutralizing-background correction after accumulating
                 // both real- and reciprocal-space contributions.  Applying
@@ -1715,45 +1911,23 @@ __global__ void matrix_kernel(
         }
     }
     if (permutation == kMatrixPermutationEigenspectrum) {
-        for (int i = 0; i < count; ++i) row[i] = matrix[i * n_atoms_max + i];
-        for (int iteration = 0; iteration < 64 * n_atoms_max * n_atoms_max; ++iteration) {
-            int p = 0;
-            int q = 0;
-            double largest = 0.0;
-            for (int i = 0; i < count; ++i) {
-                for (int j = i + 1; j < count; ++j) {
-                    const double value = fabs(matrix[i * n_atoms_max + j]);
-                    if (value > largest) { largest = value; p = i; q = j; }
-                }
-            }
-            if (largest < 1e-14 || count < 2) break;
-            const double angle = 0.5 * atan2(
-                2.0 * matrix[p * n_atoms_max + q],
-                matrix[q * n_atoms_max + q] - matrix[p * n_atoms_max + p]);
-            const double c = cos(angle);
-            const double s = sin(angle);
-            for (int k = 0; k < count; ++k) {
-                const double vkp = matrix[k * n_atoms_max + p];
-                const double vkq = matrix[k * n_atoms_max + q];
-                matrix[k * n_atoms_max + p] = c * vkp - s * vkq;
-                matrix[k * n_atoms_max + q] = s * vkp + c * vkq;
-            }
-            for (int k = 0; k < count; ++k) {
-                const double vpk = matrix[p * n_atoms_max + k];
-                const double vqk = matrix[q * n_atoms_max + k];
-                matrix[p * n_atoms_max + k] = c * vpk - s * vqk;
-                matrix[q * n_atoms_max + k] = s * vpk + c * vqk;
-            }
-        }
-        for (int i = 0; i < count; ++i) row[i] = matrix[i * n_atoms_max + i];
+        eigenvalues_symmetric_device(matrix, count, n_atoms_max, row, n_atoms_max);
+        return;
+    }
+    if (permutation == kMatrixPermutationNone) {
         for (int i = 0; i < count; ++i) {
-            for (int j = i + 1; j < count; ++j) {
-                if (fabs(row[j]) > fabs(row[i])) {
-                    const double saved = row[i]; row[i] = row[j]; row[j] = saved;
-                }
+            for (int j = 0; j < count; ++j) {
+                row[i * n_atoms_max + j] = matrix[i * n_atoms_max + j];
+            }
+            for (int j = count; j < n_atoms_max; ++j) {
+                row[i * n_atoms_max + j] = 0.0;
             }
         }
-        for (int i = count; i < n_atoms_max; ++i) row[i] = 0.0;
+        for (int i = count; i < n_atoms_max; ++i) {
+            for (int j = 0; j < n_atoms_max; ++j) {
+                row[i * n_atoms_max + j] = 0.0;
+            }
+        }
         return;
     }
     int order[256];
@@ -1934,8 +2108,10 @@ py::dict compute_matrix_descriptor(
         ? n_atoms_max : static_cast<I64>(n_atoms_max) * n_atoms_max;
     const std::size_t output_size = static_cast<std::size_t>(host_batch.structures)
         * static_cast<std::size_t>(columns);
+    const std::size_t matrix_stride = static_cast<std::size_t>(n_atoms_max) * n_atoms_max
+        + (kind == kMatrixKindEwald ? static_cast<std::size_t>(3 * n_atoms_max) : 0);
     const std::size_t matrix_size = static_cast<std::size_t>(host_batch.structures)
-        * static_cast<std::size_t>(n_atoms_max) * n_atoms_max;
+        * matrix_stride;
     double* output = context.output_buffer(output_size);
     auto* matrices = static_cast<double*>(context.workspace_buffer(
         matrix_size * sizeof(double)));
@@ -1951,7 +2127,7 @@ py::dict compute_matrix_descriptor(
     if (host_batch.structures > 0) {
         matrix_kernel<<<blocks, block_size, 0, context.stream()>>>(
             batch.numbers(), batch.positions(), batch.cells(), batch.offsets(),
-            host_batch.structures, n_atoms_max, kind, permutation, exponent,
+            host_batch.structures, n_atoms_max, static_cast<I64>(matrix_stride), kind, permutation, exponent,
             accuracy, weight, r_cut, g_cut, split, matrices, output);
         check_cuda(cudaGetLastError(), "CUDA matrix kernel launch failed");
     }
@@ -2165,7 +2341,7 @@ py::dict compute_acsf_descriptor(
     d_g4.upload(g4.data(), g4.size(), context.stream(), "could not upload ACSF G4 parameters");
     d_g5.upload(g5.data(), g5.size(), context.stream(), "could not upload ACSF G5 parameters");
     if (batch.atoms() > 0) {
-        constexpr unsigned block_size = 128;
+        constexpr unsigned block_size = 64;
         acsf_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
                 batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(),
@@ -2205,11 +2381,6 @@ __device__ double mbtr_weight_device(
         weighting, scale, threshold, r_cut, sharpness, first, second, third);
 }
 
-__device__ int mbtr_species(
-    I32 number, const I32* species, int species_count) {
-    return species_index(number, species, species_count);
-}
-
 __device__ void normalize_mbtr_device(
     double* values,
     I64 features,
@@ -2233,6 +2404,7 @@ __device__ void normalize_mbtr_device(
 
 __global__ void mbtr_kernel(
     const I32* numbers,
+    const I32* atom_types,
     const double* cells,
     const I64* offsets,
     const I64* graph_offsets,
@@ -2240,7 +2412,6 @@ __global__ void mbtr_kernel(
     const I32* graph_shifts,
     const double* graph_displacements,
     const double* graph_distance2,
-    const I32* species,
     int species_count,
     int geometry,
     int weighting,
@@ -2277,21 +2448,24 @@ __global__ void mbtr_kernel(
     }
     const int atom_count = static_cast<int>(offsets[structure + 1] - offsets[structure]);
     int species_counts[64]{};
-    if (species_count <= 64) {
+    const bool needs_species_counts = normalization
+        == mdescriptor::detail::mbtr::kNormalizationValleOganov
+        && !local && geometry != mbtr::kGeometryAtomicNumber;
+    if (needs_species_counts && species_count <= 64) {
         for (I64 atom = offsets[structure]; atom < offsets[structure + 1]; ++atom) {
-            const int type = mbtr_species(numbers[atom], species, species_count);
+            const int type = atom_types[atom];
             if (type >= 0) ++species_counts[type];
         }
     }
     if (geometry == mbtr::kGeometryAtomicNumber) {
         if (local) {
-            const int type = mbtr_species(numbers[row], species, species_count);
+            const int type = atom_types[row];
             if (type >= 0) add_histogram_device(
                 target + type * grid_n, static_cast<double>(numbers[row]), 1.0,
                 grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
         } else {
             for (I64 atom = offsets[row]; atom < offsets[row + 1]; ++atom) {
-                const int type = mbtr_species(numbers[atom], species, species_count);
+                const int type = atom_types[atom];
                 if (type >= 0) add_histogram_device(
                     target + type * grid_n, static_cast<double>(numbers[atom]), 1.0,
                     grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
@@ -2315,7 +2489,7 @@ __global__ void mbtr_kernel(
                     || (atom == center && graph_shifts[edge * 3] == 0
                         && graph_shifts[edge * 3 + 1] == 0
                         && graph_shifts[edge * 3 + 2] == 0)) continue;
-                const int type = mbtr_species(numbers[atom], species, species_count);
+                const int type = atom_types[atom];
                 if (type < 0) continue;
                 const double value = geometry == mbtr::kGeometryDistance
                     ? distance : 1.0 / distance;
@@ -2344,10 +2518,8 @@ __global__ void mbtr_kernel(
                             / (2.0 * first_distance * second_distance)));
                     const double value = geometry == mbtr::kGeometryCosine ? cosine
                         : acos(cosine) * 180.0 / kPi;
-                    const int first_type = mbtr_species(
-                        numbers[graph_atoms[first]], species, species_count) + 1;
-                    const int second_type = mbtr_species(
-                        numbers[graph_atoms[second]], species, species_count) + 1;
+                    const int first_type = atom_types[graph_atoms[first]] + 1;
+                    const int second_type = atom_types[graph_atoms[second]] + 1;
                     if (first_type <= 0 || second_type <= 0) continue;
                     const double weight = mbtr_weight_device(
                         weighting, scale, threshold, r_cut, sharpness,
@@ -2387,7 +2559,7 @@ __global__ void mbtr_kernel(
     // to the same target histogram.  The local branch above intentionally
     // handles one center per CUDA thread.
     for (I64 center = begin; center < end; ++center) {
-        const int center_type = mbtr_species(numbers[center], species, species_count);
+        const int center_type = atom_types[center];
         if (center_type < 0) continue;
         const I64 graph_begin = graph_offsets[center];
         const I64 graph_end = graph_offsets[center + 1];
@@ -2401,7 +2573,7 @@ __global__ void mbtr_kernel(
                     || graph_shifts[first * 3 + 1] != 0
                     || graph_shifts[first * 3 + 2] != 0;
                 if (!periodic && first_atom < center) continue;
-                const int first_type = mbtr_species(numbers[first_atom], species, species_count);
+                const int first_type = atom_types[first_atom];
                 if (first_type < 0) continue;
                 const double value = geometry == mbtr::kGeometryDistance
                     ? distance : 1.0 / distance;
@@ -2430,8 +2602,8 @@ __global__ void mbtr_kernel(
                             / (2.0 * first_distance * second_distance)));
                     const double value = geometry == mbtr::kGeometryCosine ? cosine
                         : acos(cosine) * 180.0 / kPi;
-                    const int first_type = mbtr_species(numbers[graph_atoms[first]], species, species_count);
-                    const int second_type = mbtr_species(numbers[graph_atoms[second]], species, species_count);
+                    const int first_type = atom_types[graph_atoms[first]];
+                    const int second_type = atom_types[graph_atoms[second]];
                     if (first_type < 0 || second_type < 0) continue;
                     const double weight = mbtr_weight_device(
                         weighting, scale, threshold, r_cut, sharpness,
@@ -2611,8 +2783,21 @@ py::dict compute_mbtr_descriptor(
     double* output = context.output_buffer(size);
     check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
         "could not clear CUDA MBTR output");
-    DeviceBuffer<I32> d_species;
-    d_species.upload(species.data(), species.size(), context.stream(), "could not upload MBTR species");
+    // Resolve element channels once on the host.  The previous kernel did a
+    // linear species-table search for every edge of every angle, which made
+    // the lookup part of the hottest inner loop.
+    std::vector<I32> atom_types(static_cast<std::size_t>(batch.atoms()), -1);
+    for (I64 atom = 0; atom < batch.atoms(); ++atom) {
+        const auto found = std::find(species.begin(), species.end(), host_batch.numbers[atom]);
+        if (found != species.end()) {
+            atom_types[static_cast<std::size_t>(atom)] = static_cast<I32>(
+                std::distance(species.begin(), found));
+        }
+    }
+    DeviceBuffer<I32> d_atom_types;
+    d_atom_types.upload(
+        atom_types.data(), atom_types.size(), context.stream(),
+        "could not upload MBTR atom types");
     if (geometry != mbtr::kGeometryAtomicNumber) {
         graph.build_dpa(context, batch, host_batch, r_cut, true, false, false);
     }
@@ -2620,8 +2805,8 @@ py::dict compute_mbtr_descriptor(
         constexpr unsigned block_size = 64;
         mbtr_kernel<<<static_cast<unsigned>((rows + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
-            batch.numbers(), batch.cells(), batch.offsets(), graph.offsets(), graph.atoms(),
-            graph.shifts(), graph.displacements(), graph.distance2(), d_species.get(),
+            batch.numbers(), d_atom_types.get(), batch.cells(), batch.offsets(), graph.offsets(), graph.atoms(),
+            graph.shifts(), graph.displacements(), graph.distance2(),
             species_count, geometry, weighting, normalization, grid_min, grid_max,
             grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut, sharpness,
             local, batch.structures(), batch.atoms(), features, output);
@@ -3897,7 +4082,8 @@ __global__ void rotational_kernel(
         // complete per-center contraction in one CUDA thread avoids any
         // order-dependent atomic reductions.
         if (expansion > 10) return;
-        DeviceComplex total[700]{};
+        DeviceComplex total[kRotationalUCapacity]{};
+        DeviceComplex values[kRotationalUCapacity];
         const double center_weight = kind == 1
             ? static_cast<double>(numbers[center]) : 1.0;
         const int total_size = rotational_u_size(expansion);
@@ -3915,7 +4101,6 @@ __global__ void rotational_kernel(
                 : (neighbor_radii[center] + neighbor_radii[first_atom]) * rcutfac;
             if (radius > neighbor_cutoff || neighbor_cutoff <= rmin0) continue;
             const double* vector = graph_displacements + first * 3;
-            DeviceComplex values[700]{};
             hyperspherical_u_device(
                 vector, expansion, neighbor_cutoff, rmin0, rfac0, values);
             const double cutoff_value =
@@ -4029,7 +4214,8 @@ py::dict compute_rotational_descriptor(
     DeviceNeighborGraph& graph,
     const detail::StructureBatchView& host_batch,
     const std::string& name,
-    const py::dict& options) {
+    const py::dict& options,
+    RotationalPlanCache* rotational_plan_cache) {
     const auto species = batch_species(host_batch);
     if (species.empty()) throw std::invalid_argument(name + " requires at least one atom");
     const RotationalCudaOptions config = rotational_options(name, options);
@@ -4051,6 +4237,7 @@ py::dict compute_rotational_descriptor(
     I64 computed = 0;
     detail::rotational::BispectrumPlan bispectrum_plan;
     detail::rotational::FlattenedBispectrumPlan flattened_plan;
+    RotationalPlanDeviceView rotational_plan;
     if (kind == 0) {
         computed = static_cast<I64>(config.lmax + 1) * config.nmax * (config.nmax + 1) / 2;
     } else {
@@ -4060,17 +4247,28 @@ py::dict compute_rotational_descriptor(
             throw std::invalid_argument(
                 name + " CUDA expansion order is limited to 10");
         }
-        bispectrum_plan = detail::rotational::make_bispectrum_plan(
-            order, config.diagonal, name == "LBispectrum");
-        flattened_plan = detail::rotational::flatten(bispectrum_plan);
-        computed = static_cast<I64>(bispectrum_plan.components.size());
+        if (rotational_plan_cache != nullptr) {
+            rotational_plan = rotational_plan_cache->prepare(
+                context, order, config.diagonal, name == "LBispectrum");
+            computed = rotational_plan.features;
+        } else {
+            bispectrum_plan = detail::rotational::make_bispectrum_plan(
+                order, config.diagonal, name == "LBispectrum");
+            flattened_plan = detail::rotational::flatten(bispectrum_plan);
+            computed = static_cast<I64>(bispectrum_plan.components.size());
+        }
     }
     const I64 features = payload_or_option_feature_count(options, computed, name);
     if (features != computed) throw std::invalid_argument(name + " CUDA feature count mismatch");
-    std::vector<double> weights(host_batch.atoms, 1.0);
-    std::vector<double> radii;
     const py::str weights_key("weights");
-    if (options.contains(weights_key) && !options[weights_key].is_none()) {
+    const bool custom_weights = options.contains(weights_key)
+        && !options[weights_key].is_none();
+    std::vector<double> weights;
+    std::vector<double> radii;
+    // SO4 uses atomic numbers directly in the rotational kernel.  For SNAP
+    // and L-Bispectrum a null pointer is the common all-ones fast path.
+    if (kind != 1 && custom_weights) {
+        weights.assign(static_cast<std::size_t>(host_batch.atoms), 1.0);
         const auto configured = species_dictionary_values(options[weights_key], species, 1.0);
         for (I64 atom = 0; atom < host_batch.atoms; ++atom) {
             const auto found = std::find(species.begin(), species.end(), host_batch.numbers[atom]);
@@ -4107,7 +4305,7 @@ py::dict compute_rotational_descriptor(
     DeviceBuffer<I64> d_bispectrum_projection_u_indices;
     DeviceBuffer<I64> d_bispectrum_projection_z_indices;
     DeviceBuffer<double> d_bispectrum_projection_scales;
-    if (kind != 0) {
+    if (kind != 0 && rotational_plan_cache == nullptr) {
         d_bispectrum_z_inner_offsets.upload(
             flattened_plan.z_inner_offsets.data(), flattened_plan.z_inner_offsets.size(),
             context.stream(), "could not upload CUDA bispectrum Z offsets");
@@ -4168,12 +4366,27 @@ py::dict compute_rotational_descriptor(
                 block_size, 0, context.stream()>>>(
                 batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(), graph.distance2(),
                 d_weights.get(), d_radii.get(),
-                d_bispectrum_z_inner_offsets.get(), d_bispectrum_inner_term_offsets.get(),
-                d_bispectrum_inner_outer_coefficients.get(),
-                d_bispectrum_term_first_indices.get(), d_bispectrum_term_second_indices.get(),
-                d_bispectrum_term_coefficients.get(), d_bispectrum_projection_offsets.get(),
-                d_bispectrum_projection_u_indices.get(), d_bispectrum_projection_z_indices.get(),
-                d_bispectrum_projection_scales.get(), kind, config.nmax, config.lmax,
+                rotational_plan_cache == nullptr ? d_bispectrum_z_inner_offsets.get()
+                    : rotational_plan.z_inner_offsets,
+                rotational_plan_cache == nullptr ? d_bispectrum_inner_term_offsets.get()
+                    : rotational_plan.inner_term_offsets,
+                rotational_plan_cache == nullptr ? d_bispectrum_inner_outer_coefficients.get()
+                    : rotational_plan.inner_outer_coefficients,
+                rotational_plan_cache == nullptr ? d_bispectrum_term_first_indices.get()
+                    : rotational_plan.term_first_indices,
+                rotational_plan_cache == nullptr ? d_bispectrum_term_second_indices.get()
+                    : rotational_plan.term_second_indices,
+                rotational_plan_cache == nullptr ? d_bispectrum_term_coefficients.get()
+                    : rotational_plan.term_coefficients,
+                rotational_plan_cache == nullptr ? d_bispectrum_projection_offsets.get()
+                    : rotational_plan.projection_offsets,
+                rotational_plan_cache == nullptr ? d_bispectrum_projection_u_indices.get()
+                    : rotational_plan.projection_u_indices,
+                rotational_plan_cache == nullptr ? d_bispectrum_projection_z_indices.get()
+                    : rotational_plan.projection_z_indices,
+                rotational_plan_cache == nullptr ? d_bispectrum_projection_scales.get()
+                    : rotational_plan.projection_scales,
+                kind, config.nmax, config.lmax,
                 config.twojmax, config.cutoff, config.rfac0, config.rmin0, config.rcutfac,
                 config.normalize_u, static_cast<int>(features), batch.atoms(), output);
             check_cuda(cudaGetLastError(), "CUDA rotational kernel launch failed");
@@ -6356,7 +6569,8 @@ py::dict compute_extended_descriptor(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control) {
+    const py::object& control,
+    RotationalPlanCache* rotational_plan_cache) {
     (void)control;
     if (name == "AtomicComposition") {
         return compute_atomic_composition(
@@ -6400,7 +6614,8 @@ py::dict compute_extended_descriptor(
         return compute_lode_descriptor(context, batch, graph, host_batch, options);
     }
     if (name == "SO3" || name == "SO4" || name == "SNAP" || name == "LBispectrum") {
-        return compute_rotational_descriptor(context, batch, graph, host_batch, name, options);
+        return compute_rotational_descriptor(
+            context, batch, graph, host_batch, name, options, rotational_plan_cache);
     }
     if (name == "C00PSMLFF") {
         return compute_c00ps_mlff_descriptor(context, batch, graph, host_batch, options);
@@ -6425,6 +6640,132 @@ py::dict compute_extended_descriptor(
         return compute_generic_moment_descriptor(context, batch, graph, host_batch, name, options);
     }
     throw std::invalid_argument("CUDA backend does not support this extended descriptor");
+}
+
+struct RotationalPlanCache::Impl {
+    bool prepared = false;
+    int expansion_order = -1;
+    int diagonal = -1;
+    bool l_bispectrum = false;
+    std::int64_t features = 0;
+    DeviceBuffer<I64> z_inner_offsets;
+    DeviceBuffer<I64> inner_term_offsets;
+    DeviceBuffer<double> inner_outer_coefficients;
+    DeviceBuffer<I64> term_first_indices;
+    DeviceBuffer<I64> term_second_indices;
+    DeviceBuffer<double> term_coefficients;
+    DeviceBuffer<I64> projection_offsets;
+    DeviceBuffer<I64> projection_u_indices;
+    DeviceBuffer<I64> projection_z_indices;
+    DeviceBuffer<double> projection_scales;
+};
+
+RotationalPlanCache::RotationalPlanCache() : impl_(std::make_unique<Impl>()) {}
+
+RotationalPlanCache::~RotationalPlanCache() noexcept {
+    clear();
+}
+
+RotationalPlanDeviceView RotationalPlanCache::prepare(
+    CudaExecutionContext& context,
+    int expansion_order,
+    int diagonal,
+    bool l_bispectrum) {
+    if (impl_->prepared && impl_->expansion_order == expansion_order
+        && impl_->diagonal == diagonal && impl_->l_bispectrum == l_bispectrum) {
+        return {
+            impl_->z_inner_offsets.get(),
+            impl_->inner_term_offsets.get(),
+            impl_->inner_outer_coefficients.get(),
+            impl_->term_first_indices.get(),
+            impl_->term_second_indices.get(),
+            impl_->term_coefficients.get(),
+            impl_->projection_offsets.get(),
+            impl_->projection_u_indices.get(),
+            impl_->projection_z_indices.get(),
+            impl_->projection_scales.get(),
+            impl_->features,
+        };
+    }
+
+    const auto bispectrum_plan = detail::rotational::make_bispectrum_plan(
+        expansion_order, diagonal, l_bispectrum);
+    const auto flattened_plan = detail::rotational::flatten(bispectrum_plan);
+    impl_->prepared = false;
+    impl_->z_inner_offsets.clear();
+    impl_->inner_term_offsets.clear();
+    impl_->inner_outer_coefficients.clear();
+    impl_->term_first_indices.clear();
+    impl_->term_second_indices.clear();
+    impl_->term_coefficients.clear();
+    impl_->projection_offsets.clear();
+    impl_->projection_u_indices.clear();
+    impl_->projection_z_indices.clear();
+    impl_->projection_scales.clear();
+    impl_->z_inner_offsets.upload(
+        flattened_plan.z_inner_offsets.data(), flattened_plan.z_inner_offsets.size(),
+        context.stream(), "could not upload CUDA bispectrum Z offsets");
+    impl_->inner_term_offsets.upload(
+        flattened_plan.inner_term_offsets.data(), flattened_plan.inner_term_offsets.size(),
+        context.stream(), "could not upload CUDA bispectrum inner offsets");
+    impl_->inner_outer_coefficients.upload(
+        flattened_plan.inner_outer_coefficients.data(),
+        flattened_plan.inner_outer_coefficients.size(), context.stream(),
+        "could not upload CUDA bispectrum outer coefficients");
+    impl_->term_first_indices.upload(
+        flattened_plan.term_first_indices.data(), flattened_plan.term_first_indices.size(),
+        context.stream(), "could not upload CUDA bispectrum first indices");
+    impl_->term_second_indices.upload(
+        flattened_plan.term_second_indices.data(), flattened_plan.term_second_indices.size(),
+        context.stream(), "could not upload CUDA bispectrum second indices");
+    impl_->term_coefficients.upload(
+        flattened_plan.term_coefficients.data(), flattened_plan.term_coefficients.size(),
+        context.stream(), "could not upload CUDA bispectrum CG coefficients");
+    impl_->projection_offsets.upload(
+        flattened_plan.projection_offsets.data(), flattened_plan.projection_offsets.size(),
+        context.stream(), "could not upload CUDA bispectrum projection offsets");
+    impl_->projection_u_indices.upload(
+        flattened_plan.projection_u_indices.data(), flattened_plan.projection_u_indices.size(),
+        context.stream(), "could not upload CUDA bispectrum projection U indices");
+    impl_->projection_z_indices.upload(
+        flattened_plan.projection_z_indices.data(), flattened_plan.projection_z_indices.size(),
+        context.stream(), "could not upload CUDA bispectrum projection Z indices");
+    impl_->projection_scales.upload(
+        flattened_plan.projection_scales.data(), flattened_plan.projection_scales.size(),
+        context.stream(), "could not upload CUDA bispectrum projection scales");
+    impl_->expansion_order = expansion_order;
+    impl_->diagonal = diagonal;
+    impl_->l_bispectrum = l_bispectrum;
+    impl_->features = static_cast<std::int64_t>(bispectrum_plan.components.size());
+    impl_->prepared = true;
+    return {
+        impl_->z_inner_offsets.get(),
+        impl_->inner_term_offsets.get(),
+        impl_->inner_outer_coefficients.get(),
+        impl_->term_first_indices.get(),
+        impl_->term_second_indices.get(),
+        impl_->term_coefficients.get(),
+        impl_->projection_offsets.get(),
+        impl_->projection_u_indices.get(),
+        impl_->projection_z_indices.get(),
+        impl_->projection_scales.get(),
+        impl_->features,
+    };
+}
+
+void RotationalPlanCache::clear() noexcept {
+    if (impl_ == nullptr) return;
+    impl_->prepared = false;
+    impl_->z_inner_offsets.clear();
+    impl_->inner_term_offsets.clear();
+    impl_->inner_outer_coefficients.clear();
+    impl_->term_first_indices.clear();
+    impl_->term_second_indices.clear();
+    impl_->term_coefficients.clear();
+    impl_->projection_offsets.clear();
+    impl_->projection_u_indices.clear();
+    impl_->projection_z_indices.clear();
+    impl_->projection_scales.clear();
 }
 
 } // namespace mdescriptor::cuda

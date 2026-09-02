@@ -12,6 +12,11 @@
 namespace mdescriptor::detail::mbtr {
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
+// Contributions outside this window are already discarded by the existing
+// MBTR cutoff policy.  Applying the same policy to individual bins avoids
+// evaluating Gaussian tails that are below the descriptor's retained
+// numerical support.
+constexpr double kGaussianTailSigma = 8.0;
 
 constexpr int kGeometryAtomicNumber = 0;
 constexpr int kGeometryDistance = 1;
@@ -77,6 +82,22 @@ MDESCRIPTOR_MBTR_HD inline double abs_value(double value) {
 #endif
 }
 
+MDESCRIPTOR_MBTR_HD inline double ceil_value(double value) {
+#if defined(__CUDA_ARCH__)
+    return ceil(value);
+#else
+    return std::ceil(value);
+#endif
+}
+
+MDESCRIPTOR_MBTR_HD inline double floor_value(double value) {
+#if defined(__CUDA_ARCH__)
+    return floor(value);
+#else
+    return std::floor(value);
+#endif
+}
+
 MDESCRIPTOR_MBTR_HD inline double gaussian_bin(
     double value,
     double weight,
@@ -96,6 +117,23 @@ MDESCRIPTOR_MBTR_HD inline double gaussian_bin(
     return weight * result;
 }
 
+MDESCRIPTOR_MBTR_HD inline double gaussian_bin_precomputed(
+    double value,
+    double weight,
+    double grid_min,
+    double dx,
+    double sigma_root,
+    double unnormalized_scale,
+    bool normalize,
+    int bin) {
+    const double lower = grid_min - 0.5 * dx + bin * dx;
+    const double upper = lower + dx;
+    double result = 0.5 * (erf_value((upper - value) / sigma_root)
+        - erf_value((lower - value) / sigma_root)) / dx;
+    if (!normalize) result *= unnormalized_scale;
+    return weight * result;
+}
+
 MDESCRIPTOR_MBTR_HD inline void add_histogram(
     double* target,
     double value,
@@ -105,13 +143,28 @@ MDESCRIPTOR_MBTR_HD inline void add_histogram(
     double grid_sigma,
     int grid_n,
     bool normalize) {
-    if (weight == 0.0 || value < grid_min - grid_sigma * 8.0
-        || value > grid_max + grid_sigma * 8.0) {
+    if (weight == 0.0 || value < grid_min - grid_sigma * kGaussianTailSigma
+        || value > grid_max + grid_sigma * kGaussianTailSigma) {
         return;
     }
-    for (int bin = 0; bin < grid_n; ++bin) {
-        target[bin] += gaussian_bin(
-            value, weight, grid_min, grid_max, grid_sigma, grid_n, normalize, bin);
+    const double dx = (grid_max - grid_min) / (grid_n - 1);
+    const double half_dx = 0.5 * dx;
+    const double tail = grid_sigma * kGaussianTailSigma;
+    const double sigma_root = grid_sigma * sqrt_value(2.0);
+    const double unnormalized_scale = grid_sigma * sqrt_value(2.0 * kPi);
+    const double first_coordinate =
+        (value - tail - grid_min - half_dx) / dx;
+    const double last_coordinate =
+        (value + tail - grid_min + half_dx) / dx;
+    const int first_bin = static_cast<int>(min_value(
+        static_cast<double>(grid_n - 1), max_value(0.0, ceil_value(first_coordinate))));
+    const int last_bin = static_cast<int>(max_value(
+        0.0, min_value(static_cast<double>(grid_n - 1), floor_value(last_coordinate))));
+    if (first_bin > last_bin) return;
+    for (int bin = first_bin; bin <= last_bin; ++bin) {
+        target[bin] += gaussian_bin_precomputed(
+            value, weight, grid_min, dx, sigma_root, unnormalized_scale,
+            normalize, bin);
     }
 }
 

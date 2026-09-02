@@ -474,6 +474,13 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o : /home/nicheal/MDescriptor/cpp/c
     /usr/include/c++/13/optional \
     /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/dpa4c.hpp \
     /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/extended_descriptors.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp \
+    /usr/include/c++/13/algorithm \
+    /usr/include/c++/13/bits/stl_algo.h \
+    /usr/include/c++/13/bits/algorithmfwd.h \
+    /usr/include/c++/13/bits/stl_heap.h \
+    /usr/include/c++/13/bits/uniform_int_dist.h \
+    /usr/include/c++/13/pstl/glue_algorithm_defs.h \
     /home/nicheal/MDescriptor/cpp/cuda/include/mdescriptor/cuda/nep.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/nep.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
@@ -497,12 +504,6 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o : /home/nicheal/MDescriptor/cpp/c
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/attr.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/cast.h \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/argument_vector.h \
-    /usr/include/c++/13/algorithm \
-    /usr/include/c++/13/bits/stl_algo.h \
-    /usr/include/c++/13/bits/algorithmfwd.h \
-    /usr/include/c++/13/bits/stl_heap.h \
-    /usr/include/c++/13/bits/uniform_int_dist.h \
-    /usr/include/c++/13/pstl/glue_algorithm_defs.h \
     /usr/include/c++/13/array \
     /usr/include/c++/13/compare \
     /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/descr.h \

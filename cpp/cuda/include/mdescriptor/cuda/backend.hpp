@@ -34,6 +34,7 @@ private:
     pybind11::dict options_;
     std::int64_t feature_count_ = 0;
     std::unique_ptr<CudaExecutionContext> context_;
+    std::unique_ptr<RotationalPlanCache> rotational_plan_;
     std::unique_ptr<DeviceNepModel> nep_model_;
     std::unique_ptr<DeviceDpa4Model> dpa4_model_;
     std::unique_ptr<DeviceDpa4cModel> dpa4c_model_;

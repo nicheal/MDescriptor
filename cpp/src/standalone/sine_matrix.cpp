@@ -31,9 +31,11 @@ std::vector<double> sine_matrix_values(
                 delta.x * inverse_cell.a[0][1] + delta.y * inverse_cell.a[1][1] + delta.z * inverse_cell.a[2][1],
                 delta.x * inverse_cell.a[0][2] + delta.y * inverse_cell.a[1][2] + delta.z * inverse_cell.a[2][2],
             };
-            const Vec3 sine_squared{std::sin(kPi * fractional[0]) * std::sin(kPi * fractional[0]),
-                                    std::sin(kPi * fractional[1]) * std::sin(kPi * fractional[1]),
-                                    std::sin(kPi * fractional[2]) * std::sin(kPi * fractional[2])};
+            const double sine_x = std::sin(kPi * fractional[0]);
+            const double sine_y = std::sin(kPi * fractional[1]);
+            const double sine_z = std::sin(kPi * fractional[2]);
+            const Vec3 sine_squared{
+                sine_x * sine_x, sine_y * sine_y, sine_z * sine_z};
             const Vec3 transformed = {
                 sine_squared.x * cell.a[0][0] + sine_squared.y * cell.a[1][0] + sine_squared.z * cell.a[2][0],
                 sine_squared.x * cell.a[0][1] + sine_squared.y * cell.a[1][1] + sine_squared.z * cell.a[2][1],

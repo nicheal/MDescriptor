@@ -339,6 +339,9 @@ Backend::Backend(std::string name, py::dict options)
     : name_(std::move(name)), options_(std::move(options)),
       feature_count_(name_ == "NEP" ? 0 : feature_count_for(name_, options_)),
       context_(std::make_unique<CudaExecutionContext>(0)) {
+    if (name_ == "SO4" || name_ == "SNAP" || name_ == "LBispectrum") {
+        rotational_plan_ = std::make_unique<RotationalPlanCache>();
+    }
     if (name_ == "NEP") {
         const auto model_path = option(options_, "model_path", std::string{});
         if (model_path.empty()) {
@@ -584,7 +587,7 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         || name_ == "LBispectrum" || name_ == "MTP" || name_ == "C00PSMLFF") {
         const auto result = compute_extended_descriptor(
             *context_, device_batch_, device_graph_, arrays.view,
-            name_, options_, control);
+            name_, options_, control, rotational_plan_.get());
         check_cancelled(control);
         for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
             mark_completed(control);
@@ -653,6 +656,7 @@ void Backend::close() noexcept {
     device_graph_.clear();
     nep_expanded_batch_.clear();
     device_batch_.clear();
+    rotational_plan_.reset();
     dpa4c_model_.reset();
     dpa4_model_.reset();
     nep_model_.reset();

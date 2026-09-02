@@ -35,6 +35,7 @@ DescriptorPairTable compute_spherical_expansion_by_pair(
         batch, options.cutoff, control, options.num_threads, false, false, true);
     RadialBasisSet radial_bases;
     radial_bases.reset(options.max_radial, options.max_angular, options.cutoff);
+    radial_bases.prepare_density(options.density_width);
     DescriptorPairTable result;
     const std::size_t pair_count = graph.offsets().empty()
         ? 0

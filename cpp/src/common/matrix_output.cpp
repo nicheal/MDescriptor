@@ -262,19 +262,43 @@ void write_matrix(
         }
         return;
     }
+
+    const std::int64_t n_atoms_max = layout.n_atoms_max;
+    if (layout.permutation == MatrixPermutation::None) {
+        // The provider matrix is compact (count x count), while the public
+        // result is padded (n_atoms_max x n_atoms_max).  Copy complete rows
+        // instead of branching for every padded element.
+        for (int row = 0; row < count; ++row) {
+            double* destination = output + static_cast<std::size_t>(row * n_atoms_max);
+            const double* source = matrix.data() + static_cast<std::size_t>(row * count);
+            std::copy_n(source, count, destination);
+            std::fill(destination + count, destination + n_atoms_max, 0.0);
+        }
+        for (std::int64_t row = count; row < n_atoms_max; ++row) {
+            std::fill(
+                output + static_cast<std::size_t>(row * n_atoms_max),
+                output + static_cast<std::size_t>((row + 1) * n_atoms_max), 0.0);
+        }
+        return;
+    }
+
     std::vector<std::size_t> order(static_cast<std::size_t>(count));
     if (layout.permutation == MatrixPermutation::SortedL2) {
         order = reference_sorted_l2_order(matrix, static_cast<std::size_t>(count));
-    } else {
-        std::iota(order.begin(), order.end(), 0);
     }
-    for (std::int64_t row_index = 0; row_index < layout.n_atoms_max; ++row_index) {
-        for (std::int64_t column = 0; column < layout.n_atoms_max; ++column) {
-            output[row_index * layout.n_atoms_max + column] = row_index < count && column < count
-                ? matrix[static_cast<std::size_t>(order[static_cast<std::size_t>(row_index)] * count
-                    + order[static_cast<std::size_t>(column)])]
-                : 0.0;
+    for (int row = 0; row < count; ++row) {
+        double* destination = output + static_cast<std::size_t>(row * n_atoms_max);
+        const std::size_t source_row = order[static_cast<std::size_t>(row)]
+            * static_cast<std::size_t>(count);
+        for (int column = 0; column < count; ++column) {
+            destination[column] = matrix[source_row + order[static_cast<std::size_t>(column)]];
         }
+        std::fill(destination + count, destination + n_atoms_max, 0.0);
+    }
+    for (std::int64_t row = count; row < n_atoms_max; ++row) {
+        std::fill(
+            output + static_cast<std::size_t>(row * n_atoms_max),
+            output + static_cast<std::size_t>((row + 1) * n_atoms_max), 0.0);
     }
 }
 

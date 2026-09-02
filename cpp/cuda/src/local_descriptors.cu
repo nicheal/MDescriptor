@@ -148,22 +148,23 @@ __device__ double positive_hypergeometric(double a, double b, double x) {
     return sum;
 }
 
-__device__ double radial_value(
+__device__ void radial_values(
     double distance,
     int angular,
-    int target_radial,
     int radial_count,
-    double density_width,
+    double density_constant,
+    double factor,
+    double global_factor,
     const double* gto_constants,
     const double* gamma_a,
     const double* gamma_b,
-    const double* orthonormalization) {
-    const double density_width2 = density_width * density_width;
-    const double density_constant = 1.0 / (2.0 * density_width2);
-    const double global_factor = pow(3.141592653589793238462643383279502884 / density_width2, 0.75);
+    const double* orthonormalization,
+    const double* radial_powers,
+    double* output) {
     const double c_r = density_constant * distance;
-    const double factor = global_factor * exp(-distance * c_r) * pow(c_r, angular);
-    double value = 0.0;
+    for (int target_radial = 0; target_radial < radial_count; ++target_radial) {
+        output[target_radial] = 0.0;
+    }
     for (int raw_index = 0; raw_index < radial_count; ++raw_index) {
         const double gto_constant = gto_constants[angular * radial_count + raw_index];
         const double z = c_r * c_r / (density_constant + gto_constant);
@@ -179,12 +180,13 @@ __device__ double radial_value(
         } else {
             raw = gamma_a[angular * radial_count + raw_index]
                 / gamma_b[angular] * positive_hypergeometric(a, b, z)
-                * pow(density_constant + gto_constant, -a) * factor;
+                * radial_powers[angular * radial_count + raw_index] * factor;
         }
-        value += raw * orthonormalization[
-            (angular * radial_count + raw_index) * radial_count + target_radial];
+        for (int target_radial = 0; target_radial < radial_count; ++target_radial) {
+            output[target_radial] += raw * orthonormalization[
+                (angular * radial_count + raw_index) * radial_count + target_radial];
+        }
     }
-    return value;
 }
 
 __device__ double cutoff_value(double distance, double cutoff) {
@@ -217,7 +219,8 @@ __global__ void compute_edge_basis(
     const double* gto_constants,
     const double* gamma_a,
     const double* gamma_b,
-    const double* orthonormalization) {
+    const double* orthonormalization,
+    const double* radial_powers) {
     const std::size_t linear = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (linear >= total) {
         return;
@@ -241,11 +244,21 @@ __global__ void compute_edge_basis(
         return;
     }
     harmonic_values<MaxAngular>(displacement, harmonic_output);
+    const double density_width2 = density_width * density_width;
+    const double density_constant = 1.0 / (2.0 * density_width2);
+    const double global_factor = pow(
+        3.141592653589793238462643383279502884 / density_width2, 0.75);
+    const double c_r = density_constant * distance;
+    const double distance_factor = global_factor * exp(-distance * c_r);
     for (int angular = 0; angular < angular_count; ++angular) {
+        const double factor = distance_factor * pow(c_r, angular);
+        double* radial_values_output = radial_output + angular * radial_count;
+        radial_values(
+            distance, angular, radial_count, density_constant, factor, global_factor,
+            gto_constants, gamma_a, gamma_b, orthonormalization, radial_powers,
+            radial_values_output);
         for (int radial = 0; radial < radial_count; ++radial) {
-            radial_output[angular * radial_count + radial] = scaling * radial_value(
-                distance, angular, radial, radial_count, density_width,
-                gto_constants, gamma_a, gamma_b, orthonormalization);
+            radial_values_output[radial] *= scaling;
         }
     }
 }
@@ -269,7 +282,8 @@ void launch_edge_basis(
     const double* gto_constants,
     const double* gamma_a,
     const double* gamma_b,
-    const double* orthonormalization) {
+    const double* orthonormalization,
+    const double* radial_powers) {
     if (requested_angular == MaxAngular) {
         constexpr unsigned int block_size = 128;
         const auto blocks = static_cast<unsigned int>(
@@ -277,7 +291,8 @@ void launch_edge_basis(
         compute_edge_basis<MaxAngular><<<blocks, block_size, 0, stream>>>(
             numbers, graph_atoms, graph_displacements, graph_distance2, species,
             species_count, cutoff, density_width, radial_count, total, edge_basis,
-            edge_species, gto_constants, gamma_a, gamma_b, orthonormalization);
+            edge_species, gto_constants, gamma_a, gamma_b, orthonormalization,
+            radial_powers);
         return;
     }
     if constexpr (MaxAngular < 31) {
@@ -285,7 +300,7 @@ void launch_edge_basis(
             requested_angular, stream, numbers, graph_atoms, graph_displacements,
             graph_distance2, species, species_count, cutoff, density_width, radial_count,
             total, edge_basis, edge_species, gto_constants, gamma_a, gamma_b,
-            orthonormalization);
+            orthonormalization, radial_powers);
     } else {
         throw std::invalid_argument("unsupported CUDA angular order");
     }
@@ -486,20 +501,26 @@ std::vector<double> compute_local_descriptors(
 
     RadialBasisSet radial_bases;
     radial_bases.reset(max_radial, coefficient_max_angular, cutoff);
+    radial_bases.prepare_density(density_width);
     std::vector<double> gto_constants;
     std::vector<double> gamma_a;
     std::vector<double> gamma_b;
     std::vector<double> orthonormalization;
+    std::vector<double> radial_powers;
     gto_constants.reserve(static_cast<std::size_t>(coefficient_angular_count) * radial_count);
     gamma_a.reserve(static_cast<std::size_t>(coefficient_angular_count) * radial_count);
     gamma_b.reserve(static_cast<std::size_t>(coefficient_angular_count));
     orthonormalization.reserve(
         static_cast<std::size_t>(coefficient_angular_count) * radial_count * radial_count);
+    radial_powers.reserve(static_cast<std::size_t>(coefficient_angular_count) * radial_count);
     for (int angular = 0; angular < coefficient_angular_count; ++angular) {
         const GtoRadialBasis& basis = radial_bases[static_cast<std::size_t>(angular)];
         gto_constants.insert(gto_constants.end(), basis.gto_constants.begin(), basis.gto_constants.end());
         gamma_a.insert(gamma_a.end(), basis.gamma_a.begin(), basis.gamma_a.end());
         gamma_b.push_back(basis.gamma_b);
+        radial_powers.insert(
+            radial_powers.end(), basis.prepared_radial_powers.begin(),
+            basis.prepared_radial_powers.end());
         for (const auto& row : basis.orthonormalization) {
             orthonormalization.insert(orthonormalization.end(), row.begin(), row.end());
         }
@@ -531,6 +552,8 @@ std::vector<double> compute_local_descriptors(
         gamma_b.size() * sizeof(double), alignof(double));
     const std::size_t orthonormalization_offset = reserve_workspace(
         orthonormalization.size() * sizeof(double), alignof(double));
+    const std::size_t radial_powers_offset = reserve_workspace(
+        radial_powers.size() * sizeof(double), alignof(double));
     const std::size_t edge_basis_offset = reserve_workspace(
         edge_count * static_cast<std::size_t>(edge_basis_stride) * sizeof(double), alignof(double));
     const std::size_t edge_species_offset = reserve_workspace(
@@ -544,6 +567,7 @@ std::vector<double> compute_local_descriptors(
     auto* device_gamma_b = reinterpret_cast<double*>(workspace + gamma_b_offset);
     auto* device_orthonormalization = reinterpret_cast<double*>(
         workspace + orthonormalization_offset);
+    auto* device_radial_powers = reinterpret_cast<double*>(workspace + radial_powers_offset);
     auto* edge_basis = reinterpret_cast<double*>(workspace + edge_basis_offset);
     auto* edge_species = reinterpret_cast<std::int32_t*>(workspace + edge_species_offset);
     auto* coefficient_data = reinterpret_cast<double*>(workspace + coefficient_offset);
@@ -572,6 +596,10 @@ std::vector<double> compute_local_descriptors(
         device_orthonormalization, orthonormalization.data(),
         orthonormalization.size() * sizeof(double),
         "could not upload CUDA radial orthonormalization");
+    upload(
+        device_radial_powers, radial_powers.data(),
+        radial_powers.size() * sizeof(double),
+        "could not upload CUDA radial powers");
 
     double* output = context.output_buffer(output_size);
     if (coefficient_total > 0) {
@@ -582,7 +610,7 @@ std::vector<double> compute_local_descriptors(
                 graph.displacements(), graph.distance2(), device_species,
                 static_cast<int>(species.size()), cutoff, density_width, radial_count,
                 edge_count, edge_basis, edge_species, device_gto_constants, device_gamma_a,
-                device_gamma_b, device_orthonormalization);
+                device_gamma_b, device_orthonormalization, device_radial_powers);
             check_cuda(cudaGetLastError(), "CUDA edge basis kernel launch failed");
         }
         const auto coefficient_blocks = static_cast<unsigned int>(

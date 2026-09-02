@@ -55,13 +55,6 @@ class _MatrixKernel(_StructureKernel):
                 float(getattr(self, "g_cut", 0.0) or 0.0),
                 float(getattr(self, "a", 0.0) or 0.0), self.num_threads, control,
             )
-            if self.kind == "sine" and self.permutation == "none":
-                values = np.asarray(values, dtype=np.float64)
-                for structure, count_value in enumerate(counts):
-                    count = int(count_value)
-                    start, stop = int(batch.offsets[structure]), int(batch.offsets[structure + 1])
-                    diagonal = 0.5 * np.power(batch.numbers[start:stop].astype(np.float64), self.exponent)
-                    np.fill_diagonal(values[structure].reshape(max_atoms, max_atoms)[:count, :count], diagonal)
         self._feature_count = int(values.shape[1])
         return DescriptorResult(
             np.asarray(values, dtype=np.float64), self.level, batch.ids, None,

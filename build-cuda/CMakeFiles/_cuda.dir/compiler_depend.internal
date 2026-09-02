@@ -50,6 +50,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/backend.cu.o
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp
@@ -906,6 +907,7 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/bindings.cu.o
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/nep.hpp
  /usr/include/alloca.h

@@ -100,29 +100,6 @@ void compute_matrix(
     }
     std::fill(output, output + batch.structures * layout.stride(), 0.0);
 
-    if (options.kind == MatrixKind::Ewald && batch.structures > 1) {
-        // Ewald's provider has its own real/reciprocal-space parallelism.  As
-        // before, compute the raw matrices in the outer batch loop and apply
-        // the serial output transform afterwards.
-        std::vector<std::vector<double>> matrices(static_cast<std::size_t>(batch.structures));
-        run_parallel_matrix_structures(
-            batch.structures, options.num_threads, control,
-            [&](std::int64_t structure) {
-                matrices[static_cast<std::size_t>(structure)] = ewald_matrix_values(
-                    batch, structure, options.exponent, options.accuracy, options.w,
-                    options.r_cut, options.g_cut, options.a, options.num_threads);
-            });
-        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-            check_cancelled(control);
-            const int count = static_cast<int>(batch.offsets[structure + 1] - batch.offsets[structure]);
-            write_matrix(
-                std::move(matrices[static_cast<std::size_t>(structure)]), count, layout,
-                output + structure * layout.stride());
-            mark_completed(control);
-        }
-        return;
-    }
-
     auto compute_structure = [&](std::int64_t structure) {
         const int count = static_cast<int>(batch.offsets[structure + 1] - batch.offsets[structure]);
         std::vector<double> matrix;

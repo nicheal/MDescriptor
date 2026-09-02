@@ -19,7 +19,6 @@ namespace {
 using Complex = std::complex<double>;
 using BispectrumComplex = detail::rotational::Complex;
 using BispectrumPlan = detail::rotational::BispectrumPlan;
-using BispectrumComponentPlan = detail::rotational::BispectrumComponentPlan;
 using detail::rotational::bispectrum_cutoff;
 using detail::rotational::expansion_order;
 using detail::rotational::make_bispectrum_plan;
@@ -256,14 +255,13 @@ std::vector<Complex> so3_coefficients(
     return output;
 }
 
-std::vector<BispectrumComplex> hyperspherical_u(
+void hyperspherical_u(
     Vec3 vector, const BispectrumPlan& plan,
-    double cutoff, double rfac0, double rmin0) {
-    std::vector<BispectrumComplex> output(plan.u_size());
+    double cutoff, double rfac0, double rmin0,
+    BispectrumComplex* output) {
     detail::rotational::hyperspherical_u(
         vector.x, vector.y, vector.z, plan.order, cutoff, rfac0, rmin0,
-        output.data());
-    return output;
+        output);
 }
 
 struct BispectrumEvaluationOptions {
@@ -293,19 +291,28 @@ double rotational_neighbor_weight(
     return weight_scale;
 }
 
-std::vector<double> compute_bispectrum_center(
+struct BispectrumWorkspace {
+    std::vector<BispectrumComplex> total;
+    std::vector<BispectrumComplex> values;
+    std::vector<BispectrumComplex> z;
+};
+
+void compute_bispectrum_center(
     const StructureBatchView& batch,
     std::int64_t center,
     const BispectrumPlan& plan,
+    const detail::rotational::FlattenedBispectrumPlan& flattened_plan,
     const BispectrumEvaluationOptions& evaluation,
-    const NeighborGraph& graph) {
+    const NeighborGraph& graph,
+    BispectrumWorkspace& workspace,
+    double* result) {
     const auto& offsets = plan.offsets;
-    std::vector<BispectrumComplex> total(plan.u_size());
+    std::fill(workspace.total.begin(), workspace.total.end(), BispectrumComplex{});
     const double center_weight = evaluation.kind == RotationalDescriptorKind::SO4
         ? static_cast<double>(batch.numbers[center]) : 1.0;
     for (int l = 0; l <= plan.order; ++l) {
         for (int m = 0; m <= l; ++m) {
-            total[offsets[static_cast<std::size_t>(l)]
+            workspace.total[offsets[static_cast<std::size_t>(l)]
                 + static_cast<std::size_t>(m * (l + 1) + m)] = {center_weight, 0.0};
         }
     }
@@ -328,15 +335,17 @@ std::vector<double> compute_bispectrum_center(
         if (radius > neighbor_cutoff) {
             continue;
         }
-        const auto values = hyperspherical_u(
-            vector, plan, neighbor_cutoff, evaluation.rfac0, evaluation.rmin0);
+        hyperspherical_u(
+            vector, plan, neighbor_cutoff, evaluation.rfac0, evaluation.rmin0,
+            workspace.values.data());
         const double scale = bispectrum_cutoff(radius, neighbor_cutoff, evaluation.rmin0)
             * rotational_neighbor_weight(
                 batch, neighbors.atoms[index], evaluation.kind,
                 evaluation.weight_scale, evaluation.neighbor_weights);
-        for (std::size_t value = 0; value < total.size(); ++value) {
-            total[value] = detail::rotational::complex_add(
-                total[value], detail::rotational::complex_scale(values[value], scale));
+        for (std::size_t value = 0; value < workspace.total.size(); ++value) {
+            workspace.total[value] = detail::rotational::complex_add(
+                workspace.total[value], detail::rotational::complex_scale(
+                    workspace.values[value], scale));
         }
     }
     if (evaluation.normalize_u) {
@@ -346,52 +355,57 @@ std::vector<double> compute_bispectrum_center(
                 for (int ma = 0; ma <= l; ++ma) {
                     const std::size_t index = offsets[static_cast<std::size_t>(l)]
                         + static_cast<std::size_t>(mb * (l + 1) + ma);
-                    total[index] = detail::rotational::complex_scale(total[index], scale);
+                    workspace.total[index] = detail::rotational::complex_scale(
+                        workspace.total[index], scale);
                 }
             }
         }
     }
-    std::vector<double> result;
-    result.reserve(plan.components.size());
-    for (const BispectrumComponentPlan& component_plan : plan.components) {
-        if (component_plan.z.empty()) {
-            result.push_back(0.0);
-            continue;
-        }
-        std::vector<BispectrumComplex> z;
-        z.reserve(component_plan.z.size());
-        for (const auto& z_plan : component_plan.z) {
+    for (std::size_t component_index = 0;
+         component_index < plan.components.size(); ++component_index) {
+        const std::int64_t z_begin = flattened_plan.component_z_offsets[component_index];
+        const std::int64_t z_end = flattened_plan.component_z_offsets[component_index + 1];
+        for (std::int64_t z_index = z_begin; z_index < z_end; ++z_index) {
             BispectrumComplex value{};
-            for (const auto& inner_plan : z_plan.inner) {
+            for (std::int64_t inner_index = flattened_plan.z_inner_offsets[static_cast<std::size_t>(z_index)];
+                 inner_index < flattened_plan.z_inner_offsets[static_cast<std::size_t>(z_index + 1)]; ++inner_index) {
                 BispectrumComplex inner{};
-                for (const auto& term : inner_plan.terms) {
+                for (std::int64_t term_index = flattened_plan.inner_term_offsets[static_cast<std::size_t>(inner_index)];
+                     term_index < flattened_plan.inner_term_offsets[static_cast<std::size_t>(inner_index + 1)]; ++term_index) {
                     inner = detail::rotational::complex_add(
                         inner,
                         detail::rotational::complex_multiply(
                             detail::rotational::complex_scale(
-                                total[term.first_index], term.coefficient),
-                            total[term.second_index]));
+                                workspace.total[static_cast<std::size_t>(
+                                    flattened_plan.term_first_indices[static_cast<std::size_t>(term_index)])],
+                                flattened_plan.term_coefficients[static_cast<std::size_t>(term_index)]),
+                            workspace.total[static_cast<std::size_t>(
+                                flattened_plan.term_second_indices[static_cast<std::size_t>(term_index)])]));
                 }
                 value = detail::rotational::complex_add(
                     value,
                     detail::rotational::complex_scale(
-                        inner, inner_plan.outer_coefficient));
+                        inner,
+                        flattened_plan.inner_outer_coefficients[static_cast<std::size_t>(inner_index)]));
             }
-            z.push_back(value);
+            workspace.z[static_cast<std::size_t>(z_index)] = value;
         }
         BispectrumComplex bispectrum{};
-        for (const auto& projection : component_plan.projection) {
+        for (std::int64_t projection = flattened_plan.projection_offsets[component_index];
+             projection < flattened_plan.projection_offsets[component_index + 1]; ++projection) {
             bispectrum = detail::rotational::complex_add(
                 bispectrum,
                 detail::rotational::complex_scale(
                     detail::rotational::complex_multiply(
-                        detail::rotational::complex_conjugate(total[projection.u_index]),
-                        z[projection.z_index]),
-                    projection.scale));
+                        detail::rotational::complex_conjugate(
+                            workspace.total[static_cast<std::size_t>(
+                                flattened_plan.projection_u_indices[static_cast<std::size_t>(projection)])]),
+                        workspace.z[static_cast<std::size_t>(
+                            flattened_plan.projection_z_indices[static_cast<std::size_t>(projection)])]),
+                    flattened_plan.projection_scales[static_cast<std::size_t>(projection)]));
         }
-        result.push_back(2.0 * bispectrum.real);
+        result[component_index] = 2.0 * bispectrum.real;
     }
-    return result;
 }
 } // namespace
 
@@ -444,7 +458,6 @@ void compute_rotational_descriptors(
             throw std::invalid_argument("neighbor_weights must be finite");
         }
     }
-    const auto features = rotational_feature_count(options);
     const bool so3 = options.kind == RotationalDescriptorKind::SO3;
     const int bispectrum_order = expansion_order(
         static_cast<int>(options.kind), options.l_max, options.twojmax);
@@ -453,6 +466,13 @@ void compute_rotational_descriptors(
         : make_bispectrum_plan(
             bispectrum_order, options.diagonal,
             options.kind == RotationalDescriptorKind::LBispectrum);
+    const auto flattened_plan = so3
+        ? detail::rotational::FlattenedBispectrumPlan{}
+        : detail::rotational::flatten(bispectrum_plan);
+    const auto features = so3
+        ? static_cast<std::int64_t>(options.l_max + 1) * options.n_max
+            * (options.n_max + 1) / 2
+        : static_cast<std::int64_t>(bispectrum_plan.components.size());
     const BispectrumEvaluationOptions bispectrum_evaluation{
         options.kind,
         options.normalize_u,
@@ -464,6 +484,21 @@ void compute_rotational_descriptors(
         options.neighbor_weights,
         options.neighbor_radii,
     };
+    std::vector<BispectrumWorkspace> bispectrum_workspaces;
+    if (!so3) {
+#ifdef _OPENMP
+        const int worker_count = options.num_threads > 0
+            ? options.num_threads : omp_get_max_threads();
+#else
+        constexpr int worker_count = 1;
+#endif
+        bispectrum_workspaces.resize(static_cast<std::size_t>(std::max(1, worker_count)));
+        for (BispectrumWorkspace& workspace : bispectrum_workspaces) {
+            workspace.total.resize(bispectrum_plan.u_size());
+            workspace.values.resize(bispectrum_plan.u_size());
+            workspace.z.resize(static_cast<std::size_t>(flattened_plan.component_z_offsets.back()));
+        }
+    }
     std::fill(output, output + batch.atoms * features, 0.0);
     check_cancelled(control);
     if (control) {
@@ -485,17 +520,32 @@ void compute_rotational_descriptors(
                                    : std::vector<double>{};
         const int so3_width = 2 * l_max + 1;
         if (!so3) {
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
-#endif
-            for (std::int64_t center = begin; center < end; ++center) {
+            const auto compute_center = [&](std::int64_t center, int workspace_index) {
                 if (cancelled(control)) {
-                    continue;
+                    return;
                 }
-                const auto values = compute_bispectrum_center(
-                    batch, center, bispectrum_plan, bispectrum_evaluation, graph);
-                std::copy(values.begin(), values.end(), output + center * features);
+                compute_bispectrum_center(
+                    batch, center, bispectrum_plan, flattened_plan, bispectrum_evaluation, graph,
+                    bispectrum_workspaces[static_cast<std::size_t>(workspace_index)],
+                    output + center * features);
+            };
+#ifdef _OPENMP
+            if (!omp_in_parallel()) {
+#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads())
+                for (std::int64_t center = begin; center < end; ++center) {
+                    compute_center(center, omp_get_thread_num());
+                }
+            } else {
+                const int workspace_index = omp_get_thread_num();
+                for (std::int64_t center = begin; center < end; ++center) {
+                    compute_center(center, workspace_index);
+                }
             }
+#else
+            for (std::int64_t center = begin; center < end; ++center) {
+                compute_center(center, 0);
+            }
+#endif
             return;
         }
 #ifdef _OPENMP
