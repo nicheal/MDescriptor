@@ -157,6 +157,25 @@ std::vector<std::vector<float>> dpa4_float_sequence(
     return result;
 }
 
+float dpa4_scalar_float(py::handle value, const char* name) {
+    if (!py::isinstance<py::array>(value)) {
+        try {
+            return py::cast<float>(value);
+        } catch (const py::cast_error&) {
+            throw std::invalid_argument(
+                std::string("DPA4 ") + name
+                + " must be a scalar or a numeric array with one value");
+        }
+    }
+
+    const auto values = vector_from_array<float>(value, name);
+    if (values.size() != 1) {
+        throw std::invalid_argument(
+            std::string("DPA4 ") + name + " must contain exactly one value");
+    }
+    return values.front();
+}
+
 Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
     Dpa4Options options;
     options.rcut = py::cast<double>(dpa4_required_payload_value(payload, "rcut"));
@@ -179,10 +198,12 @@ Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
     options.env_output_projection = required_float("env_output_projection");
     options.film_scale_norm = required_float("film_scale_norm");
     options.film_shift_norm = required_float("film_shift_norm");
-    options.film_scale_strength_log = py::cast<float>(
-        dpa4_required_payload_value(payload, "film_scale_strength_log"));
-    options.film_shift_strength_log = py::cast<float>(
-        dpa4_required_payload_value(payload, "film_shift_strength_log"));
+    options.film_scale_strength_log = dpa4_scalar_float(
+        dpa4_required_payload_value(payload, "film_scale_strength_log"),
+        "film_scale_strength_log");
+    options.film_shift_strength_log = dpa4_scalar_float(
+        dpa4_required_payload_value(payload, "film_shift_strength_log"),
+        "film_shift_strength_log");
     options.radial_freqs = required_float("radial_freqs");
     options.radial_layer1 = required_float("radial_layer1");
     options.radial_norm_scale = required_float("radial_norm_scale");

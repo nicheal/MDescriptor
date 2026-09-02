@@ -6,7 +6,6 @@ from pathlib import Path
 
 from scripts.verify_cuda_wheel import RUNTIME_LIBRARY_NAMES
 
-
 ROOT = Path(__file__).parents[1]
 
 
