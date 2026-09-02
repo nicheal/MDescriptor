@@ -1,6 +1,7 @@
 #include "mdescriptor/cuda/neighbor_graph.hpp"
 
 #include <cuda_runtime.h>
+#include <thrust/copy.h>
 #include <thrust/execution_policy.h>
 #include <thrust/gather.h>
 #include <thrust/reduce.h>
@@ -336,106 +337,6 @@ __global__ void build_nep_neighbors_kernel(
     neighbor_counts[atom] = count;
 }
 
-// GPUMD's original NEP CUDA path enumerates every source atom and the
-// periodic image translations on the device.  Keeping this as a two-pass CSR
-// builder lets the same kernel handle fully periodic and isolated structures
-// in one batch without materializing an expanded host-side atom array.
-template <bool Fill>
-__global__ void build_nep_image_neighbors_kernel(
-    int atoms,
-    int position_stride,
-    const double* positions,
-    const std::int32_t* atom_to_structure,
-    const std::int64_t* structure_offsets,
-    const double* source_cells,
-    const std::int32_t* pbc,
-    const std::int32_t* image_counts,
-    const double* image_cells,
-    const double* image_inverses,
-    float cutoff2,
-    const std::int64_t* graph_offsets,
-    std::int32_t* neighbor_counts,
-    std::int32_t* graph_atoms,
-    double* graph_displacements,
-    double* graph_distance2,
-    std::int32_t* overflow) {
-    const std::int64_t atom = static_cast<std::int64_t>(blockIdx.x)
-        * blockDim.x + threadIdx.x;
-    if (atom >= atoms) return;
-
-    const std::int32_t structure = atom_to_structure[atom];
-    const std::int32_t* structure_pbc = pbc + structure * 3;
-    const bool periodic = structure_pbc[0] == 1
-        && structure_pbc[1] == 1 && structure_pbc[2] == 1;
-    const std::int32_t* counts = image_counts + structure * 3;
-    const double* source_cell = source_cells + structure * 9;
-    const double* image_cell = image_cells + structure * 9;
-    const double* image_inverse = image_inverses + structure * 9;
-    const std::int64_t begin = structure_offsets[structure];
-    const std::int64_t end = structure_offsets[structure + 1];
-    const double xi = positions[atom];
-    const double yi = positions[position_stride + atom];
-    const double zi = positions[2 * position_stride + atom];
-    int count = 0;
-    constexpr int kMaxCount = 0x7fffffff;
-
-    for (std::int64_t neighbor = begin; neighbor < end; ++neighbor) {
-        const double base_x = positions[neighbor] - xi;
-        const double base_y = positions[position_stride + neighbor] - yi;
-        const double base_z = positions[2 * position_stride + neighbor] - zi;
-        const int image_x_count = periodic ? counts[0] : 1;
-        const int image_y_count = periodic ? counts[1] : 1;
-        const int image_z_count = periodic ? counts[2] : 1;
-        for (int ia = 0; ia < image_x_count; ++ia) {
-            for (int ib = 0; ib < image_y_count; ++ib) {
-                for (int ic = 0; ic < image_z_count; ++ic) {
-                    if (neighbor == atom && ia == 0 && ib == 0 && ic == 0) {
-                        continue;
-                    }
-                    float dx = static_cast<float>(base_x);
-                    float dy = static_cast<float>(base_y);
-                    float dz = static_cast<float>(base_z);
-                    if (periodic) {
-                        const double raw_x = base_x
-                            + static_cast<double>(ia) * source_cell[0]
-                            + static_cast<double>(ib) * source_cell[3]
-                            + static_cast<double>(ic) * source_cell[6];
-                        const double raw_y = base_y
-                            + static_cast<double>(ia) * source_cell[1]
-                            + static_cast<double>(ib) * source_cell[4]
-                            + static_cast<double>(ic) * source_cell[7];
-                        const double raw_z = base_z
-                            + static_cast<double>(ia) * source_cell[2]
-                            + static_cast<double>(ib) * source_cell[5]
-                            + static_cast<double>(ic) * source_cell[8];
-                        minimum_image_delta(
-                            image_cell, image_inverse, raw_x, raw_y, raw_z,
-                            dx, dy, dz);
-                    }
-                    const float distance2 = dx * dx + dy * dy + dz * dz;
-                    if (distance2 >= cutoff2) {
-                        continue;
-                    }
-                    if (count == kMaxCount) {
-                        atomicExch(overflow, 1);
-                        continue;
-                    }
-                    if constexpr (Fill) {
-                        const std::int64_t edge = graph_offsets[atom] + count;
-                        graph_atoms[edge] = static_cast<std::int32_t>(neighbor);
-                        graph_displacements[edge * 3 + 0] = static_cast<double>(dx);
-                        graph_displacements[edge * 3 + 1] = static_cast<double>(dy);
-                        graph_displacements[edge * 3 + 2] = static_cast<double>(dz);
-                        graph_distance2[edge] = static_cast<double>(distance2);
-                    }
-                    ++count;
-                }
-            }
-        }
-    }
-    neighbor_counts[atom] = static_cast<std::int32_t>(count);
-}
-
 // DPA4 and DPA4C consume the same normalized, image-expanded graph as the
 // native model-backed CPU path.  The two kernels below keep the per-atom
 // structure lookup and periodic wrapping on the device; the host only uploads
@@ -519,7 +420,8 @@ __device__ std::int64_t enumerate_dpa_candidates(
     std::int64_t output_base,
     std::int32_t* overflow,
     bool round_edge_endpoints,
-    bool include_exact_self) {
+    bool include_exact_self,
+    bool include_boundary) {
     constexpr std::int64_t kMaxCount = 0x7fffffffLL;
     const std::int32_t structure = atom_to_structure[center];
     const std::int32_t* structure_pbc = pbc + structure * 3;
@@ -567,7 +469,9 @@ __device__ std::int64_t enumerate_dpa_candidates(
                     const double raw_dz = normalized[neighbor * 3 + 2] + tz - cz;
                     const double distance2 = raw_dx * raw_dx
                         + raw_dy * raw_dy + raw_dz * raw_dz;
-                    if (distance2 > cutoff2) continue;
+                    if (include_boundary ? distance2 > cutoff2 : distance2 >= cutoff2) {
+                        continue;
+                    }
                     // The native DPA4 path builds edge vectors by converting
                     // the translated source and center endpoints to fp32
                     // independently before subtracting them.  DPA4C instead
@@ -658,6 +562,264 @@ __device__ bool dpa_edge_precedes(
     return graph_atoms[left] < graph_atoms[right];
 }
 
+__device__ std::int32_t canonical_structure_for_entry(
+    std::int64_t entry,
+    std::int32_t structures,
+    const std::int64_t* extended_offsets) {
+    std::int32_t low = 0;
+    std::int32_t high = structures;
+    while (low + 1 < high) {
+        const std::int32_t middle = low + (high - low) / 2;
+        if (extended_offsets[middle] <= entry) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+__device__ __forceinline__ int canonical_coordinate(
+    double value,
+    double minimum,
+    double spacing,
+    int dimension) {
+    int coordinate = static_cast<int>(floor((value - minimum) / spacing));
+    return max(0, min(dimension - 1, coordinate));
+}
+
+__global__ void expand_canonical_graph_entries_kernel(
+    std::int64_t entries,
+    std::int32_t structures,
+    const std::int64_t* source_offsets,
+    const std::int64_t* extended_offsets,
+    const double* source_positions,
+    const double* cells,
+    const std::int32_t* image_bounds,
+    std::int32_t* extended_atoms,
+    std::int32_t* extended_shifts,
+    double* extended_positions) {
+    const std::int64_t entry = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (entry >= entries) return;
+    const std::int32_t structure = canonical_structure_for_entry(
+        entry, structures, extended_offsets);
+    const std::int64_t structure_begin = extended_offsets[structure];
+    const std::int64_t source_begin = source_offsets[structure];
+    const std::int64_t source_count = source_offsets[structure + 1] - source_begin;
+    const std::int64_t local_entry = entry - structure_begin;
+    const std::int32_t* bounds = image_bounds + structure * 3;
+    const std::int64_t y_extent = 2 * static_cast<std::int64_t>(bounds[1]) + 1;
+    const std::int64_t z_extent = 2 * static_cast<std::int64_t>(bounds[2]) + 1;
+    const std::int64_t replica = local_entry / source_count;
+    const std::int64_t local_atom = local_entry % source_count;
+    const std::int64_t yz_extent = y_extent * z_extent;
+    const std::int32_t shift_x = static_cast<std::int32_t>(replica / yz_extent)
+        - bounds[0];
+    const std::int64_t yz_remainder = replica % yz_extent;
+    const std::int32_t shift_y = static_cast<std::int32_t>(yz_remainder / z_extent)
+        - bounds[1];
+    const std::int32_t shift_z = static_cast<std::int32_t>(yz_remainder % z_extent)
+        - bounds[2];
+    const std::int64_t source_atom = source_begin + local_atom;
+    const double* cell = cells + structure * 9;
+    const double* source = source_positions + source_atom * 3;
+    const double tx = static_cast<double>(shift_x) * cell[0]
+        + static_cast<double>(shift_y) * cell[3]
+        + static_cast<double>(shift_z) * cell[6];
+    const double ty = static_cast<double>(shift_x) * cell[1]
+        + static_cast<double>(shift_y) * cell[4]
+        + static_cast<double>(shift_z) * cell[7];
+    const double tz = static_cast<double>(shift_x) * cell[2]
+        + static_cast<double>(shift_y) * cell[5]
+        + static_cast<double>(shift_z) * cell[8];
+    extended_atoms[entry] = static_cast<std::int32_t>(source_atom);
+    extended_shifts[entry * 3 + 0] = shift_x;
+    extended_shifts[entry * 3 + 1] = shift_y;
+    extended_shifts[entry * 3 + 2] = shift_z;
+    extended_positions[entry * 3 + 0] = source[0] + tx;
+    extended_positions[entry * 3 + 1] = source[1] + ty;
+    extended_positions[entry * 3 + 2] = source[2] + tz;
+}
+
+__global__ void assign_canonical_graph_cells_kernel(
+    std::int64_t entries,
+    std::int32_t structures,
+    const std::int64_t* extended_offsets,
+    const double* extended_positions,
+    const std::int32_t* structure_cell_offsets,
+    const std::int32_t* structure_cell_dimensions,
+    const double* grid_minimum,
+    const double* grid_spacing,
+    std::int32_t* extended_cells,
+    std::int32_t* cell_counts) {
+    const std::int64_t entry = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (entry >= entries) return;
+    const std::int32_t structure = canonical_structure_for_entry(
+        entry, structures, extended_offsets);
+    const std::int32_t* dimensions = structure_cell_dimensions + structure * 4;
+    const double* minimum = grid_minimum + structure * 3;
+    const double* spacing = grid_spacing + structure * 3;
+    const double* position = extended_positions + entry * 3;
+    const int x = canonical_coordinate(position[0], minimum[0], spacing[0], dimensions[0]);
+    const int y = canonical_coordinate(position[1], minimum[1], spacing[1], dimensions[1]);
+    const int z = canonical_coordinate(position[2], minimum[2], spacing[2], dimensions[2]);
+    const std::int32_t cell = structure_cell_offsets[structure]
+        + x + dimensions[0] * (y + dimensions[1] * z);
+    extended_cells[entry] = cell;
+    atomicAdd(cell_counts + cell, 1);
+}
+
+template <bool Fill>
+__device__ std::int64_t enumerate_canonical_graph_candidates(
+    std::int64_t center,
+    const double* center_positions,
+    const std::int32_t* atom_to_structure,
+    const std::int64_t* extended_offsets,
+    const double* extended_positions,
+    const std::int32_t* extended_atoms,
+    const std::int32_t* extended_shifts,
+    const std::int32_t* structure_cell_offsets,
+    const std::int32_t* structure_cell_dimensions,
+    const double* grid_minimum,
+    const double* grid_spacing,
+    const std::int32_t* cell_offsets,
+    const std::int32_t* cell_atoms,
+    double cutoff2,
+    const std::int64_t* graph_offsets,
+    std::int32_t* graph_atoms,
+    std::int32_t* graph_shifts,
+    double* graph_displacements,
+    double* graph_distance2,
+    std::int64_t output_base,
+    bool include_exact_self,
+    bool include_boundary) {
+    const std::int32_t structure = atom_to_structure[center];
+    const std::int32_t* dimensions = structure_cell_dimensions + structure * 4;
+    const double* minimum = grid_minimum + structure * 3;
+    const double* spacing = grid_spacing + structure * 3;
+    const double* center_position = center_positions + center * 3;
+    const int center_x = canonical_coordinate(
+        center_position[0], minimum[0], spacing[0], dimensions[0]);
+    const int center_y = canonical_coordinate(
+        center_position[1], minimum[1], spacing[1], dimensions[1]);
+    const int center_z = canonical_coordinate(
+        center_position[2], minimum[2], spacing[2], dimensions[2]);
+    const std::int32_t structure_cell_begin = structure_cell_offsets[structure];
+    std::int64_t count = 0;
+    for (int z = max(0, center_z - 1); z <= min(dimensions[2] - 1, center_z + 1); ++z) {
+        for (int y = max(0, center_y - 1); y <= min(dimensions[1] - 1, center_y + 1); ++y) {
+            for (int x = max(0, center_x - 1); x <= min(dimensions[0] - 1, center_x + 1); ++x) {
+                const std::int32_t cell = structure_cell_begin
+                    + x + dimensions[0] * (y + dimensions[1] * z);
+                for (std::int32_t offset = cell_offsets[cell];
+                     offset < cell_offsets[cell + 1]; ++offset) {
+                    const std::int32_t entry = cell_atoms[offset];
+                    const std::int32_t atom = extended_atoms[entry];
+                    const std::int32_t* shift = extended_shifts + entry * 3;
+                    if (!include_exact_self && atom == center
+                        && shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
+                        continue;
+                    }
+                    const double* neighbor = extended_positions + entry * 3;
+                    const double dx = neighbor[0] - center_position[0];
+                    const double dy = neighbor[1] - center_position[1];
+                    const double dz = neighbor[2] - center_position[2];
+                    const double distance2 = dx * dx + dy * dy + dz * dz;
+                    if (include_boundary ? distance2 > cutoff2 : distance2 >= cutoff2) {
+                        continue;
+                    }
+                    if constexpr (Fill) {
+                        const std::int64_t output = output_base + count;
+                        graph_atoms[output] = atom;
+                        graph_shifts[output * 3 + 0] = shift[0];
+                        graph_shifts[output * 3 + 1] = shift[1];
+                        graph_shifts[output * 3 + 2] = shift[2];
+                        graph_displacements[output * 3 + 0] = dx;
+                        graph_displacements[output * 3 + 1] = dy;
+                        graph_displacements[output * 3 + 2] = dz;
+                        graph_distance2[output] = distance2;
+                    }
+                    ++count;
+                }
+            }
+        }
+    }
+    return count;
+}
+
+__global__ void count_canonical_graph_neighbors_kernel(
+    std::int64_t atoms,
+    const double* center_positions,
+    const std::int32_t* atom_to_structure,
+    const std::int64_t* extended_offsets,
+    const double* extended_positions,
+    const std::int32_t* extended_atoms,
+    const std::int32_t* extended_shifts,
+    const std::int32_t* structure_cell_offsets,
+    const std::int32_t* structure_cell_dimensions,
+    const double* grid_minimum,
+    const double* grid_spacing,
+    const std::int32_t* cell_offsets,
+    const std::int32_t* cell_atoms,
+    double cutoff2,
+    std::int32_t* neighbor_counts,
+    std::int32_t* overflow,
+    bool include_exact_self,
+    bool include_boundary) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (center >= atoms) return;
+    const std::int64_t count = enumerate_canonical_graph_candidates<false>(
+        center, center_positions, atom_to_structure, extended_offsets,
+        extended_positions, extended_atoms, extended_shifts, structure_cell_offsets,
+        structure_cell_dimensions, grid_minimum, grid_spacing, cell_offsets,
+        cell_atoms, cutoff2, nullptr, nullptr, nullptr, nullptr, nullptr, 0,
+        include_exact_self, include_boundary);
+    constexpr std::int64_t max_count = 0x7fffffffLL;
+    if (count > max_count) {
+        atomicExch(overflow, 1);
+        neighbor_counts[center] = static_cast<std::int32_t>(max_count);
+    } else {
+        neighbor_counts[center] = static_cast<std::int32_t>(count);
+    }
+}
+
+__global__ void fill_canonical_graph_neighbors_kernel(
+    std::int64_t atoms,
+    const double* center_positions,
+    const std::int32_t* atom_to_structure,
+    const std::int64_t* extended_offsets,
+    const double* extended_positions,
+    const std::int32_t* extended_atoms,
+    const std::int32_t* extended_shifts,
+    const std::int32_t* structure_cell_offsets,
+    const std::int32_t* structure_cell_dimensions,
+    const double* grid_minimum,
+    const double* grid_spacing,
+    const std::int32_t* cell_offsets,
+    const std::int32_t* cell_atoms,
+    double cutoff2,
+    const std::int64_t* graph_offsets,
+    std::int32_t* graph_atoms,
+    std::int32_t* graph_shifts,
+    double* graph_displacements,
+    double* graph_distance2,
+    bool include_exact_self,
+    bool include_boundary) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (center >= atoms) return;
+    (void)enumerate_canonical_graph_candidates<true>(
+        center, center_positions, atom_to_structure, extended_offsets,
+        extended_positions, extended_atoms, extended_shifts, structure_cell_offsets,
+        structure_cell_dimensions, grid_minimum, grid_spacing, cell_offsets,
+        cell_atoms, cutoff2, graph_offsets, graph_atoms, graph_shifts,
+        graph_displacements, graph_distance2, graph_offsets[center],
+        include_exact_self, include_boundary);
+}
+
 __global__ void count_dpa_neighbors_kernel(
     std::int64_t atoms,
     const double* normalized,
@@ -670,7 +832,8 @@ __global__ void count_dpa_neighbors_kernel(
     std::int32_t* neighbor_counts,
     std::int32_t* overflow,
     bool round_edge_endpoints,
-    bool include_exact_self) {
+    bool include_exact_self,
+    bool include_boundary) {
     const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
     if (center >= atoms) return;
     __shared__ std::int64_t counts[128];
@@ -678,7 +841,8 @@ __global__ void count_dpa_neighbors_kernel(
     counts[thread] = enumerate_dpa_candidates<false>(
         center, thread, normalized, structure_offsets, cells, pbc,
         atom_to_structure, image_bounds, cutoff2, nullptr, nullptr, nullptr,
-        nullptr, nullptr, 0, overflow, round_edge_endpoints, include_exact_self);
+        nullptr, nullptr, 0, overflow, round_edge_endpoints, include_exact_self,
+        include_boundary);
     __syncthreads();
     for (std::int32_t step = 64; step > 0; step >>= 1) {
         if (thread < step) counts[thread] += counts[thread + step];
@@ -711,7 +875,8 @@ __global__ void fill_dpa_neighbors_kernel(
     double* graph_distance2,
     std::int32_t* overflow,
     bool round_edge_endpoints,
-    bool include_exact_self) {
+    bool include_exact_self,
+    bool include_boundary) {
     const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
     if (center >= atoms) return;
     __shared__ std::int64_t counts[128];
@@ -719,7 +884,8 @@ __global__ void fill_dpa_neighbors_kernel(
     const std::int64_t local_count = enumerate_dpa_candidates<false>(
         center, thread, normalized, structure_offsets, cells, pbc,
         atom_to_structure, image_bounds, cutoff2, nullptr, nullptr, nullptr,
-        nullptr, nullptr, 0, overflow, round_edge_endpoints, include_exact_self);
+        nullptr, nullptr, 0, overflow, round_edge_endpoints, include_exact_self,
+        include_boundary);
     counts[thread] = local_count;
     __syncthreads();
     for (std::int32_t step = 1; step < 128; step <<= 1) {
@@ -733,7 +899,8 @@ __global__ void fill_dpa_neighbors_kernel(
         center, thread, normalized, structure_offsets, cells, pbc,
         atom_to_structure, image_bounds, cutoff2, graph_offsets, graph_atoms,
         graph_shifts, graph_displacements, graph_distance2,
-        graph_offsets[center] + prefix, overflow, round_edge_endpoints, include_exact_self);
+        graph_offsets[center] + prefix, overflow, round_edge_endpoints, include_exact_self,
+        include_boundary);
 }
 
 __global__ void sort_dpa_neighbors_kernel(
@@ -819,6 +986,244 @@ void DeviceNeighborGraph::upload(
     neighbor_stride_ = 0;
 }
 
+void DeviceNeighborGraph::build_canonical_graph(
+    CudaExecutionContext& context,
+    DeviceBatch& batch,
+    const detail::StructureBatchView& host_batch,
+    double cutoff,
+    bool include_exact_self,
+    bool include_boundary,
+    const std::vector<std::int32_t>& image_bounds,
+    const std::vector<double>& grid_minimum,
+    const std::vector<double>& grid_spacing,
+    const std::vector<std::int32_t>& grid_dimensions) {
+    const std::size_t structure_count = static_cast<std::size_t>(host_batch.structures);
+    const std::size_t atom_count = static_cast<std::size_t>(host_batch.atoms);
+    std::vector<std::int64_t> extended_offsets(structure_count + 1U, 0);
+    std::vector<std::int32_t> atom_to_structure(atom_count, 0);
+    std::vector<std::int32_t> structure_cell_offsets(structure_count + 1U, 0);
+    std::vector<std::int32_t> structure_cell_dimensions(structure_count * 4U, 1);
+    std::size_t extended_count = 0;
+    std::size_t cell_count = 0;
+    for (std::size_t structure = 0; structure < structure_count; ++structure) {
+        const std::int64_t begin = host_batch.offsets[structure];
+        const std::int64_t end = host_batch.offsets[structure + 1];
+        const std::size_t source_count = static_cast<std::size_t>(end - begin);
+        const std::size_t bounds_base = structure * 3U;
+        const std::uint64_t extent_x = 2U * static_cast<std::uint64_t>(image_bounds[bounds_base + 0]) + 1U;
+        const std::uint64_t extent_y = 2U * static_cast<std::uint64_t>(image_bounds[bounds_base + 1]) + 1U;
+        const std::uint64_t extent_z = 2U * static_cast<std::uint64_t>(image_bounds[bounds_base + 2]) + 1U;
+        const std::uint64_t image_count = extent_x * extent_y * extent_z;
+        if (image_count > std::numeric_limits<std::size_t>::max()
+            || source_count > std::numeric_limits<std::size_t>::max()
+                / static_cast<std::size_t>(image_count)) {
+            throw CudaOutOfMemory("CUDA canonical graph image expansion is too large");
+        }
+        const std::size_t structure_entries =
+            source_count * static_cast<std::size_t>(image_count);
+        if (extended_count > std::numeric_limits<std::size_t>::max() - structure_entries
+            || extended_count + structure_entries
+                > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
+            throw CudaOutOfMemory("CUDA canonical graph is too large");
+        }
+        extended_count += structure_entries;
+        extended_offsets[structure + 1] = static_cast<std::int64_t>(extended_count);
+        const std::size_t dimensions_base = structure * 3U;
+        const std::int64_t dimensions_product =
+            static_cast<std::int64_t>(grid_dimensions[dimensions_base + 0])
+            * grid_dimensions[dimensions_base + 1]
+            * grid_dimensions[dimensions_base + 2];
+        if (dimensions_product <= 0
+            || dimensions_product > static_cast<std::int64_t>(
+                std::numeric_limits<std::int32_t>::max())
+            || cell_count > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())
+                - static_cast<std::size_t>(dimensions_product)) {
+            throw CudaOutOfMemory("CUDA canonical graph cell-list index space is too large");
+        }
+        structure_cell_offsets[structure + 1] = static_cast<std::int32_t>(
+            cell_count + static_cast<std::size_t>(dimensions_product));
+        cell_count += static_cast<std::size_t>(dimensions_product);
+        for (int axis = 0; axis < 3; ++axis) {
+            structure_cell_dimensions[structure * 4U + static_cast<std::size_t>(axis)] =
+                grid_dimensions[dimensions_base + static_cast<std::size_t>(axis)];
+        }
+        structure_cell_dimensions[structure * 4U + 3] =
+            static_cast<std::int32_t>(dimensions_product);
+        for (std::int64_t atom = begin; atom < end; ++atom) {
+            atom_to_structure[static_cast<std::size_t>(atom)] =
+                static_cast<std::int32_t>(structure);
+        }
+    }
+    if (cell_count == 0 || extended_count == 0) {
+        throw std::runtime_error("CUDA canonical graph has no device entries");
+    }
+    if (extended_count > std::numeric_limits<std::size_t>::max() / 3U) {
+        throw CudaOutOfMemory("CUDA canonical graph positions are too large");
+    }
+
+    check_cuda(
+        cudaSetDevice(context.device()),
+        "could not select the CUDA device for canonical graph construction");
+    ensure_capacity(&atom_to_structure_, &atom_to_structure_capacity_, atom_count);
+    ensure_capacity(
+        &canonical_extended_offsets_, &canonical_extended_offsets_capacity_,
+        extended_offsets.size());
+    ensure_capacity(
+        &canonical_extended_atoms_, &canonical_extended_atoms_capacity_, extended_count);
+    ensure_capacity(
+        &canonical_extended_shifts_, &canonical_extended_shifts_capacity_, extended_count * 3U);
+    ensure_capacity(
+        &canonical_extended_positions_, &canonical_extended_positions_capacity_,
+        extended_count * 3U);
+    ensure_capacity(
+        &dpa_image_bounds_, &dpa_image_bounds_capacity_, image_bounds.size());
+    ensure_capacity(
+        &canonical_grid_min_, &canonical_grid_min_capacity_, grid_minimum.size());
+    ensure_capacity(
+        &canonical_grid_spacing_, &canonical_grid_spacing_capacity_, grid_spacing.size());
+    ensure_capacity(
+        &canonical_grid_dimensions_, &canonical_grid_dimensions_capacity_,
+        grid_dimensions.size());
+    ensure_capacity(
+        &structure_cell_offsets_, &structure_cell_offsets_capacity_,
+        structure_cell_offsets.size());
+    ensure_capacity(
+        &structure_cell_dims_, &structure_cell_dims_capacity_,
+        structure_cell_dimensions.size());
+    ensure_capacity(&cell_counts_, &cell_counts_capacity_, cell_count);
+    ensure_capacity(&cell_offsets_, &cell_offsets_capacity_, cell_count + 1U);
+    ensure_capacity(&cell_atoms_, &cell_atoms_capacity_, extended_count);
+    ensure_capacity(&cell_sort_keys_, &cell_sort_keys_capacity_, extended_count);
+    ensure_capacity(&atom_cells_, &atom_cells_capacity_, extended_count);
+    ensure_capacity(&neighbor_counts_, &neighbor_counts_capacity_, atom_count);
+    ensure_capacity(&neighbor_overflow_, &neighbor_overflow_capacity_, 1U);
+    ensure_capacity(&offsets_, &offsets_capacity_, atom_count + 1U);
+
+    const cudaStream_t stream = context.stream();
+    ensure_and_upload(
+        &atom_to_structure_, &atom_to_structure_capacity_, atom_to_structure.data(),
+        atom_to_structure.size(), stream);
+    ensure_and_upload(
+        &canonical_extended_offsets_, &canonical_extended_offsets_capacity_,
+        extended_offsets.data(), extended_offsets.size(), stream);
+    ensure_and_upload(
+        &dpa_image_bounds_, &dpa_image_bounds_capacity_, image_bounds.data(),
+        image_bounds.size(), stream);
+    ensure_and_upload(
+        &canonical_grid_min_, &canonical_grid_min_capacity_, grid_minimum.data(),
+        grid_minimum.size(), stream);
+    ensure_and_upload(
+        &canonical_grid_spacing_, &canonical_grid_spacing_capacity_, grid_spacing.data(),
+        grid_spacing.size(), stream);
+    ensure_and_upload(
+        &canonical_grid_dimensions_, &canonical_grid_dimensions_capacity_,
+        grid_dimensions.data(), grid_dimensions.size(), stream);
+    ensure_and_upload(
+        &structure_cell_offsets_, &structure_cell_offsets_capacity_,
+        structure_cell_offsets.data(), structure_cell_offsets.size(), stream);
+    ensure_and_upload(
+        &structure_cell_dims_, &structure_cell_dims_capacity_,
+        structure_cell_dimensions.data(), structure_cell_dimensions.size(), stream);
+    check_cuda(
+        cudaMemsetAsync(cell_counts_, 0, cell_count * sizeof(std::int32_t), stream),
+        "could not clear CUDA canonical graph cell counts");
+    check_cuda(
+        cudaMemsetAsync(neighbor_overflow_, 0, sizeof(std::int32_t), stream),
+        "could not clear CUDA canonical graph overflow");
+
+    constexpr unsigned int block_size = 128;
+    const auto extended_blocks = static_cast<unsigned int>(
+        (extended_count + block_size - 1U) / block_size);
+    expand_canonical_graph_entries_kernel<<<extended_blocks, block_size, 0, stream>>>(
+        static_cast<std::int64_t>(extended_count),
+        static_cast<std::int32_t>(structure_count), batch.offsets(),
+        canonical_extended_offsets_, batch.positions(), batch.cells(), dpa_image_bounds_,
+        canonical_extended_atoms_, canonical_extended_shifts_, canonical_extended_positions_);
+    check_cuda(cudaGetLastError(), "CUDA canonical graph expansion failed");
+    assign_canonical_graph_cells_kernel<<<extended_blocks, block_size, 0, stream>>>(
+        static_cast<std::int64_t>(extended_count),
+        static_cast<std::int32_t>(structure_count), canonical_extended_offsets_,
+        canonical_extended_positions_, structure_cell_offsets_, structure_cell_dims_,
+        canonical_grid_min_, canonical_grid_spacing_, atom_cells_, cell_counts_);
+    check_cuda(cudaGetLastError(), "CUDA canonical graph cell assignment failed");
+
+    const auto execution_policy = thrust::cuda::par.on(stream);
+    thrust::exclusive_scan(
+        execution_policy, cell_counts_, cell_counts_ + cell_count, cell_offsets_);
+    const std::int32_t total_entries = static_cast<std::int32_t>(extended_count);
+    check_cuda(
+        cudaMemcpyAsync(
+            cell_offsets_ + cell_count, &total_entries, sizeof(total_entries),
+            cudaMemcpyHostToDevice, stream),
+        "could not upload final CUDA canonical cell offset");
+    thrust::sequence(
+        execution_policy, cell_atoms_, cell_atoms_ + extended_count, std::int32_t{0});
+    thrust::copy(
+        execution_policy, atom_cells_, atom_cells_ + extended_count, cell_sort_keys_);
+    thrust::stable_sort_by_key(
+        execution_policy, cell_sort_keys_, cell_sort_keys_ + extended_count, cell_atoms_);
+
+    const auto atom_blocks = static_cast<unsigned int>(
+        (atom_count + block_size - 1U) / block_size);
+    count_canonical_graph_neighbors_kernel<<<atom_blocks, block_size, 0, stream>>>(
+        static_cast<std::int64_t>(atom_count), batch.positions(), atom_to_structure_,
+        canonical_extended_offsets_, canonical_extended_positions_, canonical_extended_atoms_,
+        canonical_extended_shifts_, structure_cell_offsets_, structure_cell_dims_,
+        canonical_grid_min_, canonical_grid_spacing_, cell_offsets_, cell_atoms_,
+        cutoff * cutoff, neighbor_counts_, neighbor_overflow_, include_exact_self,
+        include_boundary);
+    check_cuda(cudaGetLastError(), "CUDA canonical graph neighbor count failed");
+    check_cuda(
+        cudaMemsetAsync(offsets_, 0, sizeof(std::int64_t), stream),
+        "could not clear CUDA canonical graph offset zero");
+    thrust::inclusive_scan(
+        execution_policy, neighbor_counts_, neighbor_counts_ + atom_count, offsets_ + 1);
+    const std::int32_t host_max_neighbors = thrust::reduce(
+        execution_policy, neighbor_counts_, neighbor_counts_ + atom_count,
+        std::int32_t{0}, thrust::maximum<std::int32_t>());
+    std::int64_t host_pairs = 0;
+    std::int32_t host_overflow = 0;
+    check_cuda(
+        cudaMemcpyAsync(
+            &host_pairs, offsets_ + atom_count, sizeof(host_pairs),
+            cudaMemcpyDeviceToHost, stream),
+        "could not download CUDA canonical graph pair count");
+    check_cuda(
+        cudaMemcpyAsync(
+            &host_overflow, neighbor_overflow_, sizeof(host_overflow),
+            cudaMemcpyDeviceToHost, stream),
+        "could not download CUDA canonical graph overflow");
+    context.synchronize();
+    if (host_overflow != 0) {
+        throw CudaOutOfMemory("CUDA canonical graph neighbor count exceeds int32 capacity");
+    }
+    if (host_pairs < 0) {
+        throw std::runtime_error("CUDA canonical graph pair count is negative");
+    }
+    const std::size_t pairs = static_cast<std::size_t>(host_pairs);
+    if (pairs > std::numeric_limits<std::size_t>::max() / 3U) {
+        throw CudaOutOfMemory("CUDA canonical graph storage is too large");
+    }
+    ensure_capacity(&atoms_, &atoms_capacity_, pairs);
+    ensure_capacity(&shifts_, &shifts_capacity_, pairs * 3U);
+    ensure_capacity(&displacements_, &displacements_capacity_, pairs * 3U);
+    ensure_capacity(&distance2_, &distance2_capacity_, pairs);
+    if (pairs > 0) {
+        fill_canonical_graph_neighbors_kernel<<<atom_blocks, block_size, 0, stream>>>(
+            static_cast<std::int64_t>(atom_count), batch.positions(), atom_to_structure_,
+            canonical_extended_offsets_, canonical_extended_positions_, canonical_extended_atoms_,
+            canonical_extended_shifts_, structure_cell_offsets_, structure_cell_dims_,
+            canonical_grid_min_, canonical_grid_spacing_, cell_offsets_, cell_atoms_,
+            cutoff * cutoff, offsets_, atoms_, shifts_, displacements_, distance2_,
+            include_exact_self, include_boundary);
+        check_cuda(cudaGetLastError(), "CUDA canonical graph neighbor fill failed");
+    }
+    pairs_ = pairs;
+    max_neighbors_ = static_cast<std::int64_t>(host_max_neighbors);
+    slot_major_ = false;
+    neighbor_stride_ = 0;
+}
+
 void DeviceNeighborGraph::build_dpa(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -827,7 +1232,9 @@ void DeviceNeighborGraph::build_dpa(
     bool tie_break_shifts,
     bool round_edge_endpoints,
     bool include_exact_self,
-    bool normalize_periodic_positions) {
+    bool normalize_periodic_positions,
+    bool include_boundary,
+    NeighborGraphOrdering ordering) {
     if (host_batch.structures != batch.structures()
         || host_batch.atoms != batch.atoms()
         || host_batch.structures < 0 || host_batch.atoms < 0
@@ -860,6 +1267,18 @@ void DeviceNeighborGraph::build_dpa(
     // range, but positions and all candidate pairs remain device-resident.
     std::vector<std::int32_t> image_bounds(structure_count * 3U, 0);
     std::vector<double> inverses(structure_count * 9U, 0.0);
+    std::vector<double> canonical_minimum;
+    std::vector<double> canonical_spacing;
+    std::vector<std::int32_t> canonical_dimensions;
+    if (ordering == NeighborGraphOrdering::Canonical) {
+        if (normalize_periodic_positions) {
+            throw std::invalid_argument(
+                "canonical CUDA graph ordering requires unnormalized positions");
+        }
+        canonical_minimum.resize(structure_count * 3U, 0.0);
+        canonical_spacing.resize(structure_count * 3U, cutoff);
+        canonical_dimensions.resize(structure_count * 3U, 1);
+    }
     for (std::size_t structure = 0; structure < structure_count; ++structure) {
         const std::int32_t* structure_pbc = host_batch.pbc + structure * 3U;
         const bool periodic = structure_pbc[0] == 1
@@ -875,32 +1294,94 @@ void DeviceNeighborGraph::build_dpa(
             inverse[0] = 1.0;
             inverse[4] = 1.0;
             inverse[8] = 1.0;
-            continue;
-        }
-        if (!inverse_row_major3(host_batch.cells + structure * 9U, inverse)) {
-            throw std::invalid_argument("cannot build a CUDA DPA graph from a singular cell");
-        }
-        std::uint64_t image_product = 1;
-        for (int axis = 0; axis < 3; ++axis) {
-            const double x = inverse[axis];
-            const double y = inverse[3 + axis];
-            const double z = inverse[6 + axis];
-            const double required = cutoff * std::sqrt(x * x + y * y + z * z) + 1.0;
-            if (!std::isfinite(required) || required < 0.0
-                || required > static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
-                throw std::invalid_argument("CUDA DPA periodic image range is too large");
+        } else {
+            if (!inverse_row_major3(host_batch.cells + structure * 9U, inverse)) {
+                throw std::invalid_argument("cannot build a CUDA DPA graph from a singular cell");
             }
-            const auto bound = static_cast<std::int64_t>(std::floor(required));
-            image_bounds[structure * 3U + static_cast<std::size_t>(axis)] =
-                static_cast<std::int32_t>(bound);
-            const std::uint64_t extent =
-                2U * static_cast<std::uint64_t>(bound) + 1U;
-            if (image_product > static_cast<std::uint64_t>(
-                    std::numeric_limits<std::int32_t>::max()) / extent) {
-                throw CudaOutOfMemory("CUDA DPA periodic image count is too large");
+            std::uint64_t image_product = 1;
+            for (int axis = 0; axis < 3; ++axis) {
+                const double x = inverse[axis];
+                const double y = inverse[3 + axis];
+                const double z = inverse[6 + axis];
+                const double required = cutoff * std::sqrt(x * x + y * y + z * z) + 1.0;
+                if (!std::isfinite(required) || required < 0.0
+                    || required > static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
+                    throw std::invalid_argument("CUDA DPA periodic image range is too large");
+                }
+                const auto bound = static_cast<std::int64_t>(std::floor(required));
+                image_bounds[structure * 3U + static_cast<std::size_t>(axis)] =
+                    static_cast<std::int32_t>(bound);
+                const std::uint64_t extent =
+                    2U * static_cast<std::uint64_t>(bound) + 1U;
+                if (image_product > static_cast<std::uint64_t>(
+                        std::numeric_limits<std::int32_t>::max()) / extent) {
+                    throw CudaOutOfMemory("CUDA DPA periodic image count is too large");
+                }
+                image_product *= extent;
             }
-            image_product *= extent;
         }
+        if (ordering == NeighborGraphOrdering::Canonical) {
+            const std::int64_t begin = host_batch.offsets[structure];
+            const std::int64_t end = host_batch.offsets[structure + 1];
+            const std::size_t base = structure * 3U;
+            if (begin == end) {
+                canonical_minimum[base + 0] = 0.0;
+                canonical_minimum[base + 1] = 0.0;
+                canonical_minimum[base + 2] = 0.0;
+                continue;
+            }
+            double source_minimum[3] = {
+                host_batch.positions[begin * 3 + 0],
+                host_batch.positions[begin * 3 + 1],
+                host_batch.positions[begin * 3 + 2],
+            };
+            double source_maximum[3] = {
+                source_minimum[0], source_minimum[1], source_minimum[2],
+            };
+            for (std::int64_t atom = begin + 1; atom < end; ++atom) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    source_minimum[axis] = std::min(
+                        source_minimum[axis], host_batch.positions[atom * 3 + axis]);
+                    source_maximum[axis] = std::max(
+                        source_maximum[axis], host_batch.positions[atom * 3 + axis]);
+                }
+            }
+            const double* cell = host_batch.cells + structure * 9U;
+            const double bounds[3] = {
+                static_cast<double>(image_bounds[base + 0]),
+                static_cast<double>(image_bounds[base + 1]),
+                static_cast<double>(image_bounds[base + 2]),
+            };
+            double minimum[3] = {};
+            double maximum[3] = {};
+            for (int axis = 0; axis < 3; ++axis) {
+                const double min_shift = -bounds[0] * std::abs(cell[axis])
+                    - bounds[1] * std::abs(cell[3 + axis])
+                    - bounds[2] * std::abs(cell[6 + axis]);
+                const double max_shift = -min_shift;
+                minimum[axis] = source_minimum[axis] + min_shift - 1.0e-10;
+                maximum[axis] = source_maximum[axis] + max_shift + 1.0e-10;
+                const double range = maximum[axis] - minimum[axis];
+                const double raw_dimension = range / cutoff;
+                if (!std::isfinite(raw_dimension)
+                    || raw_dimension > static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
+                    throw std::invalid_argument("CUDA canonical graph dimensions are too large");
+                }
+                const auto dimension = std::max<std::int32_t>(
+                    1, static_cast<std::int32_t>(raw_dimension));
+                canonical_minimum[base + static_cast<std::size_t>(axis)] = minimum[axis];
+                canonical_spacing[base + static_cast<std::size_t>(axis)] = std::max(
+                    cutoff, range / static_cast<double>(dimension));
+                canonical_dimensions[base + static_cast<std::size_t>(axis)] = dimension;
+            }
+        }
+    }
+
+    if (ordering == NeighborGraphOrdering::Canonical) {
+        build_canonical_graph(
+            context, batch, host_batch, cutoff, include_exact_self, include_boundary,
+            image_bounds, canonical_minimum, canonical_spacing, canonical_dimensions);
+        return;
     }
 
     if (cudaSetDevice(context.device()) != cudaSuccess) {
@@ -948,7 +1429,7 @@ void DeviceNeighborGraph::build_dpa(
         static_cast<std::int64_t>(atom_count), dpa_positions_, batch.offsets(),
         batch.cells(), batch.pbc(), atom_to_structure_, dpa_image_bounds_,
         cutoff * cutoff, neighbor_counts_, neighbor_overflow_,
-        round_edge_endpoints, include_exact_self);
+        round_edge_endpoints, include_exact_self, include_boundary);
     check_cuda(cudaGetLastError(), "CUDA DPA graph neighbor count failed");
 
     check_cuda(
@@ -992,7 +1473,7 @@ void DeviceNeighborGraph::build_dpa(
             static_cast<std::int64_t>(atom_count), dpa_positions_, batch.offsets(),
             batch.cells(), batch.pbc(), atom_to_structure_, dpa_image_bounds_,
             cutoff * cutoff, offsets_, atoms_, shifts_, displacements_, distance2_,
-            neighbor_overflow_, round_edge_endpoints, include_exact_self);
+            neighbor_overflow_, round_edge_endpoints, include_exact_self, include_boundary);
         check_cuda(cudaGetLastError(), "CUDA DPA graph neighbor fill failed");
     }
     sort_dpa_neighbors_kernel<<<atom_blocks, block_size, 0, stream>>>(
@@ -1286,191 +1767,6 @@ void DeviceNeighborGraph::build_nep(
     pairs_ = pairs;
 }
 
-void DeviceNeighborGraph::build_nep_images(
-    CudaExecutionContext& context,
-    DeviceBatch& batch,
-    const detail::StructureBatchView& host_batch,
-    double cutoff) {
-    if (host_batch.structures != batch.structures() || host_batch.atoms != batch.atoms()) {
-        throw std::invalid_argument("CUDA NEP host and device batches have different shapes");
-    }
-    if (host_batch.structures < 0 || host_batch.atoms < 0
-        || host_batch.offsets == nullptr || host_batch.cells == nullptr
-        || host_batch.pbc == nullptr) {
-        throw std::invalid_argument("invalid CUDA NEP batch metadata");
-    }
-    if (!std::isfinite(cutoff) || cutoff <= 0.0) {
-        throw std::invalid_argument("CUDA NEP image cutoff must be positive");
-    }
-    if (host_batch.atoms > static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max())
-        || host_batch.structures > static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max())) {
-        throw CudaOutOfMemory("CUDA NEP batch is too large for image index types");
-    }
-    const double cutoff2_double = cutoff * cutoff;
-    const float cutoff2 = static_cast<float>(cutoff2_double);
-    if (!std::isfinite(cutoff2)) {
-        throw std::invalid_argument("CUDA NEP image cutoff is too large");
-    }
-
-    const std::size_t structure_count = static_cast<std::size_t>(host_batch.structures);
-    const std::size_t atom_count = static_cast<std::size_t>(host_batch.atoms);
-    std::vector<std::int32_t> atom_to_structure(atom_count, 0);
-    std::vector<std::int32_t> image_counts(structure_count * 3U, 1);
-    std::vector<double> image_cells(structure_count * 9U, 0.0);
-    std::vector<double> image_inverses(structure_count * 9U, 0.0);
-
-    for (std::size_t structure = 0; structure < structure_count; ++structure) {
-        const std::int32_t* structure_pbc = host_batch.pbc + structure * 3U;
-        const bool periodic = structure_pbc[0] == 1
-            && structure_pbc[1] == 1 && structure_pbc[2] == 1;
-        const bool isolated = structure_pbc[0] == 0
-            && structure_pbc[1] == 0 && structure_pbc[2] == 0;
-        if (!periodic && !isolated) {
-            throw std::invalid_argument(
-                "CUDA NEP supports all-zero or all-one pbc per structure");
-        }
-        if (periodic) {
-            double base_cell[9] = {};
-            double base_inverse[9] = {};
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    base_cell[row * 3 + column] = host_batch.cells[
-                        structure * 9U + column * 3 + row];
-                }
-            }
-            if (!inverse_row_major3(base_cell, base_inverse)) {
-                throw std::invalid_argument("cannot build a CUDA NEP image box from a singular cell");
-            }
-            std::int64_t image_product = 1;
-            for (int axis = 0; axis < 3; ++axis) {
-                const double x = base_inverse[axis * 3 + 0];
-                const double y = base_inverse[axis * 3 + 1];
-                const double z = base_inverse[axis * 3 + 2];
-                const double reciprocal_norm = std::sqrt(x * x + y * y + z * z);
-                const double required = 2.0 * cutoff * reciprocal_norm;
-                if (!std::isfinite(required)
-                    || required > static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
-                    throw std::invalid_argument("CUDA NEP periodic image range is too large");
-                }
-                const auto count = std::max<std::int32_t>(
-                    1, static_cast<std::int32_t>(std::ceil(required - 1.0e-12)));
-                image_counts[structure * 3U + static_cast<std::size_t>(axis)] = count;
-                image_product *= count;
-                if (image_product > std::numeric_limits<std::int32_t>::max()) {
-                    throw CudaOutOfMemory("CUDA NEP periodic image count is too large");
-                }
-            }
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    const auto count = image_counts[
-                        structure * 3U + static_cast<std::size_t>(column)];
-                    image_cells[structure * 9U + row * 3 + column] =
-                        base_cell[row * 3 + column] * static_cast<double>(count);
-                }
-            }
-            if (!inverse_row_major3(
-                image_cells.data() + structure * 9U,
-                image_inverses.data() + structure * 9U)) {
-                throw std::invalid_argument("cannot invert the CUDA NEP image cell");
-            }
-        } else {
-            for (int axis = 0; axis < 3; ++axis) {
-                image_cells[structure * 9U + axis * 3 + axis] = 1.0;
-                image_inverses[structure * 9U + axis * 3 + axis] = 1.0;
-            }
-        }
-
-        const std::int64_t begin = host_batch.offsets[structure];
-        const std::int64_t end = host_batch.offsets[structure + 1];
-        for (std::int64_t atom = begin; atom < end; ++atom) {
-            atom_to_structure[static_cast<std::size_t>(atom)] =
-                static_cast<std::int32_t>(structure);
-        }
-    }
-
-    if (cudaSetDevice(context.device()) != cudaSuccess) {
-        throw std::runtime_error("could not select the CUDA device");
-    }
-    batch.ensure_positions_soa(context);
-    ensure_capacity(&atom_to_structure_, &atom_to_structure_capacity_, atom_count);
-    ensure_capacity(&neighbor_counts_, &neighbor_counts_capacity_, atom_count);
-    ensure_capacity(&image_counts_, &image_counts_capacity_, image_counts.size());
-    ensure_capacity(&neighbor_overflow_, &neighbor_overflow_capacity_, 1);
-    ensure_capacity(&reference_cells_, &reference_cells_capacity_, image_cells.size());
-    ensure_capacity(&reference_cell_inverses_, &reference_cell_inverses_capacity_, image_inverses.size());
-    ensure_capacity(&offsets_, &offsets_capacity_, atom_count + 1U);
-
-    const cudaStream_t stream = context.stream();
-    ensure_and_upload(
-        &atom_to_structure_, &atom_to_structure_capacity_, atom_to_structure.data(),
-        atom_to_structure.size(), stream);
-    ensure_and_upload(
-        &image_counts_, &image_counts_capacity_, image_counts.data(),
-        image_counts.size(), stream);
-    ensure_and_upload(
-        &reference_cells_, &reference_cells_capacity_, image_cells.data(),
-        image_cells.size(), stream);
-    ensure_and_upload(
-        &reference_cell_inverses_, &reference_cell_inverses_capacity_, image_inverses.data(),
-        image_inverses.size(), stream);
-    check_cuda(
-        cudaMemsetAsync(neighbor_overflow_, 0, sizeof(std::int32_t), stream),
-        "could not clear CUDA NEP image overflow");
-
-    constexpr unsigned int block_size = 128;
-    const auto blocks = static_cast<unsigned int>(
-        (atom_count + block_size - 1U) / block_size);
-    if (blocks > 0) {
-        build_nep_image_neighbors_kernel<false><<<blocks, block_size, 0, stream>>>(
-            static_cast<int>(atom_count), static_cast<int>(batch.position_stride()),
-            batch.positions_soa(), atom_to_structure_, batch.offsets(), batch.cells(),
-            batch.pbc(), image_counts_, reference_cells_, reference_cell_inverses_, cutoff2,
-            nullptr, neighbor_counts_, nullptr, nullptr, nullptr, neighbor_overflow_);
-        check_cuda(cudaGetLastError(), "CUDA NEP image neighbor count failed");
-    }
-
-    const auto execution_policy = thrust::cuda::par.on(stream);
-    check_cuda(
-        cudaMemsetAsync(offsets_, 0, sizeof(std::int64_t), stream),
-        "could not clear CUDA NEP image graph offset zero");
-    thrust::inclusive_scan(
-        execution_policy, neighbor_counts_, neighbor_counts_ + atom_count, offsets_ + 1);
-    std::int64_t host_pairs = 0;
-    std::int32_t host_overflow = 0;
-    check_cuda(
-        cudaMemcpyAsync(
-            &host_pairs, offsets_ + atom_count, sizeof(host_pairs),
-            cudaMemcpyDeviceToHost, stream),
-        "could not download CUDA NEP image pair count");
-    check_cuda(
-        cudaMemcpyAsync(
-            &host_overflow, neighbor_overflow_, sizeof(host_overflow),
-            cudaMemcpyDeviceToHost, stream),
-        "could not download CUDA NEP image overflow");
-    context.synchronize();
-    if (host_overflow != 0) {
-        throw CudaOutOfMemory("CUDA NEP image neighbor count exceeds int32 capacity");
-    }
-    if (host_pairs < 0) {
-        throw std::runtime_error("CUDA NEP image pair count is negative");
-    }
-    const std::size_t pairs = static_cast<std::size_t>(host_pairs);
-    ensure_capacity(&atoms_, &atoms_capacity_, pairs);
-    ensure_capacity(&displacements_, &displacements_capacity_, pairs * 3U);
-    ensure_capacity(&distance2_, &distance2_capacity_, pairs);
-    if (blocks > 0 && pairs > 0) {
-        build_nep_image_neighbors_kernel<true><<<blocks, block_size, 0, stream>>>(
-            static_cast<int>(atom_count), static_cast<int>(batch.position_stride()),
-            batch.positions_soa(), atom_to_structure_, batch.offsets(), batch.cells(),
-            batch.pbc(), image_counts_, reference_cells_, reference_cell_inverses_, cutoff2,
-            offsets_, neighbor_counts_, atoms_, displacements_, distance2_, neighbor_overflow_);
-        check_cuda(cudaGetLastError(), "CUDA NEP image neighbor fill failed");
-    }
-    pairs_ = pairs;
-    slot_major_ = false;
-    neighbor_stride_ = 0;
-}
-
 void DeviceNeighborGraph::clear() noexcept {
     release(offsets_);
     release(atoms_);
@@ -1480,6 +1776,13 @@ void DeviceNeighborGraph::clear() noexcept {
     release(dpa_positions_);
     release(dpa_image_bounds_);
     release(dpa_reference_inverses_);
+    release(canonical_grid_min_);
+    release(canonical_grid_spacing_);
+    release(canonical_grid_dimensions_);
+    release(canonical_extended_offsets_);
+    release(canonical_extended_atoms_);
+    release(canonical_extended_shifts_);
+    release(canonical_extended_positions_);
     pairs_ = 0;
     max_neighbors_ = 0;
     slot_major_ = false;
@@ -1492,6 +1795,13 @@ void DeviceNeighborGraph::clear() noexcept {
     dpa_positions_capacity_ = 0;
     dpa_image_bounds_capacity_ = 0;
     dpa_reference_inverses_capacity_ = 0;
+    canonical_grid_min_capacity_ = 0;
+    canonical_grid_spacing_capacity_ = 0;
+    canonical_grid_dimensions_capacity_ = 0;
+    canonical_extended_offsets_capacity_ = 0;
+    canonical_extended_atoms_capacity_ = 0;
+    canonical_extended_shifts_capacity_ = 0;
+    canonical_extended_positions_capacity_ = 0;
     release(atom_to_structure_);
     release(cell_counts_);
     release(cell_offsets_);
@@ -1500,7 +1810,6 @@ void DeviceNeighborGraph::clear() noexcept {
     release(cell_sort_keys_);
     release(atom_cells_);
     release(neighbor_counts_);
-    release(image_counts_);
     release(neighbor_overflow_);
     release(structure_cell_offsets_);
     release(structure_cell_dims_);
@@ -1509,7 +1818,6 @@ void DeviceNeighborGraph::clear() noexcept {
     atom_to_structure_capacity_ = 0;
     atom_cells_capacity_ = 0;
     neighbor_counts_capacity_ = 0;
-    image_counts_capacity_ = 0;
     neighbor_overflow_capacity_ = 0;
     cell_atoms_capacity_ = 0;
     structure_cell_offsets_capacity_ = 0;

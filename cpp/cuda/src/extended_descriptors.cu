@@ -106,171 +106,6 @@ std::vector<T> download(
     return result;
 }
 
-bool inverse_host3(const double* matrix, double* inverse) {
-    const double determinant = matrix[0] * (matrix[4] * matrix[8] - matrix[5] * matrix[7])
-        - matrix[1] * (matrix[3] * matrix[8] - matrix[5] * matrix[6])
-        + matrix[2] * (matrix[3] * matrix[7] - matrix[4] * matrix[6]);
-    if (!std::isfinite(determinant) || std::abs(determinant) <= 1e-12) return false;
-    const double scale = 1.0 / determinant;
-    inverse[0] = (matrix[4] * matrix[8] - matrix[5] * matrix[7]) * scale;
-    inverse[1] = (matrix[2] * matrix[7] - matrix[1] * matrix[8]) * scale;
-    inverse[2] = (matrix[1] * matrix[5] - matrix[2] * matrix[4]) * scale;
-    inverse[3] = (matrix[5] * matrix[6] - matrix[3] * matrix[8]) * scale;
-    inverse[4] = (matrix[0] * matrix[8] - matrix[2] * matrix[6]) * scale;
-    inverse[5] = (matrix[2] * matrix[3] - matrix[0] * matrix[5]) * scale;
-    inverse[6] = (matrix[3] * matrix[7] - matrix[4] * matrix[6]) * scale;
-    inverse[7] = (matrix[1] * matrix[6] - matrix[0] * matrix[7]) * scale;
-    inverse[8] = (matrix[0] * matrix[4] - matrix[1] * matrix[3]) * scale;
-    return true;
-}
-
-std::vector<std::size_t> cpu_pair_order(
-    const detail::StructureBatchView& batch,
-    double cutoff,
-    const std::vector<double>& records) {
-    const std::size_t edges = records.size() / 5U;
-    std::vector<std::size_t> order(edges);
-    if (edges == 0) return order;
-
-    struct Entry {
-        I64 center = 0;
-        I64 cell = 0;
-        I64 extended = 0;
-        std::size_t edge = 0;
-    };
-    std::vector<Entry> entries;
-    entries.reserve(edges);
-    for (std::size_t edge = 0; edge < edges; ++edge) {
-        const I64 center = static_cast<I64>(records[edge * 5U + 0]);
-        if (center < 0 || center >= batch.atoms) {
-            throw std::runtime_error("CUDA pair output contains an invalid center index");
-        }
-        I64 structure = 0;
-        while (structure + 1 < batch.structures
-            && batch.offsets[structure + 1] <= center) {
-            ++structure;
-        }
-        const I64 begin = batch.offsets[structure];
-        const I64 end = batch.offsets[structure + 1];
-        const I64 atom = static_cast<I64>(records[edge * 5U + 1]);
-        if (atom < begin || atom >= end) {
-            throw std::runtime_error("CUDA pair output contains an invalid neighbor index");
-        }
-
-        const bool periodic = batch.pbc[structure * 3 + 0] == 1
-            && batch.pbc[structure * 3 + 1] == 1
-            && batch.pbc[structure * 3 + 2] == 1;
-        const I64 atom_count = end - begin;
-        std::array<int, 3> bounds{0, 0, 0};
-        double inverse[9]{};
-        if (periodic) {
-            const double* cell = batch.cells + structure * 9;
-            if (!inverse_host3(cell, inverse)) {
-                throw std::invalid_argument("cannot order CUDA pair output for a singular cell");
-            }
-            for (int axis = 0; axis < 3; ++axis) {
-                const double x = inverse[axis];
-                const double y = inverse[3 + axis];
-                const double z = inverse[6 + axis];
-                bounds[static_cast<std::size_t>(axis)] = static_cast<int>(std::floor(
-                    cutoff * std::sqrt(x * x + y * y + z * z) + 1.0));
-            }
-        }
-
-        double minimum[3]{};
-        double maximum[3]{};
-        bool first_image = true;
-        const I64 image_count = periodic
-            ? static_cast<I64>(2 * bounds[0] + 1)
-                * static_cast<I64>(2 * bounds[1] + 1)
-                * static_cast<I64>(2 * bounds[2] + 1)
-            : 1;
-        const double* cell = batch.cells + structure * 9;
-        for (int sx = -bounds[0]; sx <= bounds[0]; ++sx) {
-            for (int sy = -bounds[1]; sy <= bounds[1]; ++sy) {
-                for (int sz = -bounds[2]; sz <= bounds[2]; ++sz) {
-                    if (!periodic && (sx != 0 || sy != 0 || sz != 0)) continue;
-                    const double shift_x = sx * cell[0] + sy * cell[3] + sz * cell[6];
-                    const double shift_y = sx * cell[1] + sy * cell[4] + sz * cell[7];
-                    const double shift_z = sx * cell[2] + sy * cell[5] + sz * cell[8];
-                    for (I64 source = begin; source < end; ++source) {
-                        const double* position = batch.positions + source * 3;
-                        const double values[3] = {
-                            position[0] + shift_x, position[1] + shift_y, position[2] + shift_z,
-                        };
-                        if (first_image) {
-                            for (int axis = 0; axis < 3; ++axis) {
-                                minimum[axis] = values[axis];
-                                maximum[axis] = values[axis];
-                            }
-                            first_image = false;
-                        } else {
-                            for (int axis = 0; axis < 3; ++axis) {
-                                minimum[axis] = std::min(minimum[axis], values[axis]);
-                                maximum[axis] = std::max(maximum[axis], values[axis]);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (first_image) {
-            throw std::runtime_error("cannot order CUDA pair output for an empty structure");
-        }
-        for (int axis = 0; axis < 3; ++axis) {
-            minimum[axis] -= 1e-10;
-            maximum[axis] += 1e-10;
-        }
-        std::array<int, 3> dimensions{1, 1, 1};
-        double spacing[3]{};
-        for (int axis = 0; axis < 3; ++axis) {
-            const double range = maximum[axis] - minimum[axis];
-            dimensions[static_cast<std::size_t>(axis)] = std::max(
-                1, static_cast<int>(range / cutoff));
-            spacing[axis] = std::max(
-                cutoff, range / dimensions[static_cast<std::size_t>(axis)]);
-        }
-        const int sx = static_cast<int>(records[edge * 5U + 2]);
-        const int sy = static_cast<int>(records[edge * 5U + 3]);
-        const int sz = static_cast<int>(records[edge * 5U + 4]);
-        const double* position = batch.positions + atom * 3;
-        const double image[3] = {
-            position[0] + sx * cell[0] + sy * cell[3] + sz * cell[6],
-            position[1] + sx * cell[1] + sy * cell[4] + sz * cell[7],
-            position[2] + sx * cell[2] + sy * cell[5] + sz * cell[8],
-        };
-        int coordinates[3]{};
-        for (int axis = 0; axis < 3; ++axis) {
-            const int coordinate = static_cast<int>((image[axis] - minimum[axis]) / spacing[axis]);
-            coordinates[axis] = std::max(
-                0, std::min(dimensions[static_cast<std::size_t>(axis)] - 1, coordinate));
-        }
-        const I64 cell_index = coordinates[0]
-            + static_cast<I64>(dimensions[0]) * (coordinates[1]
-                + static_cast<I64>(dimensions[1]) * coordinates[2]);
-        I64 extended_index = atom - begin;
-        if (periodic) {
-            const I64 y_extent = 2 * static_cast<I64>(bounds[1]) + 1;
-            const I64 z_extent = 2 * static_cast<I64>(bounds[2]) + 1;
-            const I64 image_index = (static_cast<I64>(sx) + bounds[0]) * y_extent * z_extent
-                + (static_cast<I64>(sy) + bounds[1]) * z_extent
-                + static_cast<I64>(sz) + bounds[2];
-            extended_index = image_index * atom_count + (atom - begin);
-            (void)image_count;
-        }
-        entries.push_back({center, cell_index, extended_index, edge});
-    }
-    std::stable_sort(entries.begin(), entries.end(), [](const Entry& left, const Entry& right) {
-        if (left.center != right.center) return left.center < right.center;
-        if (left.cell != right.cell) return left.cell < right.cell;
-        return left.extended < right.extended;
-    });
-    for (std::size_t index = 0; index < entries.size(); ++index) {
-        order[index] = entries[index].edge;
-    }
-    return order;
-}
-
 std::vector<double> inverse_symmetric_sqrt_host(
     const std::vector<double>& matrix,
     int size) {
@@ -2957,7 +2792,9 @@ py::dict compute_spherical_pair(
     }
     // Keep the input coordinate convention for the public pair identifiers;
     // unlike reduced descriptors, pair samples expose the integer image shift.
-    graph.build_dpa(context, batch, host_batch, cutoff, true, false, true, false);
+    graph.build_dpa(
+        context, batch, host_batch, cutoff, true, false, true, false, false,
+        NeighborGraphOrdering::Canonical);
     const I64 edges = static_cast<I64>(graph.pairs());
     const int radial_count = max_radial + 1;
     const I64 columns = static_cast<I64>((max_angular + 1) * (max_angular + 1) * radial_count);
@@ -3010,28 +2847,9 @@ py::dict compute_spherical_pair(
     auto values = context.download_output(output_size);
     auto records_host = download(
         records.get(), records_size, context, "could not download CUDA pair records");
-    // DeviceNeighborGraph deliberately uses a distance-stable order for the
-    // descriptors that reduce over neighbors.  SphericalExpansionByPair is a
-    // public pair table, however, and its CPU contract exposes the canonical
-    // cell-list query order.  Reorder only the already-computed edge rows
-    // using the same image/grid key; no pair feature is evaluated on the host.
-    const auto pair_order = cpu_pair_order(host_batch, cutoff, records_host);
-    if (!pair_order.empty()) {
-        std::vector<double> ordered_values(values.size(), 0.0);
-        std::vector<double> ordered_records(records_host.size(), 0.0);
-        for (std::size_t target = 0; target < pair_order.size(); ++target) {
-            const std::size_t source = pair_order[target];
-            std::copy_n(
-                values.data() + source * static_cast<std::size_t>(columns),
-                static_cast<std::size_t>(columns),
-                ordered_values.data() + target * static_cast<std::size_t>(columns));
-            std::copy_n(
-                records_host.data() + source * 5U, 5U,
-                ordered_records.data() + target * 5U);
-        }
-        values.swap(ordered_values);
-        records_host.swap(ordered_records);
-    }
+    // DeviceNeighborGraph already emitted the public cell-list order.  Keep
+    // the host boundary limited to the final arrays; pair features and their
+    // canonical ordering are both produced on the CUDA stream.
     const auto atom_offsets = download(
         graph.offsets(), static_cast<std::size_t>(batch.atoms()) + 1,
         context, "could not download CUDA pair graph offsets");
@@ -6571,7 +6389,9 @@ py::dict compute_extended_descriptor(
     const py::dict& options,
     const py::object& control,
     RotationalPlanCache* rotational_plan_cache) {
-    (void)control;
+    if (!control.is_none() && control.attr("cancelled")().cast<bool>()) {
+        throw std::runtime_error("descriptor computation cancelled");
+    }
     if (name == "AtomicComposition") {
         return compute_atomic_composition(
             context, batch, host_batch, species_option(options), option(options, "per_system", true),

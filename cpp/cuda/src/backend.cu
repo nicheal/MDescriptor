@@ -5,12 +5,14 @@
 #include "mdescriptor/cuda/neighbor_graph.hpp"
 #include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/nep.hpp"
-#include "mdescriptor/neighbor.hpp"
 #include "mdescriptor/detail/batch.hpp"
 #include "local_layout.hpp"
 
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
+
+#include <thrust/execution_policy.h>
+#include <thrust/scan.h>
 
 #include <algorithm>
 #include <cmath>
@@ -319,6 +321,37 @@ __global__ void write_neighbor_records(
     }
 }
 
+__global__ void count_filtered_neighbor_records(
+    const std::int64_t* graph_offsets,
+    const std::int32_t* graph_atoms,
+    const std::int32_t* graph_shifts,
+    std::int64_t atoms,
+    bool full_neighbor_list,
+    bool self_pairs,
+    std::int64_t* output_offsets) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (center >= atoms) {
+        return;
+    }
+    const std::int64_t begin = graph_offsets[center];
+    const std::int64_t end = graph_offsets[center + 1];
+    std::int64_t count = 0;
+    for (std::int64_t index = begin; index < end; ++index) {
+        const std::int32_t atom = graph_atoms[index];
+        const std::int32_t* shift = graph_shifts + index * 3;
+        if (!self_pairs && atom == center
+            && shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
+            continue;
+        }
+        if (!full_neighbor_list && atom < center) {
+            continue;
+        }
+        ++count;
+    }
+    output_offsets[center + 1] = count;
+}
+
 void check_cuda_backend(cudaError_t status, const char* operation) {
     if (status == cudaSuccess) {
         return;
@@ -388,41 +421,16 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         const bool self_pairs = option(options_, "self_pairs", false);
         std::vector<std::int64_t> row_offsets{0};
         std::vector<double> round_tripped;
+        std::vector<std::int64_t> atom_output_offsets(
+            static_cast<std::size_t>(arrays.view.atoms) + 1U, 0);
         std::int64_t rows = 0;
         {
             py::gil_scoped_release release;
-            const auto graph = mdescriptor::build_neighbor_graph(
-                arrays.view, cutoff, nullptr, 0, true, false, true);
-            device_graph_.upload(
-                *context_, graph.offsets(), graph.atoms_data(), graph.shifts(),
-                graph.displacements(), graph.distance2());
-            std::vector<std::int64_t> atom_output_offsets(
-                static_cast<std::size_t>(arrays.view.atoms) + 1, 0);
-            for (std::int64_t center = 0; center < arrays.view.atoms; ++center) {
-                const std::int64_t begin = graph.offsets()[static_cast<std::size_t>(center)];
-                const std::int64_t end = graph.offsets()[static_cast<std::size_t>(center + 1)];
-                std::int64_t count = 0;
-                for (std::int64_t index = begin; index < end; ++index) {
-                    const auto atom = graph.atoms_data()[static_cast<std::size_t>(index)];
-                    const auto shift = graph.shifts().data() + static_cast<std::size_t>(index) * 3;
-                    if (!self_pairs && atom == center && shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
-                        continue;
-                    }
-                    if (!full_neighbor_list && atom < center) {
-                        continue;
-                    }
-                    ++count;
-                }
-                atom_output_offsets[static_cast<std::size_t>(center + 1)]
-                    = atom_output_offsets[static_cast<std::size_t>(center)] + count;
-            }
-            for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
-                row_offsets.push_back(
-                    atom_output_offsets[static_cast<std::size_t>(arrays.view.offsets[structure + 1])]);
-            }
-            rows = atom_output_offsets.back();
             std::int64_t* device_output_offsets = nullptr;
             try {
+                device_graph_.build_dpa(
+                    *context_, device_batch_, arrays.view, cutoff, true, false,
+                    true, false, true, NeighborGraphOrdering::Canonical);
                 if (arrays.view.atoms > 0) {
                     check_cuda_backend(
                         cudaMalloc(
@@ -430,15 +438,41 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                             atom_output_offsets.size() * sizeof(std::int64_t)),
                         "could not allocate CUDA neighbor output offsets");
                     check_cuda_backend(
-                        cudaMemcpyAsync(
-                            device_output_offsets, atom_output_offsets.data(),
+                        cudaMemsetAsync(
+                            device_output_offsets, 0,
                             atom_output_offsets.size() * sizeof(std::int64_t),
-                            cudaMemcpyHostToDevice, context_->stream()),
-                        "could not upload CUDA neighbor output offsets");
+                            context_->stream()),
+                        "could not clear CUDA neighbor output offsets");
+                    constexpr unsigned int block_size = 256;
+                    const auto blocks = static_cast<unsigned int>(
+                        (arrays.view.atoms + block_size - 1) / block_size);
+                    count_filtered_neighbor_records<<<blocks, block_size, 0, context_->stream()>>>(
+                        device_graph_.offsets(), device_graph_.atoms(), device_graph_.shifts(),
+                        arrays.view.atoms, full_neighbor_list, self_pairs,
+                        device_output_offsets);
+                    check_cuda_backend(
+                        cudaGetLastError(), "CUDA neighbor filtering kernel launch failed");
+                    const auto execution_policy = thrust::cuda::par.on(context_->stream());
+                    thrust::inclusive_scan(
+                        execution_policy, device_output_offsets + 1,
+                        device_output_offsets + atom_output_offsets.size(),
+                        device_output_offsets + 1);
+                    check_cuda_backend(
+                        cudaMemcpyAsync(
+                            atom_output_offsets.data(), device_output_offsets,
+                            atom_output_offsets.size() * sizeof(std::int64_t),
+                            cudaMemcpyDeviceToHost, context_->stream()),
+                        "could not download CUDA neighbor output offsets");
+                    context_->synchronize();
+                    rows = atom_output_offsets.back();
+                }
+                for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
+                    row_offsets.push_back(
+                        atom_output_offsets[static_cast<std::size_t>(
+                            arrays.view.offsets[structure + 1])]);
                 }
                 if (rows > 0) {
                     double* output = context_->output_buffer(static_cast<std::size_t>(rows) * 9);
-                    context_->synchronize();
                     constexpr unsigned int block_size = 256;
                     const auto blocks = static_cast<unsigned int>(
                         (arrays.view.atoms + block_size - 1) / block_size);
@@ -451,7 +485,9 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                     round_tripped = context_->download_output(static_cast<std::size_t>(rows) * 9);
                 }
                 if (device_output_offsets != nullptr) {
-                    check_cuda_backend(cudaFree(device_output_offsets), "could not release CUDA neighbor output offsets");
+                    check_cuda_backend(
+                        cudaFree(device_output_offsets),
+                        "could not release CUDA neighbor output offsets");
                     device_output_offsets = nullptr;
                 }
             } catch (...) {
@@ -619,12 +655,9 @@ py::object Backend::compute(py::object batch_object, py::object control) {
     std::vector<double> values;
     {
         py::gil_scoped_release release;
-        const auto spherical_graph = mdescriptor::build_neighbor_graph(
-            arrays.view, descriptor_options.cutoff, nullptr, 0, true, false, true);
-        device_graph_.upload(
-            *context_, spherical_graph.offsets(), spherical_graph.atoms_data(),
-            spherical_graph.shifts(), spherical_graph.displacements(),
-            spherical_graph.distance2());
+        device_graph_.build_dpa(
+            *context_, device_batch_, arrays.view, descriptor_options.cutoff,
+            true, false, true, false, true, NeighborGraphOrdering::Canonical);
         values = compute_local_descriptors(
             *context_, device_batch_, device_graph_, species,
             descriptor_options.cutoff, descriptor_options.density_width,

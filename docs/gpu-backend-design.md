@@ -203,14 +203,15 @@ NEPAdapters-compatible device path 只把该顺序用于内部 slot-major descri
 结果仍使用确定性 CSR 路径。GPU 结果中的 `offsets`、`atoms`、`shifts`、
 displacements 和 pair samples 必须与 CPU 语义一致。
 
-普通 NEP 对周期性分为两个 CUDA 分支：
+普通 NEP 的周期路径现在统一使用 device cell-list：
 
 - 当周期 cell 需要物理 replica 时，host 只计算每个 structure 的紧凑
   replication/cell metadata；`expand_nep_batch_kernel` 在 device 生成 numbers、
-  positions 和 expanded offsets 对应的原子布局，随后使用 CUDA cell-list；
-- 当不需要展开时，`build_nep_image_neighbors_kernel` 在 device 按
-  structure/atom/image 枚举周期邻居；全零 PBC 的 structure 只枚举一次、禁止
-  周期 wrapping。两种结构可以在同一 batch 中混合。
+  positions 和 expanded offsets 对应的原子布局，随后进入统一的 CUDA cell-list；
+- 不需要展开时，原始 batch 直接进入同一个 `build_nep` device cell-list。该路径
+  同时处理 fully periodic 和 isolated structure，不再保留另一套 host/设备 image
+  neighbor builder，避免两条路径在 cutoff、self 和累加顺序上漂移。两种结构可以在
+  同一 batch 中混合。
 
 展开后的 descriptor rows 在 `reduce_expanded_nep_kernel` 中按原子 replica 顺序
 在 device 求平均，D2H 只取最终原子结果。这样保留 NEPAdapters 的展开布局和累加
@@ -236,6 +237,12 @@ enumeration、CSR materialization 和模型前向都不经过 host。DPA4 保留
 要求的 endpoint fp32 rounding；DPA4C 直接使用 graph 的 double displacement。
 
 graph 每次 `compute()` 重建，但由 context 复用已分配的容量。第一版不暴露 reusable graph，也不使用调用者数组指针或 hash 作为缓存 key。
+
+`NeighborList`、`SphericalExpansion`、`SoapRadialSpectrum`、
+`SoapPowerSpectrum` 和 `SphericalExpansionByPair` 也复用 device graph builder：
+邻居过滤、CSR offsets、canonical cell-list 顺序和 pair-row 物化在 CUDA stream
+上完成；host 只在公共结果边界接收 offsets/NumPy 输出。canonical graph 的
+bounding-box/grid 参数属于紧凑 launch metadata，候选邻居本身不在 host 构造。
 
 ## 7. 描述符 kernel 分层
 
@@ -270,7 +277,9 @@ CUDA 计算按结构或结构块分批 launch：
 
 - `ComputeControl.total()` 仍为 structure 数；
 - 每完成一个 structure 或结构块调用 `mark_completed()`；
-- kernel 阶段和 chunk 之间检查取消；
+- backend 在 upload 前、descriptor dispatch 前和所有 device work 完成后检查取消；
+  单个已提交 CUDA kernel 内部保持不可中断，较长 descriptor 通过后续结构/块边界
+  观察取消状态；
 - 取消后同步并抛出公共 `CancelledError`；
 - 不返回部分结果。
 
@@ -405,7 +414,7 @@ NEPAdapters 的 GPU parity 已在具备 NVIDIA runner 的环境中完成，性�
 
 ## 12. 测试与性能门禁
 
-建议新增独立 GPU 测试目录：
+独立 GPU 测试目录包含以下 contract/golden 入口：
 
 ```text
 tests/gpu/
@@ -416,6 +425,7 @@ tests/gpu/
   test_cuda_nep.py
   test_cuda_cancellation.py
   test_cuda_errors.py
+  test_cuda_graph_migration.py
 ```
 
 测试分为三层：
@@ -437,6 +447,25 @@ GPU 对照必须严格检查：
 数值使用独立 tolerance manifest。CPU workflow 不依赖 CUDA；涉及 CUDA 源码、构建配置或 GPU registry 能力的变更必须触发独立 GPU workflow。GPU runner 缺失或测试失败不能被静默 skip。
 
 第一版 benchmark 只要求完整 `compute()` 在大 batch 上显示明确 GPU 收益，不对小 batch 设置硬性 speedup 阈值；正式性能门禁在固定硬件后再建立。
+
+图迁移的 CPU/GPU 顺序、精度和速度对照使用
+[`test_cuda_graph_migration.py`](../tests/gpu/test_cuda_graph_migration.py) 和
+[`benchmark_cuda_graph_migration.py`](../scripts/benchmarking/benchmark_cuda_graph_migration.py)。
+benchmark 必须把父版本和当前版本分别构建到两个 plugin 目录，再在同一块 GPU
+上运行；它对 `NeighborList`、三个 local descriptor 和
+`SphericalExpansionByPair` 输出 CPU reference、steady-state median、speedup、
+最大绝对误差、MAE/RMSE，以及 `samples`/`row_offsets` 是否完全一致。命令为：
+
+```bash
+.venv/bin/python scripts/benchmarking/benchmark_cuda_graph_migration.py \
+  --before-plugin-dir /path/to/build-cuda-before \
+  --after-plugin-dir /path/to/build-cuda-after \
+  --warmup 2 --repeat 5 \
+  --output /tmp/mdescriptor-cuda-graph-migration.json
+```
+
+没有可用 NVIDIA device/driver 时，测试会标记 `device_unavailable`，benchmark
+退出码为 2；该状态不能替代真实 GPU 的前后速度结论。
 
 普通 NEP 的对照命令为：
 

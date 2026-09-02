@@ -10,6 +10,11 @@
 
 namespace mdescriptor::cuda {
 
+enum class NeighborGraphOrdering {
+    Distance,
+    Canonical,
+};
+
 // CSR + SoA representation shared by the CUDA descriptor family.  The graph
 // can either be uploaded by an adapter that already owns a host graph or be
 // constructed from a device batch.  DPA4/DPA4C use the latter path: only
@@ -41,7 +46,9 @@ public:
         bool tie_break_shifts,
         bool round_edge_endpoints,
         bool include_exact_self = false,
-        bool normalize_periodic_positions = true);
+        bool normalize_periodic_positions = true,
+        bool include_boundary = true,
+        NeighborGraphOrdering ordering = NeighborGraphOrdering::Distance);
     // NEP's periodic path can construct the cell list and its CSR neighbor
     // graph on the device.  The host batch is used only for the small amount
     // of per-structure grid planning; positions and all pair enumeration stay
@@ -64,11 +71,17 @@ public:
     const double* displacements() const noexcept { return displacements_; }
     const double* distance2() const noexcept { return distance2_; }
 private:
-    void build_nep_images(
+    void build_canonical_graph(
         CudaExecutionContext& context,
         DeviceBatch& batch,
         const detail::StructureBatchView& host_batch,
-        double cutoff);
+        double cutoff,
+        bool include_exact_self,
+        bool include_boundary,
+        const std::vector<std::int32_t>& image_bounds,
+        const std::vector<double>& grid_minimum,
+        const std::vector<double>& grid_spacing,
+        const std::vector<std::int32_t>& grid_dimensions);
 
     template <typename Value>
     void ensure_capacity(Value** pointer, std::size_t* capacity, std::size_t count);
@@ -90,9 +103,23 @@ private:
     double* dpa_positions_ = nullptr;
     std::int32_t* dpa_image_bounds_ = nullptr;
     double* dpa_reference_inverses_ = nullptr;
+    double* canonical_grid_min_ = nullptr;
+    double* canonical_grid_spacing_ = nullptr;
+    std::int32_t* canonical_grid_dimensions_ = nullptr;
     std::size_t dpa_positions_capacity_ = 0;
     std::size_t dpa_image_bounds_capacity_ = 0;
     std::size_t dpa_reference_inverses_capacity_ = 0;
+    std::size_t canonical_grid_min_capacity_ = 0;
+    std::size_t canonical_grid_spacing_capacity_ = 0;
+    std::size_t canonical_grid_dimensions_capacity_ = 0;
+    std::int64_t* canonical_extended_offsets_ = nullptr;
+    std::int32_t* canonical_extended_atoms_ = nullptr;
+    std::int32_t* canonical_extended_shifts_ = nullptr;
+    double* canonical_extended_positions_ = nullptr;
+    std::size_t canonical_extended_offsets_capacity_ = 0;
+    std::size_t canonical_extended_atoms_capacity_ = 0;
+    std::size_t canonical_extended_shifts_capacity_ = 0;
+    std::size_t canonical_extended_positions_capacity_ = 0;
 
     std::int32_t* atom_to_structure_ = nullptr;
     std::int32_t* cell_counts_ = nullptr;
@@ -102,10 +129,6 @@ private:
     std::int32_t* cell_sort_keys_ = nullptr;
     std::int32_t* atom_cells_ = nullptr;
     std::int32_t* neighbor_counts_ = nullptr;
-    // Number of periodic images enumerated for each structure.  The image
-    // expansion stays on the device; this is only the compact per-structure
-    // launch metadata uploaded by build_nep().
-    std::int32_t* image_counts_ = nullptr;
     std::int32_t* neighbor_overflow_ = nullptr;
     std::int32_t* structure_cell_offsets_ = nullptr;
     std::int32_t* structure_cell_dims_ = nullptr;
@@ -114,7 +137,6 @@ private:
     std::size_t atom_to_structure_capacity_ = 0;
     std::size_t atom_cells_capacity_ = 0;
     std::size_t neighbor_counts_capacity_ = 0;
-    std::size_t image_counts_capacity_ = 0;
     std::size_t neighbor_overflow_capacity_ = 0;
     std::size_t cell_atoms_capacity_ = 0;
     std::size_t cell_sort_keys_capacity_ = 0;

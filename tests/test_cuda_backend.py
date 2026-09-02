@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from ase import Atoms
@@ -15,6 +17,8 @@ from mdescriptor import (
     _runtime,
 )
 from mdescriptor.descriptors import DPA4, DPA4C, SOAP, NeighborList
+
+ROOT = Path(__file__).parents[1]
 
 
 def _batch() -> StructureBatch:
@@ -63,6 +67,21 @@ def test_execution_options_accept_only_the_frozen_device_tokens() -> None:
     with pytest.raises(DescriptorConfigError) as caught:
         ExecutionOptions(device="cuda:0")
     assert caught.value.code == "invalid_device"
+
+
+def test_cuda_graph_migration_has_no_host_graph_or_pair_reorder() -> None:
+    """The migrated public paths must not reintroduce their old CPU seams."""
+
+    backend = (ROOT / "cpp/cuda/src/backend.cu").read_text(encoding="utf-8")
+    extended = (ROOT / "cpp/cuda/src/extended_descriptors.cu").read_text(encoding="utf-8")
+    graph = (ROOT / "cpp/cuda/src/neighbor_graph.cu").read_text(encoding="utf-8")
+    assert "mdescriptor::build_neighbor_graph" not in backend
+    assert "cpu_pair_order" not in extended
+    assert "build_nep_image_neighbors_kernel" not in graph
+    assert "build_nep_images" not in graph
+    assert "NeighborGraphOrdering::Canonical" in backend
+    assert "NeighborGraphOrdering::Canonical" in extended
+    assert "count_filtered_neighbor_records" in backend
 
 
 def test_cuda_plugin_is_lazy_and_receives_public_control(monkeypatch) -> None:
