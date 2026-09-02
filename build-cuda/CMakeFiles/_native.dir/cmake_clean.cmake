@@ -3,6 +3,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o.d"
   "CMakeFiles/_native.dir/cpp/src/common/control.cpp.o"
   "CMakeFiles/_native.dir/cpp/src/common/control.cpp.o.d"
+  "CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o"
+  "CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o.d"
   "CMakeFiles/_native.dir/cpp/src/common/neighbor.cpp.o"
   "CMakeFiles/_native.dir/cpp/src/common/neighbor.cpp.o.d"
   "CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o"

@@ -4,6 +4,8 @@
 #include "mdescriptor/dpa4c.hpp"
 #include "mdescriptor/extra.hpp"
 #include "mdescriptor/local_descriptors.hpp"
+#include "mdescriptor/matrix.hpp"
+#include "matrix_output.hpp"
 #include "mdescriptor/nep.hpp"
 #include "mdescriptor/neighbor.hpp"
 
@@ -466,6 +468,17 @@ struct DpaBindingTraits<Dpa4Calculator> {
     static constexpr const char* name = "DPA4";
 };
 
+py::array compute_matrix_array_impl(
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const std::string& permutation,
+    mdescriptor::MatrixOptions options,
+    const std::shared_ptr<ComputeControl>& control
+);
+
 template <typename Calculator>
 py::array compute_dpa_array(
     const Calculator& calculator,
@@ -504,23 +517,34 @@ py::array compute_coulomb_matrix_array(
     std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
+    mdescriptor::MatrixOptions options;
+    options.n_atoms_max = n_atoms_max;
+    options.kind = mdescriptor::MatrixKind::Coulomb;
+    options.exponent = exponent;
+    options.num_threads = num_threads;
+    return compute_matrix_array_impl(
+        numbers, positions, cells, pbc, offsets, permutation, options, control);
+}
+
+py::array compute_matrix_array_impl(
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const std::string& permutation,
+    mdescriptor::MatrixOptions options,
+    const std::shared_ptr<ComputeControl>& control
+) {
     const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    if (n_atoms_max <= 0 || n_atoms_max > std::numeric_limits<std::int64_t>::max() / n_atoms_max) {
-        throw std::invalid_argument("n_atoms_max must be a positive value");
-    }
-    const auto features = permutation == "eigenspectrum" ? n_atoms_max : n_atoms_max * n_atoms_max;
-    py::array_t<double> output({batch.structures, features});
-    auto output_info = output.request();
-    std::fill(
-        static_cast<double*>(output_info.ptr),
-        static_cast<double*>(output_info.ptr) + batch.structures * features,
-        0.0);
+    options.permutation = mdescriptor::detail::matrix_permutation_from_name(permutation);
+    const auto layout = mdescriptor::detail::make_matrix_layout(
+        options.n_atoms_max, options.permutation);
+    py::array_t<double> output({batch.structures, layout.columns()});
     auto ctrl = control_or_default(control);
     {
         py::gil_scoped_release release;
-        mdescriptor::compute_coulomb_matrix(
-            batch, n_atoms_max, permutation, exponent, num_threads,
-            static_cast<double*>(output_info.ptr), ctrl);
+        mdescriptor::compute_matrix(batch, options, output.mutable_data(), ctrl);
     }
     return output;
 }
@@ -543,19 +567,18 @@ py::array compute_matrix_array(
     std::int32_t num_threads,
     const std::shared_ptr<ComputeControl>& control
 ) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    const auto columns = permutation == "eigenspectrum" ? n_atoms_max : n_atoms_max * n_atoms_max;
-    py::array_t<double> output({batch.structures, columns});
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        mdescriptor::compute_matrix(
-            batch, n_atoms_max, permutation, exponent,
-            static_cast<mdescriptor::MatrixKind>(kind), accuracy, w, r_cut, g_cut, a,
-            num_threads,
-            output.mutable_data(), ctrl);
-    }
-    return output;
+    mdescriptor::MatrixOptions options;
+    options.n_atoms_max = n_atoms_max;
+    options.exponent = exponent;
+    options.kind = static_cast<mdescriptor::MatrixKind>(kind);
+    options.accuracy = accuracy;
+    options.w = w;
+    options.r_cut = r_cut;
+    options.g_cut = g_cut;
+    options.a = a;
+    options.num_threads = num_threads;
+    return compute_matrix_array_impl(
+        numbers, positions, cells, pbc, offsets, permutation, options, control);
 }
 
 py::array compute_mbtr_array(

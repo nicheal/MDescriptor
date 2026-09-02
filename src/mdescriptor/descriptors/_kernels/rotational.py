@@ -97,47 +97,26 @@ class So3Kernel(_AtomKernel):
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
 
 
-class So4Kernel(_AtomKernel):
-    name = "SO4"
+class _BispectrumKernel(_AtomKernel):
+    """Shared Python seam for SO4, SNAP, and L-Bispectrum configuration."""
+
+    _kind = 1
 
     def __init__(
         self,
-        lmax: int = 3,
-        rcut: float = 3.5,
-        normalize_U: bool = False,
+        lmax: int,
+        rcut: float,
+        normalize_U: bool,
+        weights: dict[Any, float] | None = None,
         num_threads: int | None = None,
     ):
         self.lmax, self.rcut, self.normalize_U = int(lmax), float(rcut), bool(normalize_U)
+        self.weights = weights or {}
         self.num_threads = 0 if num_threads is None else int(num_threads)
         if self.lmax < 0 or self.rcut <= 0.0:
-            raise ValueError("invalid SO4 parameters")
+            raise ValueError(f"invalid {self.name} parameters")
         if self.num_threads < 0:
             raise ValueError("num_threads must be non-negative")
-
-    def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
-        batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_rotational_descriptors(
-            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
-            1, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
-            1.0, 3, 3, self.num_threads, control, 1.0,
-        ), dtype=np.float64)
-        self._feature_count = int(values.shape[1])
-        return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
-
-
-class SnapKernel(So4Kernel):
-    name = "SNAP"
-
-    def __init__(
-        self,
-        weights: dict[Any, float] | None = None,
-        lmax: int = 3,
-        rcut: float = 3.5,
-        normalize_U: bool = False,
-        num_threads: int | None = None,
-    ):
-        super().__init__(lmax=lmax, rcut=rcut, normalize_U=normalize_U, num_threads=num_threads)
-        self.weights = weights or {}
 
     def _neighbor_weights(self, batch: StructureBatch) -> list[float]:
         if not self.weights:
@@ -163,20 +142,101 @@ class SnapKernel(So4Kernel):
             numeric[number] = weight
         return [numeric.get(int(number), 1.0) for number in batch.numbers]
 
-    def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
+    @staticmethod
+    def _element_values(batch: StructureBatch, values: dict[Any, float], label: str) -> list[float]:
+        if not values:
+            return []
+        numeric: dict[int, float] = {}
+        symbol_numbers = None
+        for key, value in values.items():
+            if isinstance(key, (int, np.integer)):
+                number = int(key)
+            elif isinstance(key, str):
+                if symbol_numbers is None:
+                    from ase.data import atomic_numbers
+                    symbol_numbers = atomic_numbers
+                try:
+                    number = int(symbol_numbers[key])
+                except KeyError as exc:
+                    raise ValueError(f"unknown chemical symbol in {label}: {key!r}") from exc
+            else:
+                raise TypeError(f"{label} keys must be atomic numbers or chemical symbols")
+            numeric[number] = float(value)
+        missing = sorted(set(map(int, batch.numbers)) - set(numeric))
+        if missing:
+            raise ValueError(f"{label} is missing atomic numbers: {missing}")
+        return [numeric[int(number)] for number in batch.numbers]
+
+    def _compute_bispectrum(
+        self,
+        value: StructureBatch | Sequence[Any] | Any,
+        control: Any = None,
+        *,
+        rfac0: float,
+        twojmax: int = 3,
+        diagonal: int = 3,
+        neighbor_weights: list[float] | None = None,
+        rmin0: float = 0.0,
+        rcutfac: float = 1.0,
+        neighbor_radii: list[float] | None = None,
+    ) -> DescriptorResult:
         batch = _as_batch(value)
         values = np.asarray(_cpp.compute_rotational_descriptors(
             batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
-            2, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
-            1.0, 3, 3, self.num_threads, control, 0.99363,
-            self._neighbor_weights(batch),
+            self._kind, self.lmax + 1, self.lmax, self.rcut, 2.0, False,
+            self.normalize_U, 1.0, twojmax, diagonal, self.num_threads, control,
+            rfac0, neighbor_weights or [], rmin0, rcutfac, neighbor_radii or [],
         ), dtype=np.float64)
         self._feature_count = int(values.shape[1])
-        return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
+        return DescriptorResult(
+            values, "atom", batch.ids, batch.offsets.copy(),
+            tuple(f"{self.name}:{i}" for i in range(values.shape[1])),
+            {"backend": "mdescriptor-cpp", "descriptor": self.name},
+        )
 
 
-class LbispectrumKernel(SnapKernel):
+class So4Kernel(_BispectrumKernel):
+    name = "SO4"
+    _kind = 1
+
+    def __init__(
+        self,
+        lmax: int = 3,
+        rcut: float = 3.5,
+        normalize_U: bool = False,
+        num_threads: int | None = None,
+    ):
+        super().__init__(lmax, rcut, normalize_U, num_threads=num_threads)
+
+    def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
+        return self._compute_bispectrum(value, control, rfac0=1.0)
+
+
+class SnapKernel(_BispectrumKernel):
+    name = "SNAP"
+    _kind = 2
+
+    def __init__(
+        self,
+        weights: dict[Any, float] | None = None,
+        lmax: int = 3,
+        rcut: float = 3.5,
+        normalize_U: bool = False,
+        num_threads: int | None = None,
+    ):
+        super().__init__(lmax, rcut, normalize_U, weights=weights, num_threads=num_threads)
+
+    def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
+        batch = _as_batch(value)
+        return self._compute_bispectrum(
+            batch, control, rfac0=0.99363,
+            neighbor_weights=self._neighbor_weights(batch),
+        )
+
+
+class LbispectrumKernel(_BispectrumKernel):
     name = "LBispectrum"
+    _kind = 3
 
     def __init__(
         self,
@@ -211,41 +271,16 @@ class LbispectrumKernel(SnapKernel):
             num_threads=num_threads,
         )
 
-    @staticmethod
-    def _element_values(batch: StructureBatch, values: dict[Any, float], label: str) -> list[float]:
-        if not values:
-            return []
-        numeric: dict[int, float] = {}
-        symbol_numbers = None
-        for key, value in values.items():
-            if isinstance(key, (int, np.integer)):
-                number = int(key)
-            elif isinstance(key, str):
-                if symbol_numbers is None:
-                    from ase.data import atomic_numbers
-                    symbol_numbers = atomic_numbers
-                try:
-                    number = int(symbol_numbers[key])
-                except KeyError as exc:
-                    raise ValueError(f"unknown chemical symbol in {label}: {key!r}") from exc
-            else:
-                raise TypeError(f"{label} keys must be atomic numbers or chemical symbols")
-            numeric[number] = float(value)
-        missing = sorted(set(map(int, batch.numbers)) - set(numeric))
-        if missing:
-            raise ValueError(f"{label} is missing atomic numbers: {missing}")
-        return [numeric[int(number)] for number in batch.numbers]
-
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        values = np.asarray(_cpp.compute_rotational_descriptors(
-            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
-            3, self.lmax + 1, self.lmax, self.rcut, 2.0, False, self.normalize_U,
-            1.0, self.twojmax, self.diagonal, self.num_threads, control, self.rfac0,
-            self._neighbor_weights(batch), self.rmin0, self.rcutfac,
-            self._element_values(batch, self.element_radii, "element_radii")), dtype=np.float64)
-        self._feature_count = int(values.shape[1])
-        return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
+        return self._compute_bispectrum(
+            batch, control, rfac0=self.rfac0,
+            twojmax=self.twojmax, diagonal=self.diagonal,
+            neighbor_weights=self._neighbor_weights(batch),
+            rmin0=self.rmin0, rcutfac=self.rcutfac,
+            neighbor_radii=self._element_values(
+                batch, self.element_radii, "element_radii"),
+        )
 
 
 __all__ = ["EadKernel", "So3Kernel", "So4Kernel", "SnapKernel", "LbispectrumKernel"]

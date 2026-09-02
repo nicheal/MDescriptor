@@ -10,6 +10,92 @@
 namespace mdescriptor {
 using namespace detail;
 
+namespace {
+
+void assemble_spherical_expansion_row(
+    double* row,
+    std::size_t center_type,
+    const std::vector<double>& coefficients,
+    std::size_t species_count,
+    std::size_t radial_count,
+    int max_angular) {
+    const std::size_t angular_count = static_cast<std::size_t>(max_angular + 1);
+    const std::size_t center_block = species_count * radial_count
+        * angular_count * angular_count;
+    row += center_type * center_block;
+    std::size_t offset = 0;
+    for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
+        for (int angular = 0; angular <= max_angular; ++angular) {
+            for (int m = -angular; m <= angular; ++m) {
+                for (int radial = 0; radial < static_cast<int>(radial_count); ++radial) {
+                    row[offset++] = coefficients[local_coefficient_index(
+                        neighbor_type, radial, angular, m,
+                        static_cast<int>(radial_count), max_angular)];
+                }
+            }
+        }
+    }
+}
+
+void assemble_soap_radial_spectrum_row(
+    double* row,
+    std::size_t center_type,
+    const std::vector<double>& coefficients,
+    std::size_t species_count,
+    std::size_t radial_count) {
+    row += center_type * species_count * radial_count;
+    for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
+        for (int radial = 0; radial < static_cast<int>(radial_count); ++radial) {
+            row[neighbor_type * radial_count + static_cast<std::size_t>(radial)]
+                = coefficients[local_coefficient_index(
+                    neighbor_type, radial, 0, 0,
+                    static_cast<int>(radial_count), 0)];
+        }
+    }
+}
+
+void assemble_soap_power_spectrum_row(
+    double* row,
+    std::size_t center_type,
+    const std::vector<double>& coefficients,
+    std::size_t species_count,
+    std::size_t radial_count,
+    int max_angular,
+    const std::vector<double>& angular_scales) {
+    const std::size_t angular_count = static_cast<std::size_t>(max_angular + 1);
+    const std::size_t pair_count = species_count * (species_count + 1) / 2;
+    const std::size_t center_block = pair_count * angular_count
+        * radial_count * radial_count;
+    row += center_type * center_block;
+    std::size_t offset = 0;
+    const int radial_count_int = static_cast<int>(radial_count);
+    for (std::size_t first = 0; first < species_count; ++first) {
+        for (std::size_t second = first; second < species_count; ++second) {
+            const double pair_scale = first == second ? 1.0 : kSqrt2;
+            for (int angular = 0; angular <= max_angular; ++angular) {
+                const double scale = pair_scale
+                    * angular_scales[static_cast<std::size_t>(angular)];
+                for (int first_radial = 0; first_radial < radial_count_int; ++first_radial) {
+                    for (int second_radial = 0; second_radial < radial_count_int; ++second_radial) {
+                        double value = 0.0;
+                        for (int m = -angular; m <= angular; ++m) {
+                            value += coefficients[local_coefficient_index(
+                                first, first_radial, angular, m,
+                                radial_count_int, max_angular)]
+                                * coefficients[local_coefficient_index(
+                                    second, second_radial, angular, m,
+                                    radial_count_int, max_angular)];
+                        }
+                        row[offset++] = scale * value;
+                    }
+                }
+            }
+        }
+    }
+}
+
+} // namespace
+
 std::int64_t local_descriptor_feature_count(const LocalDescriptorOptions& options, LocalDescriptorKind kind) {
     validate_options(options);
     if (options.species.empty()) {
@@ -46,38 +132,28 @@ void compute_spherical_expansion(
     }
     const NeighborGraph graph = build_neighbor_graph(batch, options.cutoff, control, options.num_threads);
     const int n_radial = options.max_radial + 1;
-    const int max_angular = kind == LocalDescriptorKind::SoapRadialSpectrum ? 0 : options.max_angular;
+    const int coefficient_max_angular = local_coefficient_max_angular(options, kind);
     const std::int64_t features = local_feature_count(options, kind);
     LocalDescriptorOptions coefficient_options = options;
-    coefficient_options.max_angular = max_angular;
+    coefficient_options.max_angular = coefficient_max_angular;
     std::fill(output, output + batch.atoms * features, 0.0);
-    static thread_local int cached_max_radial = -1;
-    static thread_local int cached_max_angular = -1;
-    static thread_local double cached_radius = 0.0;
-    static thread_local std::vector<GtoRadialBasis> cached_radial_bases;
-    if (cached_max_radial != options.max_radial
-        || cached_max_angular != options.max_angular
-        || cached_radius != options.cutoff) {
-        cached_radial_bases.clear();
-        cached_radial_bases.reserve(static_cast<std::size_t>(options.max_angular + 1));
-        for (int l = 0; l <= options.max_angular; ++l) {
-            cached_radial_bases.emplace_back(n_radial, options.cutoff, l);
-        }
-        cached_max_radial = options.max_radial;
-        cached_max_angular = options.max_angular;
-        cached_radius = options.cutoff;
+    static thread_local RadialBasisSet cached_radial_bases;
+    if (!cached_radial_bases.matches(
+            options.max_radial, coefficient_max_angular, options.cutoff)) {
+        cached_radial_bases.reset(
+            options.max_radial, coefficient_max_angular, options.cutoff);
     }
     const auto& radial_bases = cached_radial_bases;
     const std::size_t species_count = options.species.size();
     const std::size_t radial_count = static_cast<std::size_t>(n_radial);
-    const std::size_t angular_count = static_cast<std::size_t>(options.max_angular + 1);
-    const std::size_t power_pair_count = species_count * (species_count + 1) / 2;
-    const std::size_t power_pair_stride = angular_count * radial_count * radial_count;
-    const std::size_t power_center_stride = power_pair_count * power_pair_stride;
-    std::vector<double> power_l_scale(angular_count, 0.0);
-    for (int l = 0; l <= options.max_angular; ++l) {
-        power_l_scale[static_cast<std::size_t>(l)]
-            = (l % 2 == 0 ? 1.0 : -1.0) / std::sqrt(2.0 * l + 1.0);
+    std::vector<double> power_l_scale;
+    if (kind == LocalDescriptorKind::SoapPowerSpectrum) {
+        power_l_scale.resize(static_cast<std::size_t>(options.max_angular + 1));
+        for (int angular = 0; angular <= options.max_angular; ++angular) {
+            power_l_scale[static_cast<std::size_t>(angular)]
+                = (angular % 2 == 0 ? 1.0 : -1.0)
+                / std::sqrt(2.0 * angular + 1.0);
+        }
     }
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads())
@@ -93,67 +169,26 @@ void compute_spherical_expansion(
         std::vector<double> legendre;
         std::vector<double> radial;
         std::vector<double> radial_raw;
-        const std::size_t coefficient_size = species_count * radial_count
-            * angular_count * static_cast<std::size_t>(2 * options.max_angular + 1);
-        coefficients.reserve(coefficient_size);
+        std::vector<double> edge_basis;
+        coefficients.reserve(static_cast<std::size_t>(local_coefficient_count(
+            coefficient_options, LocalDescriptorKind::SphericalExpansion)));
         for (std::int64_t center = begin; center < end; ++center) {
             const auto center_type = static_cast<std::size_t>(atom_types[static_cast<std::size_t>(center)]);
             compute_coefficients_into(
-                batch, graph, center, coefficient_options, atom_types, radial_bases, false,
-                coefficients, harmonics, legendre, radial, radial_raw);
+                graph, center, coefficient_options, atom_types, radial_bases,
+                coefficients, harmonics, legendre, radial, radial_raw, edge_basis);
             double* row = output + center * features;
             if (kind == LocalDescriptorKind::SoapRadialSpectrum) {
-                row += center_type * species_count * radial_count;
-                for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
-                    for (int n = 0; n < n_radial; ++n) {
-                        row[neighbor_type * radial_count + static_cast<std::size_t>(n)]
-                            = coefficients[coefficient_index(neighbor_type, n, 0, 0, n_radial, coefficient_options.max_angular)];
-                        }
-                    }
+                assemble_soap_radial_spectrum_row(
+                    row, center_type, coefficients, species_count, radial_count);
             } else if (kind == LocalDescriptorKind::SoapPowerSpectrum) {
-                row += center_type * power_center_stride;
-                std::size_t offset = 0;
-                const int coefficient_width = 2 * options.max_angular + 1;
-                for (std::size_t first = 0; first < species_count; ++first) {
-                    for (std::size_t second = first; second < species_count; ++second) {
-                        const double pair_scale = first == second ? 1.0 : kSqrt2;
-                        for (int l = 0; l <= options.max_angular; ++l) {
-                            const double scale = pair_scale * power_l_scale[static_cast<std::size_t>(l)];
-                            const std::size_t m_offset = static_cast<std::size_t>(options.max_angular - l);
-                            for (int n1 = 0; n1 < n_radial; ++n1) {
-                                const double* first_coeff = coefficients.data()
-                                    + (((first * radial_count + static_cast<std::size_t>(n1)) * angular_count
-                                        + static_cast<std::size_t>(l)) * static_cast<std::size_t>(coefficient_width)
-                                       + m_offset);
-                                for (int n2 = 0; n2 < n_radial; ++n2) {
-                                    const double* second_coeff = coefficients.data()
-                                        + (((second * radial_count + static_cast<std::size_t>(n2)) * angular_count
-                                            + static_cast<std::size_t>(l)) * static_cast<std::size_t>(coefficient_width)
-                                           + m_offset);
-                                    double value = 0.0;
-                                    for (int m = 0; m < 2 * l + 1; ++m) {
-                                        value += first_coeff[m] * second_coeff[m];
-                                    }
-                                    row[offset++] = scale * value;
-                                }
-                            }
-                        }
-                    }
-                }
+                assemble_soap_power_spectrum_row(
+                    row, center_type, coefficients, species_count, radial_count,
+                    options.max_angular, power_l_scale);
             } else {
-                const std::size_t center_block = species_count * radial_count
-                    * static_cast<std::size_t>(max_angular + 1) * static_cast<std::size_t>(max_angular + 1);
-                row += center_type * center_block;
-                std::size_t offset = 0;
-                for (std::size_t neighbor_type = 0; neighbor_type < species_count; ++neighbor_type) {
-                    for (int l = 0; l <= max_angular; ++l) {
-                        for (int m = -l; m <= l; ++m) {
-                            for (int n = 0; n < n_radial; ++n) {
-                                row[offset++] = coefficients[coefficient_index(neighbor_type, n, l, m, n_radial, options.max_angular)];
-                            }
-                        }
-                    }
-                }
+                assemble_spherical_expansion_row(
+                    row, center_type, coefficients, species_count, radial_count,
+                    options.max_angular);
             }
         }
         mark_completed(control);

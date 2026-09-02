@@ -143,6 +143,9 @@ class NeighborListKernel:
 class SphericalExpansionKernel(_AtomKernel):
     name = "SphericalExpansion"
     _kind = 0
+    k_cutoff = 2.5
+    exponent = 1
+    radial_radius = None
 
     def __init__(self, species: Iterable[int] | None = None, cutoff: float = 6.0, density_width: float = 0.3, max_radial: int = 6, max_angular: int = 4, num_threads: int | None = None):
         super().__init__(species, num_threads)
@@ -151,32 +154,94 @@ class SphericalExpansionKernel(_AtomKernel):
         if self.cutoff <= 0.0 or self.density_width <= 0.0 or self.max_radial < 0 or self.max_angular < 0:
             raise ValueError("invalid spherical expansion parameters")
 
+    def _compute_native(
+        self,
+        batch: StructureBatch,
+        species: tuple[int, ...],
+        control: Any,
+    ) -> Any:
+        radial_radius = self.cutoff if self.radial_radius is None else self.radial_radius
+        return _cpp.compute_spherical_expansion(
+            batch.numbers,
+            batch.positions,
+            batch.cells,
+            batch.pbc,
+            batch.offsets,
+            list(species),
+            self.cutoff,
+            self.density_width,
+            self.max_radial,
+            self.max_angular,
+            self._kind,
+            self.k_cutoff,
+            self.exponent,
+            radial_radius,
+            self.num_threads,
+            control,
+        )
+
+    def _result_from_native(
+        self,
+        raw: Any,
+        batch: StructureBatch,
+        species: tuple[int, ...],
+    ) -> DescriptorResult:
+        values = np.asarray(raw, dtype=np.float64)
+        self._feature_count = int(values.shape[1])
+        return _atom_result(values, batch, self.name, species, offsets=batch.offsets.copy())
+
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
         species = self._species_for(batch)
-        if self.name == "SphericalExpansionByPair":
-            values, offsets, identifiers = _cpp.compute_spherical_expansion_by_pair(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self.num_threads, control)
-            values = np.asarray(values, dtype=np.float64)
-            self._feature_count = int(values.shape[1])
-            return DescriptorResult(
-                values,
-                "pair",
-                batch.ids,
-                np.asarray(offsets, dtype=np.int64),
-                tuple(f"{self.name}:{i}" for i in range(values.shape[1])),
-                {"backend": "mdescriptor-cpp", "descriptor": self.name, "species": species},
-                samples=pair_samples(identifiers[:, :5], offsets, batch.offsets),
-                _atom_row_offsets=batch.offsets.copy(),
-            )
-        values = _cpp.compute_spherical_expansion(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, list(species), self.cutoff, self.density_width, self.max_radial, self.max_angular, self._kind, getattr(self, "k_cutoff", 2.5), getattr(self, "exponent", 1), getattr(self, "radial_radius", self.cutoff), self.num_threads, control)
-        values = np.asarray(values, dtype=np.float64)
-        self._feature_count = int(values.shape[1])
-        return _atom_result(values, batch, self.name, species, offsets=batch.offsets.copy())
+        raw = self._compute_native(batch, species, control)
+        return self._result_from_native(raw, batch, species)
 
 
 class SphericalExpansionByPairKernel(SphericalExpansionKernel):
     name = "SphericalExpansionByPair"
     _kind = 1
+
+    def _compute_native(
+        self,
+        batch: StructureBatch,
+        species: tuple[int, ...],
+        control: Any,
+    ) -> Any:
+        return _cpp.compute_spherical_expansion_by_pair(
+            batch.numbers,
+            batch.positions,
+            batch.cells,
+            batch.pbc,
+            batch.offsets,
+            list(species),
+            self.cutoff,
+            self.density_width,
+            self.max_radial,
+            self.max_angular,
+            self.num_threads,
+            control,
+        )
+
+    def _result_from_native(
+        self,
+        raw: Any,
+        batch: StructureBatch,
+        species: tuple[int, ...],
+    ) -> DescriptorResult:
+        values, offsets, identifiers = raw
+        values = np.asarray(values, dtype=np.float64)
+        offsets = np.asarray(offsets, dtype=np.int64)
+        self._feature_count = int(values.shape[1])
+        return DescriptorResult(
+            values,
+            "pair",
+            batch.ids,
+            offsets,
+            tuple(f"{self.name}:{i}" for i in range(values.shape[1])),
+            {"backend": "mdescriptor-cpp", "descriptor": self.name, "species": species},
+            samples=pair_samples(identifiers[:, :5], offsets, batch.offsets),
+            _atom_row_offsets=batch.offsets.copy(),
+        )
 
 
 class SoapRadialSpectrumKernel(SphericalExpansionKernel):

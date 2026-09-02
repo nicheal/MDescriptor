@@ -471,7 +471,15 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o : /home/nicheal/MDes
     /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
     /usr/include/c++/13/bits/streambuf.tcc \
     /usr/include/c++/13/optional \
-    /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/mbtr.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp \
+    /usr/include/c++/13/algorithm \
+    /usr/include/c++/13/bits/stl_algo.h \
+    /usr/include/c++/13/bits/algorithmfwd.h \
+    /usr/include/c++/13/bits/stl_heap.h \
+    /usr/include/c++/13/bits/uniform_int_dist.h \
+    /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/matrix.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
     /usr/include/c++/13/atomic \
     /usr/include/c++/13/mutex \
@@ -483,17 +491,12 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o : /home/nicheal/MDes
     /usr/include/c++/13/bits/unique_lock.h \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp \
+    /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
     /home/nicheal/MDescriptor/cpp/src/common/local_spherical_common.hpp \
     /home/nicheal/MDescriptor/cpp/src/common/local_common.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
     /home/nicheal/MDescriptor/cpp/src/common/local_layout.hpp \
     /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/math3.hpp \
-    /usr/include/c++/13/algorithm \
-    /usr/include/c++/13/bits/stl_algo.h \
-    /usr/include/c++/13/bits/algorithmfwd.h \
-    /usr/include/c++/13/bits/stl_heap.h \
-    /usr/include/c++/13/bits/uniform_int_dist.h \
-    /usr/include/c++/13/pstl/glue_algorithm_defs.h \
     /usr/include/c++/13/array \
     /usr/include/c++/13/compare \
     /usr/include/c++/13/numeric \

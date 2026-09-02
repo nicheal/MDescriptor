@@ -33,11 +33,8 @@ DescriptorPairTable compute_spherical_expansion_by_pair(
     // storage while assembling pair records.
     const NeighborGraph graph = build_neighbor_graph(
         batch, options.cutoff, control, options.num_threads, false, false, true);
-    std::vector<GtoRadialBasis> radial_bases;
-    radial_bases.reserve(static_cast<std::size_t>(options.max_angular + 1));
-    for (int l = 0; l <= options.max_angular; ++l) {
-        radial_bases.emplace_back(n_radial, options.cutoff, l);
-    }
+    RadialBasisSet radial_bases;
+    radial_bases.reset(options.max_radial, options.max_angular, options.cutoff);
     DescriptorPairTable result;
     const std::size_t pair_count = graph.offsets().empty()
         ? 0
@@ -45,8 +42,10 @@ DescriptorPairTable compute_spherical_expansion_by_pair(
     result.values.reserve(pair_count * static_cast<std::size_t>(9 + features));
     result.offsets.push_back(0);
     std::vector<double> harmonics;
+    std::vector<double> legendre;
     std::vector<double> radial(static_cast<std::size_t>(n_radial));
     std::vector<double> radial_raw(static_cast<std::size_t>(n_radial));
+    std::vector<double> edge_basis;
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         check_cancelled(control);
         const std::int64_t begin = batch.offsets[structure];
@@ -75,19 +74,10 @@ DescriptorPairTable compute_spherical_expansion_by_pair(
                         neighbors.displacements[index * 3 + 1],
                         neighbors.displacements[index * 3 + 2],
                     };
-                    real_spherical_harmonics(displacement, options.max_angular, harmonics);
-                    for (int l = 0; l <= options.max_angular; ++l) {
-                        radial_bases[static_cast<std::size_t>(l)].radial_integral_into(
-                            distance, l, options.density_width, radial, radial_raw);
-                        for (int m = -l; m <= l; ++m) {
-                            const std::size_t offset = static_cast<std::size_t>(l * l + l + m)
-                                * static_cast<std::size_t>(n_radial);
-                            for (int n = 0; n < n_radial; ++n) {
-                                row[9 + offset + static_cast<std::size_t>(n)] = scaling * radial[static_cast<std::size_t>(n)]
-                                    * harmonics[static_cast<std::size_t>(l * l + l + m)];
-                            }
-                        }
-                    }
+                    compute_edge_basis_into(
+                        distance, displacement, options, radial_bases, scaling,
+                        harmonics, legendre, radial, radial_raw, edge_basis);
+                    std::copy(edge_basis.begin(), edge_basis.end(), row + 9);
                 }
             }
         }

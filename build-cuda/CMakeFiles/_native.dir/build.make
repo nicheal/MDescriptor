@@ -209,10 +209,24 @@ CMakeFiles/_native.dir/cpp/src/standalone/matrix_dispatch.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/_native.dir/cpp/src/standalone/matrix_dispatch.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/nicheal/MDescriptor/cpp/src/standalone/matrix_dispatch.cpp -o CMakeFiles/_native.dir/cpp/src/standalone/matrix_dispatch.cpp.s
 
+CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o: CMakeFiles/_native.dir/flags.make
+CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o: /home/nicheal/MDescriptor/cpp/src/common/matrix_output.cpp
+CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o -MF CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o -c /home/nicheal/MDescriptor/cpp/src/common/matrix_output.cpp
+
+CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/nicheal/MDescriptor/cpp/src/common/matrix_output.cpp > CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.i
+
+CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/nicheal/MDescriptor/cpp/src/common/matrix_output.cpp -o CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.s
+
 CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/mbtr.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/mbtr.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.i: cmake_force
@@ -226,7 +240,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/ead.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/ead.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.i: cmake_force
@@ -240,7 +254,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/ace.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/ace.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.i: cmake_force
@@ -254,7 +268,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/mtp.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/mtp.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.i: cmake_force
@@ -268,7 +282,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/mtp.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/mtp4.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/mtp4.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.i: cmake_force
@@ -282,7 +296,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/mtp4.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/rotational_descriptors.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/rotational_descriptors.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.i: cmake_force
@@ -296,7 +310,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.s: cmake_fo
 CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o: /home/nicheal/MDescriptor/cpp/src/common/nep.cpp
 CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o -MF CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/common/nep.cpp.o -c /home/nicheal/MDescriptor/cpp/src/common/nep.cpp
 
 CMakeFiles/_native.dir/cpp/src/common/nep.cpp.i: cmake_force
@@ -310,7 +324,7 @@ CMakeFiles/_native.dir/cpp/src/common/nep.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o: /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4.cpp
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o -MF CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.o -c /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4.cpp
 
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.i: cmake_force
@@ -324,7 +338,7 @@ CMakeFiles/_native.dir/cpp/src/model_backed/dpa4.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o: /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4_wigner.cpp
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o -MF CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.o -c /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4_wigner.cpp
 
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.i: cmake_force
@@ -338,7 +352,7 @@ CMakeFiles/_native.dir/cpp/src/model_backed/dpa4_wigner.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o: /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4c.cpp
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o -MF CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.o -c /home/nicheal/MDescriptor/cpp/src/model_backed/dpa4c.cpp
 
 CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.i: cmake_force
@@ -352,7 +366,7 @@ CMakeFiles/_native.dir/cpp/src/model_backed/dpa4c.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/atomic_composition.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/atomic_composition.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.i: cmake_force
@@ -366,7 +380,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/atomic_composition.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/sorted_distances.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/sorted_distances.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.i: cmake_force
@@ -380,7 +394,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/sorted_distances.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/neighbor_list.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/neighbor_list.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.i: cmake_force
@@ -394,7 +408,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/neighbor_list.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.i: cmake_force
@@ -408,7 +422,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion.cpp.s: cmake_force
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion_by_pair.cpp
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o -MF CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o -c /home/nicheal/MDescriptor/cpp/src/standalone/spherical_expansion_by_pair.cpp
 
 CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.i: cmake_force
@@ -422,7 +436,7 @@ CMakeFiles/_native.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.s: cma
 CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o: CMakeFiles/_native.dir/flags.make
 CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o: /home/nicheal/MDescriptor/cpp/src/bindings/module.cpp
 CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o: CMakeFiles/_native.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Building CXX object CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o -MF CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o.d -o CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o -c /home/nicheal/MDescriptor/cpp/src/bindings/module.cpp
 
 CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.i: cmake_force
@@ -445,6 +459,7 @@ _native_OBJECTS = \
 "CMakeFiles/_native.dir/cpp/src/standalone/sine_matrix.cpp.o" \
 "CMakeFiles/_native.dir/cpp/src/standalone/ewald_sum_matrix.cpp.o" \
 "CMakeFiles/_native.dir/cpp/src/standalone/matrix_dispatch.cpp.o" \
+"CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o" \
 "CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o" \
 "CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o" \
 "CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o" \
@@ -475,6 +490,7 @@ _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalo
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalone/sine_matrix.cpp.o
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalone/ewald_sum_matrix.cpp.o
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalone/matrix_dispatch.cpp.o
+_native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalone/mbtr.cpp.o
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalone/ead.cpp.o
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/cpp/src/standalone/ace.cpp.o
@@ -496,7 +512,7 @@ _native.cpython-312-x86_64-linux-gnu.so: /home/nicheal/MDescriptor/.venv/lib/pyt
 _native.cpython-312-x86_64-linux-gnu.so: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
 _native.cpython-312-x86_64-linux-gnu.so: /usr/lib/x86_64-linux-gnu/libpthread.a
 _native.cpython-312-x86_64-linux-gnu.so: CMakeFiles/_native.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Linking CXX shared module _native.cpython-312-x86_64-linux-gnu.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/nicheal/MDescriptor/build-cuda/CMakeFiles --progress-num=$(CMAKE_PROGRESS_28) "Linking CXX shared module _native.cpython-312-x86_64-linux-gnu.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/_native.dir/link.txt --verbose=$(VERBOSE)
 	/usr/bin/strip /home/nicheal/MDescriptor/build-cuda/_native.cpython-312-x86_64-linux-gnu.so
 

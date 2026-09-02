@@ -10,27 +10,6 @@
 
 namespace mdescriptor {
 
-enum class MatrixKind : std::int32_t {
-    Sine = 0,
-    Ewald = 1,
-    Coulomb = 2,
-};
-
-void compute_matrix(
-    const StructureBatchView& batch,
-    std::int64_t n_atoms_max,
-    const std::string& permutation,
-    double exponent,
-    MatrixKind kind,
-    double accuracy,
-    double w,
-    double r_cut,
-    double g_cut,
-    double a,
-    int num_threads,
-    double* output,
-    const std::shared_ptr<ComputeControl>& control);
-
 enum class MBTRGeometry : std::int32_t {
     AtomicNumber = 0,
     Distance = 1,

@@ -1,12 +1,77 @@
-#pragma once
+#include "matrix_output.hpp"
 
-#include "extra_common.hpp"
-
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <limits>
 #include <numeric>
+#include <stdexcept>
+#include <utility>
 
 namespace mdescriptor::detail {
+namespace {
 
-inline std::vector<double> eigenvalues_symmetric(std::vector<double> matrix, int size) {
+constexpr double kSortedL2TieUlpFactor = 4.0;
+
+double reference_row_l2_norm_squared(
+    const std::vector<double>& matrix,
+    std::size_t row,
+    std::size_t columns) {
+    const std::size_t offset = row * columns;
+    double squared_norm = 0.0;
+    // Keep the four-value packet reduction order used by the reference matrix
+    // implementation for near-tied row norms.
+    const std::size_t grouped_end = columns & ~std::size_t(3);
+    for (std::size_t column = 0; column < grouped_end; column += 4) {
+        squared_norm += matrix[offset + column] * matrix[offset + column]
+            + matrix[offset + column + 1] * matrix[offset + column + 1]
+            + matrix[offset + column + 2] * matrix[offset + column + 2]
+            + matrix[offset + column + 3] * matrix[offset + column + 3];
+    }
+    for (std::size_t column = grouped_end; column < columns; ++column) {
+        squared_norm += matrix[offset + column] * matrix[offset + column];
+    }
+    return squared_norm;
+}
+
+std::vector<std::size_t> reference_sorted_l2_order(
+    const std::vector<double>& matrix,
+    std::size_t count) {
+    std::vector<std::size_t> order(count);
+    std::iota(order.begin(), order.end(), 0);
+    std::vector<double> norm_squared(count, 0.0);
+    double maximum_norm_squared = 1.0;
+    for (std::size_t row = 0; row < count; ++row) {
+        norm_squared[row] = reference_row_l2_norm_squared(matrix, row, count);
+        maximum_norm_squared = std::max(maximum_norm_squared, norm_squared[row]);
+    }
+    const double tie_tolerance = kSortedL2TieUlpFactor
+        * std::numeric_limits<double>::epsilon() * maximum_norm_squared;
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t left, std::size_t right) {
+        return norm_squared[left] > norm_squared[right];
+    });
+    for (std::size_t group_begin = 0; group_begin < count;) {
+        std::size_t group_end = group_begin + 1;
+        while (group_end < count
+            && norm_squared[order[group_end - 1]] - norm_squared[order[group_end]]
+                <= tie_tolerance) {
+            ++group_end;
+        }
+        if (group_end - group_begin > 1) {
+            std::sort(order.begin() + group_begin, order.begin() + group_end,
+                [](std::size_t left, std::size_t right) {
+                    // The input atom index is an explicit, deterministic
+                    // final key. It is intentionally not presented as a new
+                    // permutation-invariant canonicalization.
+                    return left < right;
+                });
+        }
+        group_begin = group_end;
+    }
+    return order;
+}
+
+std::vector<double> eigenvalues_symmetric(std::vector<double> matrix, int size) {
     if (size <= 0) {
         return {};
     }
@@ -146,63 +211,71 @@ inline std::vector<double> eigenvalues_symmetric(std::vector<double> matrix, int
     return result;
 }
 
-inline void write_matrix(
+} // namespace
+
+MatrixPermutation matrix_permutation_from_name(const std::string& name) {
+    if (name == "none") {
+        return MatrixPermutation::None;
+    }
+    if (name == "sorted_l2") {
+        return MatrixPermutation::SortedL2;
+    }
+    if (name == "eigenspectrum") {
+        return MatrixPermutation::Eigenspectrum;
+    }
+    throw std::invalid_argument("permutation must be 'none', 'sorted_l2', or 'eigenspectrum'");
+}
+
+MatrixLayout make_matrix_layout(std::int64_t n_atoms_max, MatrixPermutation permutation) {
+    if (permutation != MatrixPermutation::None
+        && permutation != MatrixPermutation::SortedL2
+        && permutation != MatrixPermutation::Eigenspectrum) {
+        throw std::invalid_argument("permutation must be 'none', 'sorted_l2', or 'eigenspectrum'");
+    }
+    if (n_atoms_max <= 0
+        || (permutation != MatrixPermutation::Eigenspectrum
+            && n_atoms_max > std::numeric_limits<std::int64_t>::max() / n_atoms_max)) {
+        throw std::invalid_argument("n_atoms_max must be a positive value");
+    }
+    return {n_atoms_max, permutation};
+}
+
+MatrixLayout make_matrix_layout(std::int64_t n_atoms_max, const std::string& permutation) {
+    return make_matrix_layout(n_atoms_max, matrix_permutation_from_name(permutation));
+}
+
+void write_matrix(
     std::vector<double> matrix,
     int count,
-    std::int64_t n_atoms_max,
-    const std::string& permutation,
+    const MatrixLayout& layout,
     double* output) {
-    if (count > n_atoms_max) {
+    if (count > layout.n_atoms_max) {
         throw std::invalid_argument("structure exceeds n_atoms_max");
     }
-    if (permutation == "eigenspectrum") {
+    if (layout.permutation == MatrixPermutation::Eigenspectrum) {
         const auto eigenvalues = eigenvalues_symmetric(std::move(matrix), count);
         for (int index = 0; index < count; ++index) {
             output[index] = eigenvalues[static_cast<std::size_t>(index)];
         }
-        for (std::int64_t index = count; index < n_atoms_max; ++index) {
+        for (std::int64_t index = count; index < layout.n_atoms_max; ++index) {
             output[index] = 0.0;
         }
         return;
     }
     std::vector<std::size_t> order(static_cast<std::size_t>(count));
-    if (permutation == "sorted_l2") {
+    if (layout.permutation == MatrixPermutation::SortedL2) {
         order = reference_sorted_l2_order(matrix, static_cast<std::size_t>(count));
-    } else if (permutation != "none") {
-        throw std::invalid_argument("permutation must be 'none', 'sorted_l2', or 'eigenspectrum'");
     } else {
         std::iota(order.begin(), order.end(), 0);
     }
-    for (std::int64_t row_index = 0; row_index < n_atoms_max; ++row_index) {
-        for (std::int64_t column = 0; column < n_atoms_max; ++column) {
-            output[row_index * n_atoms_max + column] = row_index < count && column < count
-                ? matrix[static_cast<std::size_t>(order[static_cast<std::size_t>(row_index)] * count + order[static_cast<std::size_t>(column)])]
+    for (std::int64_t row_index = 0; row_index < layout.n_atoms_max; ++row_index) {
+        for (std::int64_t column = 0; column < layout.n_atoms_max; ++column) {
+            output[row_index * layout.n_atoms_max + column] = row_index < count && column < count
+                ? matrix[static_cast<std::size_t>(order[static_cast<std::size_t>(row_index)] * count
+                    + order[static_cast<std::size_t>(column)])]
                 : 0.0;
         }
     }
 }
-
-std::vector<double> sine_matrix_values(
-    const StructureBatchView& batch,
-    std::int64_t structure,
-    double exponent,
-    int num_threads);
-
-std::vector<double> ewald_matrix_values(
-    const StructureBatchView& batch,
-    std::int64_t structure,
-    double exponent,
-    double accuracy,
-    double w,
-    double r_cut_option,
-    double g_cut_option,
-    double a_option,
-    int num_threads);
-
-std::vector<double> coulomb_matrix_values(
-    const StructureBatchView& batch,
-    std::int64_t structure,
-    double exponent,
-    int num_threads);
 
 } // namespace mdescriptor::detail

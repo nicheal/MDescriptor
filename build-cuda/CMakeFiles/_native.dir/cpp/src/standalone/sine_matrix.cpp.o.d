@@ -1,9 +1,7 @@
 CMakeFiles/_native.dir/cpp/src/standalone/sine_matrix.cpp.o: \
  /home/nicheal/MDescriptor/cpp/src/standalone/sine_matrix.cpp \
  /usr/include/stdc-predef.h \
- /home/nicheal/MDescriptor/cpp/src/common/matrix_common.hpp \
  /home/nicheal/MDescriptor/cpp/src/common/extra_common.hpp \
- /home/nicheal/MDescriptor/cpp/include/mdescriptor/extra.hpp \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/descriptor.hpp \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -215,4 +213,6 @@ CMakeFiles/_native.dir/cpp/src/standalone/sine_matrix.cpp.o: \
  /usr/include/c++/13/numeric /usr/include/c++/13/bits/stl_numeric.h \
  /usr/include/c++/13/pstl/glue_numeric_defs.h /usr/include/c++/13/utility \
  /usr/include/c++/13/bits/stl_relops.h \
+ /home/nicheal/MDescriptor/cpp/src/common/matrix_values.hpp \
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/matrix.hpp \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/omp.h

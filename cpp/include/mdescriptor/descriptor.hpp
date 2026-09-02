@@ -159,16 +159,6 @@ private:
     mutable bool basis_ready_ = false;
 };
 
-void compute_coulomb_matrix(
-    const StructureBatchView& batch,
-    std::int64_t n_atoms_max,
-    const std::string& permutation,
-    double exponent,
-    int num_threads,
-    double* output,
-    const std::shared_ptr<ComputeControl>& control
-);
-
 class SoapCalculator {
 public:
     SoapCalculator(SoapOptions options);

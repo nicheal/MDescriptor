@@ -1,5 +1,6 @@
 #include "mdescriptor/extra.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "mdescriptor/detail/rotational_bispectrum.hpp"
 #include "descriptor_common.hpp"
 #include "extra_common.hpp"
 
@@ -16,6 +17,12 @@ using namespace detail;
 
 namespace {
 using Complex = std::complex<double>;
+using BispectrumComplex = detail::rotational::Complex;
+using BispectrumPlan = detail::rotational::BispectrumPlan;
+using BispectrumComponentPlan = detail::rotational::BispectrumComponentPlan;
+using detail::rotational::bispectrum_cutoff;
+using detail::rotational::expansion_order;
+using detail::rotational::make_bispectrum_plan;
 
 std::vector<Complex> complex_spherical_harmonics(Vec3 vector, int max_angular) {
     const std::size_t count = static_cast<std::size_t>((max_angular + 1) * (max_angular + 1));
@@ -249,160 +256,27 @@ std::vector<Complex> so3_coefficients(
     return output;
 }
 
-double bispectrum_cutoff(double radius, double cutoff, double rmin0) {
-    if (radius <= rmin0) {
-        return 1.0;
-    }
-    return radius <= cutoff
-        ? 0.5 * (std::cos(kPi * (radius - rmin0) / (cutoff - rmin0)) + 1.0)
-        : 0.0;
-}
-
-std::vector<std::size_t> u_offsets(int max_order) {
-    std::vector<std::size_t> offsets(static_cast<std::size_t>(max_order + 1), 0);
-    for (int l = 1; l <= max_order; ++l) {
-        offsets[static_cast<std::size_t>(l)] = offsets[static_cast<std::size_t>(l - 1)]
-            + static_cast<std::size_t>(l * l);
-    }
-    return offsets;
-}
-
-std::vector<Complex> hyperspherical_u(
-    Vec3 vector, int max_order, const std::vector<std::size_t>& offsets,
+std::vector<BispectrumComplex> hyperspherical_u(
+    Vec3 vector, const BispectrumPlan& plan,
     double cutoff, double rfac0, double rmin0) {
-    const double radius = norm(vector);
-    std::vector<Complex> output(offsets.back() + static_cast<std::size_t>((max_order + 1) * (max_order + 1)), Complex{0.0, 0.0});
-    if (radius <= 1e-14) {
-        output[0] = Complex{1.0, 0.0};
-        return output;
-    }
-    const double psi = rfac0 * kPi * (radius - rmin0) / (cutoff - rmin0);
-    const double cos_psi = std::cos(psi);
-    const double sin_psi = std::sin(psi);
-    const Complex a = Complex{cos_psi, -sin_psi * vector.z / radius};
-    const Complex b = (sin_psi / radius) * Complex{vector.y, -vector.x};
-    output[0] = Complex{1.0, 0.0};
-    for (int l = 1; l <= max_order; ++l) {
-        const std::size_t base = offsets[static_cast<std::size_t>(l)];
-        const std::size_t previous = offsets[static_cast<std::size_t>(l - 1)];
-        int mb = 0;
-        while (2 * mb <= l) {
-            const std::size_t row = base + static_cast<std::size_t>(mb * (l + 1));
-            const std::size_t previous_row = previous + static_cast<std::size_t>(mb * l);
-            output[row] = Complex{0.0, 0.0};
-            for (int ma = 0; ma < l; ++ma) {
-                const double first_root = std::sqrt(static_cast<double>(l - ma) / static_cast<double>(l - mb));
-                const double second_root = std::sqrt(static_cast<double>(ma + 1) / static_cast<double>(l - mb));
-                output[row + static_cast<std::size_t>(ma)] += first_root * std::conj(a)
-                    * output[previous_row + static_cast<std::size_t>(ma)];
-                output[row + static_cast<std::size_t>(ma + 1)] += -second_root * std::conj(b)
-                    * output[previous_row + static_cast<std::size_t>(ma)];
-            }
-            ++mb;
-        }
-        std::size_t left = base;
-        std::size_t right = base + static_cast<std::size_t>((l + 1) * (l + 1) - 1);
-        int mbpar = 1;
-        mb = 0;
-        while (2 * mb <= l) {
-            int mapar = mbpar;
-            for (int ma = 0; ma <= l; ++ma) {
-                output[right] = mapar == 1 ? std::conj(output[left]) : -std::conj(output[left]);
-                mapar = -mapar;
-                ++left;
-                --right;
-            }
-            mbpar = -mbpar;
-            ++mb;
-        }
-    }
+    std::vector<BispectrumComplex> output(plan.u_size());
+    detail::rotational::hyperspherical_u(
+        vector.x, vector.y, vector.z, plan.order, cutoff, rfac0, rmin0,
+        output.data());
     return output;
 }
 
-double factorial_value(int value) {
-    return std::tgamma(static_cast<double>(value) + 1.0);
-}
-
-double clebsch_gordan(int l1, int l2, int l, int m1, int m2) {
-    const int aa2 = 2 * m1 - l1;
-    const int bb2 = 2 * m2 - l2;
-    const int numerator = aa2 + bb2 + l;
-    if (numerator % 2 != 0) {
-        return 0.0;
-    }
-    const int m = numerator / 2;
-    if (m < 0 || m > l) {
-        return 0.0;
-    }
-    const int z_min = std::max(0, std::max(
-        -(l - l2 + aa2) / 2,
-        -(l - l1 - bb2) / 2));
-    const int z_max = std::min(
-        (l1 + l2 - l) / 2,
-        std::min((l1 - aa2) / 2, (l2 + bb2) / 2));
-    double sum = 0.0;
-    for (int z = z_min; z <= z_max; ++z) {
-        sum += (z % 2 == 0 ? 1.0 : -1.0) / (
-            factorial_value(z)
-            * factorial_value((l1 + l2 - l) / 2 - z)
-            * factorial_value((l1 - aa2) / 2 - z)
-            * factorial_value((l2 + bb2) / 2 - z)
-            * factorial_value((l - l2 + aa2) / 2 + z)
-            * factorial_value((l - l1 - bb2) / 2 + z));
-    }
-    const double delta = std::sqrt(
-        factorial_value((l1 + l2 - l) / 2)
-        * factorial_value((l1 - l2 + l) / 2)
-        * factorial_value((-l1 + l2 + l) / 2)
-        / factorial_value((l1 + l2 + l) / 2 + 1));
-    const double scale = std::sqrt(
-        factorial_value((l1 + aa2) / 2)
-        * factorial_value((l1 - aa2) / 2)
-        * factorial_value((l2 + bb2) / 2)
-        * factorial_value((l2 - bb2) / 2)
-        * factorial_value((l + 2 * m - l) / 2)
-        * factorial_value((l - (2 * m - l)) / 2)
-        * (l + 1.0));
-    return sum * delta * scale;
-}
-
-struct BispectrumComponent {
-    int l1 = 0;
-    int l2 = 0;
-    int l = 0;
+struct BispectrumEvaluationOptions {
+    RotationalDescriptorKind kind = RotationalDescriptorKind::SO4;
+    bool normalize_u = false;
+    double cutoff = 0.0;
+    double weight_scale = 1.0;
+    double rfac0 = 1.0;
+    double rmin0 = 0.0;
+    double rcutfac = 1.0;
+    const std::vector<double>& neighbor_weights;
+    const std::vector<double>& neighbor_radii;
 };
-
-std::vector<BispectrumComponent> bispectrum_components(int max_order, int diagonal, bool l_bispectrum) {
-    std::vector<BispectrumComponent> components;
-    for (int l1 = 0; l1 <= max_order; ++l1) {
-        if (l_bispectrum && diagonal == 2) {
-            components.push_back({l1, l1, l1});
-            continue;
-        }
-        for (int l2 = 0; l2 <= l1; ++l2) {
-            if (l_bispectrum && diagonal == 2 && l2 != l1) {
-                continue;
-            }
-            for (int l = l1 - l2; l <= std::min(max_order, l1 + l2); l += 2) {
-                if (l_bispectrum) {
-                    if (diagonal == 1 && l2 != l1) {
-                        continue;
-                    }
-                    if (diagonal == 2 && l != l1) {
-                        continue;
-                    }
-                    if (diagonal == 3 && l < l1) {
-                        continue;
-                    }
-                } else if (l < l1) {
-                    continue;
-                }
-                components.push_back({l1, l2, l});
-            }
-        }
-    }
-    return components;
-}
 
 double rotational_neighbor_weight(
     const StructureBatchView& batch,
@@ -422,117 +296,100 @@ double rotational_neighbor_weight(
 std::vector<double> compute_bispectrum_center(
     const StructureBatchView& batch,
     std::int64_t center,
-    int max_order,
-    double cutoff,
-    RotationalDescriptorKind kind,
-    bool normalize_u,
-    double weight_scale,
-    double rfac0,
-    double rmin0,
-    double rcutfac,
-    const std::vector<double>& neighbor_weights,
-    const std::vector<double>& neighbor_radii,
-    int diagonal,
+    const BispectrumPlan& plan,
+    const BispectrumEvaluationOptions& evaluation,
     const NeighborGraph& graph) {
-    const auto offsets = u_offsets(max_order);
-    const auto components = bispectrum_components(max_order, diagonal, kind == RotationalDescriptorKind::LBispectrum);
-    std::vector<Complex> total(offsets.back() + static_cast<std::size_t>((max_order + 1) * (max_order + 1)), Complex{0.0, 0.0});
-    const double center_weight = kind == RotationalDescriptorKind::SO4 ? static_cast<double>(batch.numbers[center]) : 1.0;
-    for (int l = 0; l <= max_order; ++l) {
+    const auto& offsets = plan.offsets;
+    std::vector<BispectrumComplex> total(plan.u_size());
+    const double center_weight = evaluation.kind == RotationalDescriptorKind::SO4
+        ? static_cast<double>(batch.numbers[center]) : 1.0;
+    for (int l = 0; l <= plan.order; ++l) {
         for (int m = 0; m <= l; ++m) {
-            total[offsets[static_cast<std::size_t>(l)] + static_cast<std::size_t>(m * (l + 1) + m)] = center_weight;
+            total[offsets[static_cast<std::size_t>(l)]
+                + static_cast<std::size_t>(m * (l + 1) + m)] = {center_weight, 0.0};
         }
     }
     const NeighborView neighbors = graph.for_center(center);
     for (std::size_t index = 0; index < neighbors.size; ++index) {
-        if (neighbors.exact_self(index, center)) {
+        if (!detail::rotational::kBispectrumIncludeExactSelf
+            && neighbors.exact_self(index, center)) {
             continue;
         }
         const Vec3 vector{neighbors.displacements[index * 3], neighbors.displacements[index * 3 + 1], neighbors.displacements[index * 3 + 2]};
         const double radius = std::sqrt(std::max(0.0, neighbors.distance2[index]));
-        if (radius <= 1e-8) {
+        if (radius <= detail::rotational::kBispectrumMinimumRadius) {
             continue;
         }
-        const double neighbor_cutoff = neighbor_radii.empty()
-            ? cutoff
-            : (neighbor_radii[static_cast<std::size_t>(center)]
-                + neighbor_radii[static_cast<std::size_t>(neighbors.atoms[index])]) * rcutfac;
+        const double neighbor_cutoff = evaluation.neighbor_radii.empty()
+            ? evaluation.cutoff
+            : (evaluation.neighbor_radii[static_cast<std::size_t>(center)]
+                + evaluation.neighbor_radii[static_cast<std::size_t>(neighbors.atoms[index])])
+                * evaluation.rcutfac;
         if (radius > neighbor_cutoff) {
             continue;
         }
-        const auto values = hyperspherical_u(vector, max_order, offsets, neighbor_cutoff, rfac0, rmin0);
-        const double scale = bispectrum_cutoff(radius, neighbor_cutoff, rmin0)
-            * rotational_neighbor_weight(batch, neighbors.atoms[index], kind, weight_scale, neighbor_weights);
+        const auto values = hyperspherical_u(
+            vector, plan, neighbor_cutoff, evaluation.rfac0, evaluation.rmin0);
+        const double scale = bispectrum_cutoff(radius, neighbor_cutoff, evaluation.rmin0)
+            * rotational_neighbor_weight(
+                batch, neighbors.atoms[index], evaluation.kind,
+                evaluation.weight_scale, evaluation.neighbor_weights);
         for (std::size_t value = 0; value < total.size(); ++value) {
-            total[value] += scale * values[value];
+            total[value] = detail::rotational::complex_add(
+                total[value], detail::rotational::complex_scale(values[value], scale));
         }
     }
-    if (normalize_u) {
-        for (int l = 0; l <= max_order; ++l) {
+    if (evaluation.normalize_u) {
+        for (int l = 0; l <= plan.order; ++l) {
             const double scale = 4.0 * kPi / std::sqrt(l + 1.0);
             for (int mb = 0; mb <= l; ++mb) {
                 for (int ma = 0; ma <= l; ++ma) {
-                    total[offsets[static_cast<std::size_t>(l)] + static_cast<std::size_t>(mb * (l + 1) + ma)] *= scale;
+                    const std::size_t index = offsets[static_cast<std::size_t>(l)]
+                        + static_cast<std::size_t>(mb * (l + 1) + ma);
+                    total[index] = detail::rotational::complex_scale(total[index], scale);
                 }
             }
         }
     }
     std::vector<double> result;
-    result.reserve(components.size());
-    for (const auto component : components) {
-        if ((component.l1 + component.l2 + component.l) % 2 != 0) {
+    result.reserve(plan.components.size());
+    for (const BispectrumComponentPlan& component_plan : plan.components) {
+        if (component_plan.z.empty()) {
             result.push_back(0.0);
             continue;
         }
-        std::vector<Complex> z;
-        for (int mb = 0; 2 * mb <= component.l; ++mb) {
-            for (int ma = 0; ma <= component.l; ++ma) {
-                const int ma1_min = std::max(0, (2 * ma - component.l - component.l2 + component.l1) / 2);
-                const int ma2_max = (2 * ma - component.l - (2 * ma1_min - component.l1) + component.l2) / 2;
-                const int na = std::min(component.l1, (2 * ma - component.l + component.l2 + component.l1) / 2) - ma1_min + 1;
-                const int mb1_min = std::max(0, (2 * mb - component.l - component.l2 + component.l1) / 2);
-                const int mb2_max = (2 * mb - component.l - (2 * mb1_min - component.l1) + component.l2) / 2;
-                const int nb = std::min(component.l1, (2 * mb - component.l + component.l2 + component.l1) / 2) - mb1_min + 1;
-                Complex value{0.0, 0.0};
-                for (int ib = 0; ib < nb; ++ib) {
-                    Complex inner{0.0, 0.0};
-                    const int mb1 = mb1_min + ib;
-                    const int mb2 = mb2_max - ib;
-                    for (int ia = 0; ia < na; ++ia) {
-                        const int ma1 = ma1_min + ia;
-                        const int ma2 = ma2_max - ia;
-                        inner += clebsch_gordan(component.l1, component.l2, component.l, ma1, ma2)
-                            * total[offsets[static_cast<std::size_t>(component.l1)] + static_cast<std::size_t>(
-                                mb1 * (component.l1 + 1) + ma1)]
-                            * total[offsets[static_cast<std::size_t>(component.l2)] + static_cast<std::size_t>(
-                                mb2 * (component.l2 + 1) + ma2)];
-                    }
-                    value += clebsch_gordan(component.l1, component.l2, component.l, mb1, mb2) * inner;
+        std::vector<BispectrumComplex> z;
+        z.reserve(component_plan.z.size());
+        for (const auto& z_plan : component_plan.z) {
+            BispectrumComplex value{};
+            for (const auto& inner_plan : z_plan.inner) {
+                BispectrumComplex inner{};
+                for (const auto& term : inner_plan.terms) {
+                    inner = detail::rotational::complex_add(
+                        inner,
+                        detail::rotational::complex_multiply(
+                            detail::rotational::complex_scale(
+                                total[term.first_index], term.coefficient),
+                            total[term.second_index]));
                 }
-                z.push_back(value);
+                value = detail::rotational::complex_add(
+                    value,
+                    detail::rotational::complex_scale(
+                        inner, inner_plan.outer_coefficient));
             }
+            z.push_back(value);
         }
-        Complex bispectrum{0.0, 0.0};
-        std::size_t z_index = 0;
-        for (int mb = 0; 2 * mb < component.l; ++mb) {
-            for (int ma = 0; ma <= component.l; ++ma) {
-                const Complex u = total[offsets[static_cast<std::size_t>(component.l)]
-                    + static_cast<std::size_t>(mb * (component.l + 1) + ma)];
-                bispectrum += std::conj(u) * z[z_index++];
-            }
+        BispectrumComplex bispectrum{};
+        for (const auto& projection : component_plan.projection) {
+            bispectrum = detail::rotational::complex_add(
+                bispectrum,
+                detail::rotational::complex_scale(
+                    detail::rotational::complex_multiply(
+                        detail::rotational::complex_conjugate(total[projection.u_index]),
+                        z[projection.z_index]),
+                    projection.scale));
         }
-        if (component.l % 2 == 0) {
-            const int mb = component.l / 2;
-            for (int ma = 0; ma < mb; ++ma) {
-                const Complex u = total[offsets[static_cast<std::size_t>(component.l)]
-                    + static_cast<std::size_t>(mb * (component.l + 1) + ma)];
-                bispectrum += std::conj(u) * z[z_index++];
-            }
-            const Complex u = total[offsets[static_cast<std::size_t>(component.l)]
-                + static_cast<std::size_t>(mb * (component.l + 1) + mb)];
-            bispectrum += 0.5 * std::conj(u) * z[z_index++];
-        }
-        result.push_back(2.0 * std::real(bispectrum));
+        result.push_back(2.0 * bispectrum.real);
     }
     return result;
 }
@@ -540,12 +397,13 @@ std::vector<double> compute_bispectrum_center(
 
 std::int64_t rotational_feature_count(const RotationalDescriptorOptions& options) {
     const int l_max = options.kind == RotationalDescriptorKind::SO3 ? options.l_max
-        : options.kind == RotationalDescriptorKind::LBispectrum ? std::max(0, options.twojmax) : 2 * options.l_max;
+        : expansion_order(static_cast<int>(options.kind), options.l_max, options.twojmax);
     if (options.kind == RotationalDescriptorKind::SO3) {
         return static_cast<std::int64_t>(l_max + 1) * options.n_max * (options.n_max + 1) / 2;
     }
-    return static_cast<std::int64_t>(bispectrum_components(
-        l_max, options.diagonal, options.kind == RotationalDescriptorKind::LBispectrum).size());
+    return static_cast<std::int64_t>(make_bispectrum_plan(
+        l_max, options.diagonal,
+        options.kind == RotationalDescriptorKind::LBispectrum).components.size());
 }
 
 void compute_rotational_descriptors(
@@ -587,6 +445,25 @@ void compute_rotational_descriptors(
         }
     }
     const auto features = rotational_feature_count(options);
+    const bool so3 = options.kind == RotationalDescriptorKind::SO3;
+    const int bispectrum_order = expansion_order(
+        static_cast<int>(options.kind), options.l_max, options.twojmax);
+    const BispectrumPlan bispectrum_plan = so3
+        ? BispectrumPlan{}
+        : make_bispectrum_plan(
+            bispectrum_order, options.diagonal,
+            options.kind == RotationalDescriptorKind::LBispectrum);
+    const BispectrumEvaluationOptions bispectrum_evaluation{
+        options.kind,
+        options.normalize_u,
+        options.cutoff,
+        options.weight_scale,
+        options.rfac0,
+        options.rmin0,
+        options.rcutfac,
+        options.neighbor_weights,
+        options.neighbor_radii,
+    };
     std::fill(output, output + batch.atoms * features, 0.0);
     check_cancelled(control);
     if (control) {
@@ -596,18 +473,18 @@ void compute_rotational_descriptors(
     if (options.kind == RotationalDescriptorKind::LBispectrum && !options.neighbor_radii.empty()) {
         graph_cutoff = 2.0 * *std::max_element(options.neighbor_radii.begin(), options.neighbor_radii.end()) * options.rcutfac;
     }
-    const NeighborGraph graph = build_neighbor_graph(batch, graph_cutoff, control, options.num_threads);
+    const NeighborGraph graph = build_neighbor_graph(
+        batch, graph_cutoff, control, options.num_threads,
+        detail::rotational::kBispectrumIncludeCutoffBoundary,
+        false, true);
     auto compute_structure = [&](std::int64_t structure) {
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
-        const bool so3 = options.kind == RotationalDescriptorKind::SO3;
         const int l_max = options.kind == RotationalDescriptorKind::LBispectrum ? std::max(0, options.twojmax / 2) : options.l_max;
         const auto so3_basis = so3 ? so3_radial_basis(options.n_max, l_max, options.cutoff, options.alpha)
                                    : std::vector<double>{};
         const int so3_width = 2 * l_max + 1;
         if (!so3) {
-            const int expansion_order = options.kind == RotationalDescriptorKind::LBispectrum
-                ? std::max(0, options.twojmax) : 2 * options.l_max;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
 #endif
@@ -616,10 +493,7 @@ void compute_rotational_descriptors(
                     continue;
                 }
                 const auto values = compute_bispectrum_center(
-                    batch, center, expansion_order, options.cutoff, options.kind,
-                    options.normalize_u, options.weight_scale, options.rfac0,
-                    options.rmin0, options.rcutfac, options.neighbor_weights,
-                    options.neighbor_radii, options.diagonal, graph);
+                    batch, center, bispectrum_plan, bispectrum_evaluation, graph);
                 std::copy(values.begin(), values.end(), output + center * features);
             }
             return;

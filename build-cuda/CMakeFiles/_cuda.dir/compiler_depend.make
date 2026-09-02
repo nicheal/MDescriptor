@@ -2878,8 +2878,11 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o: /home/nicheal/MDesc
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/math3.hpp \
+  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/mbtr.hpp \
+  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
+  /home/nicheal/MDescriptor/cpp/include/mdescriptor/matrix.hpp \
   /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
   /home/nicheal/MDescriptor/cpp/src/common/local_common.hpp \
   /home/nicheal/MDescriptor/cpp/src/common/local_layout.hpp \
@@ -7943,8 +7946,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_default_constructible.h:
 
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_copy_constructible.h:
-
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_copy_assignable.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_assignable.h:
@@ -7970,10 +7971,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_default_constructible.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_copy_constructible.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/copy.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_class.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_callable.h:
 
@@ -8320,6 +8317,10 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstring/memcpy.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstdlib/div.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstddef/types.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/totally_ordered.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h:
 
@@ -8829,6 +8830,12 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/include/python3.12/cpython/descrobject.h:
 
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/copy.h:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_class.h:
+
+/home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/mbtr.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/strings_fortified.h:
 
 /usr/include/python3.12/cpython/classobject.h:
@@ -9204,6 +9211,12 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/include/x86_64-linux-gnu/bits/sched.h:
 
 /usr/include/c++/13/complex:
+
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstddef/byte.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
+
+/usr/include/c++/13/bits/slice_array.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/generic/transform.h:
 
@@ -9873,8 +9886,6 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/include/c++/13/optional:
 
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/totally_ordered.h:
-
 /usr/include/python3.12/exports.h:
 
 /usr/include/c++/13/bits/vector.tcc:
@@ -10153,11 +10164,13 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/array_utils.cuh:
 
+/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_copy_constructible.h:
+
+/home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp:
+
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__iterator/reverse_iterator.h:
 
 /home/nicheal/MDescriptor/cpp/cuda/src/local_descriptors.cu:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstddef/types.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/thrust/system/detail/sequential/sequence.h:
 
@@ -11001,6 +11014,8 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__type_traits/is_nothrow_constructible.h:
 
+/home/nicheal/MDescriptor/cpp/include/mdescriptor/matrix.hpp:
+
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cub/detail/temporary_storage.cuh:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cccl/deprecated.h:
@@ -11092,9 +11107,3 @@ CMakeFiles/_cuda.dir/cpp/src/standalone/spherical_expansion_by_pair.cpp.o: /home
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/__ptx/instructions/generated/tensormap_cp_fenceproxy.h:
 
 /usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__concepts/swappable.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
-
-/usr/include/c++/13/bits/slice_array.h:
-
-/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl/cuda/std/__cstddef/byte.h:

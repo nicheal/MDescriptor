@@ -1,4 +1,5 @@
 #include "mdescriptor/extra.hpp"
+#include "mdescriptor/detail/mbtr.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "extra_common.hpp"
 
@@ -17,6 +18,20 @@
 
 namespace mdescriptor {
 using namespace detail;
+
+static_assert(static_cast<int>(MBTRGeometry::AtomicNumber) == detail::mbtr::kGeometryAtomicNumber);
+static_assert(static_cast<int>(MBTRGeometry::Distance) == detail::mbtr::kGeometryDistance);
+static_assert(static_cast<int>(MBTRGeometry::InverseDistance) == detail::mbtr::kGeometryInverseDistance);
+static_assert(static_cast<int>(MBTRGeometry::Angle) == detail::mbtr::kGeometryAngle);
+static_assert(static_cast<int>(MBTRGeometry::Cosine) == detail::mbtr::kGeometryCosine);
+static_assert(static_cast<int>(MBTRWeighting::Unity) == detail::mbtr::kWeightingUnity);
+static_assert(static_cast<int>(MBTRWeighting::Exponential) == detail::mbtr::kWeightingExponential);
+static_assert(static_cast<int>(MBTRWeighting::InverseSquare) == detail::mbtr::kWeightingInverseSquare);
+static_assert(static_cast<int>(MBTRWeighting::SmoothCutoff) == detail::mbtr::kWeightingSmoothCutoff);
+static_assert(static_cast<int>(MBTRNormalization::None) == detail::mbtr::kNormalizationNone);
+static_assert(static_cast<int>(MBTRNormalization::L2) == detail::mbtr::kNormalizationL2);
+static_assert(static_cast<int>(MBTRNormalization::NAtoms) == detail::mbtr::kNormalizationNAtoms);
+static_assert(static_cast<int>(MBTRNormalization::ValleOganov) == detail::mbtr::kNormalizationValleOganov);
 
 namespace {
 int available_num_threads(const MBTROptions& options) noexcept {
@@ -44,59 +59,16 @@ int effective_num_threads(const MBTROptions& options, std::int64_t work_items) n
 #endif
 }
 
-double gaussian_bin(double value, double weight, const MBTROptions& options, int bin) {
-    const double dx = (options.grid_max - options.grid_min) / (options.grid_n - 1);
-    const double lower = options.grid_min - 0.5 * dx + bin * dx;
-    const double upper = lower + dx;
-    const double sigma_root = options.grid_sigma * std::sqrt(2.0);
-    double result = 0.5 * (std::erf((upper - value) / sigma_root) - std::erf((lower - value) / sigma_root)) / dx;
-    if (!options.normalize_gaussians) {
-        result *= options.grid_sigma * std::sqrt(2.0 * kPi);
-    }
-    return weight * result;
-}
-
 void add_histogram(double* target, double value, double weight, const MBTROptions& options) {
-    if (weight == 0.0 || value < options.grid_min - options.grid_sigma * 8.0 || value > options.grid_max + options.grid_sigma * 8.0) {
-        return;
-    }
-    for (int bin = 0; bin < options.grid_n; ++bin) {
-        target[bin] += gaussian_bin(value, weight, options, bin);
-    }
+    detail::mbtr::add_histogram(
+        target, value, weight, options.grid_min, options.grid_max,
+        options.grid_sigma, options.grid_n, options.normalize_gaussians);
 }
 
 double mbtr_weight(const MBTROptions& options, double first, double second, double third = 0.0) {
-    switch (options.weighting) {
-    case MBTRWeighting::Exponential: {
-        const double value = std::exp(-options.scale * (first + second + third));
-        return value >= options.threshold ? value : 0.0;
-    }
-    case MBTRWeighting::InverseSquare:
-        return first <= options.r_cut ? 1.0 / std::max(first * first, 1e-30) : 0.0;
-    case MBTRWeighting::SmoothCutoff: {
-        auto smooth = [&](double distance) {
-            const double x = std::clamp(distance / options.r_cut, 0.0, 1.0);
-            return 1.0 + options.sharpness * std::pow(x, options.sharpness + 1.0)
-                - (options.sharpness + 1.0) * std::pow(x, options.sharpness);
-        };
-        return first <= options.r_cut && second <= options.r_cut ? smooth(first) * smooth(second) : 0.0;
-    }
-    default:
-        return 1.0;
-    }
-}
-
-int pair_channel(int first, int second, int species_count) {
-    const int lower = std::min(first, second);
-    const int upper = std::max(first, second);
-    return lower * species_count - lower * (lower + 1) / 2 + upper;
-}
-
-double cell_volume(const double* cell) {
-    return std::abs(
-        cell[0] * (cell[4] * cell[8] - cell[5] * cell[7])
-        - cell[1] * (cell[3] * cell[8] - cell[5] * cell[6])
-        + cell[2] * (cell[3] * cell[7] - cell[4] * cell[6]));
+    return detail::mbtr::weight(
+        static_cast<int>(options.weighting), options.scale, options.threshold,
+        options.r_cut, options.sharpness, first, second, third);
 }
 
 void normalize_histogram(
@@ -106,60 +78,21 @@ void normalize_histogram(
     int atom_count,
     const std::vector<int>& species_counts,
     double volume) {
-    if (options.normalization == MBTRNormalization::L2) {
-        double sum = 0.0;
-        for (std::int64_t index = 0; index < size; ++index) {
-            sum += values[index] * values[index];
-        }
-        const double scale = std::sqrt(sum);
-        if (scale > 0.0) {
-            for (std::int64_t index = 0; index < size; ++index) {
-                values[index] /= scale;
-            }
-        }
-    } else if (options.normalization == MBTRNormalization::NAtoms && atom_count > 0) {
-        for (std::int64_t index = 0; index < size; ++index) {
-            values[index] /= atom_count;
-        }
-    } else if (options.normalization == MBTRNormalization::ValleOganov && !options.local
-               && options.geometry != MBTRGeometry::AtomicNumber) {
-        const int species_count = static_cast<int>(species_counts.size());
-        const int pair_count = species_count * (species_count + 1) / 2;
-        if (options.geometry == MBTRGeometry::Distance || options.geometry == MBTRGeometry::InverseDistance) {
-            for (int first = 0; first < species_count; ++first) {
-                for (int second = first; second < species_count; ++second) {
-                    const double count_product = first == second
-                        ? 0.5 * species_counts[first] * species_counts[second]
-                        : static_cast<double>(species_counts[first]) * species_counts[second];
-                    if (count_product <= 0.0) {
-                        continue;
-                    }
-                    const double factor = volume / (count_product * 4.0 * kPi);
-                    const std::int64_t begin = static_cast<std::int64_t>(pair_channel(first, second, species_count)) * options.grid_n;
-                    for (int bin = 0; bin < options.grid_n; ++bin) {
-                        values[begin + bin] *= factor;
-                    }
-                }
-            }
-        } else {
-            for (int first = 0; first < species_count; ++first) {
-                for (int center = 0; center < species_count; ++center) {
-                    for (int third = first; third < species_count; ++third) {
-                        const double count_product = static_cast<double>(species_counts[first])
-                            * species_counts[center] * species_counts[third];
-                        if (count_product <= 0.0) {
-                            continue;
-                        }
-                        const int channel = center * pair_count + pair_channel(first, third, species_count);
-                        const double factor = volume / count_product;
-                        const std::int64_t begin = static_cast<std::int64_t>(channel) * options.grid_n;
-                        for (int bin = 0; bin < options.grid_n; ++bin) {
-                            values[begin + bin] *= factor;
-                        }
-                    }
-                }
-            }
-        }
+    switch (options.normalization) {
+    case MBTRNormalization::L2:
+        detail::mbtr::normalize_l2(values, size);
+        break;
+    case MBTRNormalization::NAtoms:
+        detail::mbtr::normalize_n_atoms(values, size, atom_count);
+        break;
+    case MBTRNormalization::ValleOganov:
+        detail::mbtr::normalize_valle_oganov(
+            values, volume, species_counts.data(),
+            static_cast<int>(species_counts.size()),
+            static_cast<int>(options.geometry), options.grid_n, options.local);
+        break;
+    default:
+        break;
     }
 }
 
@@ -176,7 +109,18 @@ void count_structure_species(
     for (std::int64_t atom = begin; atom < end; ++atom) {
         ++counts[static_cast<std::size_t>(mapping.at(batch.numbers[atom]))];
     }
-    volume = cell_volume(batch.cells + structure * 9);
+    volume = detail::mbtr::cell_volume(batch.cells + structure * 9);
+}
+
+std::vector<std::int64_t> structure_for_atoms(const StructureBatchView& batch) {
+    std::vector<std::int64_t> result(static_cast<std::size_t>(batch.atoms), 0);
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        for (std::int64_t atom = batch.offsets[structure];
+             atom < batch.offsets[structure + 1]; ++atom) {
+            result[static_cast<std::size_t>(atom)] = structure;
+        }
+    }
+    return result;
 }
 
 void accumulate_nonlocal_center(
@@ -212,7 +156,7 @@ void accumulate_nonlocal_center(
             const double weight = mbtr_weight(options, first_distance, 0.0) * (first_periodic ? 0.5 : 1.0);
             const double value = options.geometry == MBTRGeometry::Distance ? first_distance : 1.0 / first_distance;
             add_histogram(
-                target + pair_channel(center_type, first_type, species_count) * options.grid_n,
+                target + detail::mbtr::pair_channel(center_type, first_type, species_count) * options.grid_n,
                 value, weight, options);
         }
         if (options.geometry != MBTRGeometry::Angle && options.geometry != MBTRGeometry::Cosine) {
@@ -245,10 +189,10 @@ void accumulate_nonlocal_center(
                     / (2.0 * first_distance * second_distance),
                 -1.0, 1.0);
             const double value = options.geometry == MBTRGeometry::Cosine
-                ? cosine : std::acos(cosine) * 180.0 / kPi;
+                ? cosine : std::acos(cosine) * 180.0 / detail::mbtr::kPi;
             const double weight = mbtr_weight(options, first_distance, second_distance, third_distance);
             const int second_type = static_cast<int>(mapping.at(batch.numbers[second_atom]));
-            const int channel = center_type * pair_count + pair_channel(first_type, second_type, species_count);
+            const int channel = center_type * pair_count + detail::mbtr::pair_channel(first_type, second_type, species_count);
             add_histogram(target + channel * options.grid_n, value, weight, options);
         }
     }
@@ -291,7 +235,7 @@ void accumulate_local_center(
                 -1.0, 1.0)
             : 1.0;
         const double value = options.geometry == MBTRGeometry::Cosine
-            ? cosine : std::acos(cosine) * 180.0 / kPi;
+            ? cosine : std::acos(cosine) * 180.0 / detail::mbtr::kPi;
         add_histogram(target + channel * options.grid_n, value, weight, options);
     };
     for (std::size_t first_index = 0; first_index < neighbors.size; ++first_index) {
@@ -325,7 +269,7 @@ void accumulate_local_center(
 
             // The center atom is the angle vertex: (first, X, second).
             add_angle(
-                pair_channel(first_type, second_type, element_count),
+                detail::mbtr::pair_channel(first_type, second_type, element_count),
                 first_distance, second_distance, third_distance, weight);
             // The center atom is an endpoint: (X, first, second) and (X, second, first).
             add_angle(
@@ -468,6 +412,36 @@ void compute_mbtr(
     const bool needs_species_counts = options.normalization == MBTRNormalization::ValleOganov
         && !options.local && options.geometry != MBTRGeometry::AtomicNumber;
     if (options.geometry == MBTRGeometry::AtomicNumber) {
+        if (options.local) {
+            const auto structure_for_atom = structure_for_atoms(batch);
+            const int workers = effective_num_threads(options, batch.atoms);
+#ifndef _OPENMP
+            (void)workers;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(workers)
+#endif
+            for (std::int64_t center = 0; center < batch.atoms; ++center) {
+                if (cancelled(control)) {
+                    continue;
+                }
+                const std::int64_t structure = structure_for_atom[static_cast<std::size_t>(center)];
+                const int atom_count = static_cast<int>(
+                    batch.offsets[structure + 1] - batch.offsets[structure]);
+                const int channel = static_cast<int>(mapping.at(batch.numbers[center]));
+                double* target = output + center * features;
+                add_histogram(
+                    target + channel * options.grid_n,
+                    static_cast<double>(batch.numbers[center]), 1.0, options);
+                normalize_histogram(target, features, options, atom_count, {}, 0.0);
+            }
+            check_cancelled(control);
+            for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+                mark_completed(control);
+            }
+            return;
+        }
+
         const int workers = effective_num_threads(options, batch.structures);
 #ifndef _OPENMP
         (void)workers;
@@ -502,12 +476,7 @@ void compute_mbtr(
     }
 
     if (options.local) {
-        std::vector<std::int64_t> structure_for_atom(static_cast<std::size_t>(batch.atoms), 0);
-        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-            for (std::int64_t atom = batch.offsets[structure]; atom < batch.offsets[structure + 1]; ++atom) {
-                structure_for_atom[static_cast<std::size_t>(atom)] = structure;
-            }
-        }
+        const auto structure_for_atom = structure_for_atoms(batch);
         const int workers = effective_num_threads(options, batch.atoms);
 #ifndef _OPENMP
         (void)workers;

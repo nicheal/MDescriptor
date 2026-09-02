@@ -205,16 +205,17 @@ CMakeFiles/_native.dir/cpp/src/standalone/rotational_descriptors.cpp.o: \
  /usr/include/c++/13/bits/node_handle.h \
  /usr/include/c++/13/bits/erase_if.h \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
- /home/nicheal/MDescriptor/cpp/src/common/descriptor_common.hpp \
- /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/math3.hpp \
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp \
  /usr/include/c++/13/algorithm /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
+ /home/nicheal/MDescriptor/cpp/src/common/descriptor_common.hpp \
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/math3.hpp \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/array /usr/include/c++/13/compare \
- /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/omp.h \
  /home/nicheal/MDescriptor/cpp/src/common/extra_common.hpp \
  /usr/include/c++/13/numeric /usr/include/c++/13/bits/stl_numeric.h \

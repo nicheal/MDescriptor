@@ -1,7 +1,7 @@
 """Structure-level matrix descriptor family."""
 
 from ....core.adapter import adapter_class
-from ..._kernels.extra import (
+from ..._kernels.matrix import (
     CoulombMatrixKernel,
     EwaldSumMatrixKernel,
     SineMatrixKernel,

@@ -17,6 +17,7 @@ namespace mdescriptor::cuda {
 namespace {
 
 using mdescriptor::detail::GtoRadialBasis;
+using mdescriptor::detail::RadialBasisSet;
 using mdescriptor::LocalDescriptorKind;
 using mdescriptor::LocalDescriptorOptions;
 
@@ -186,19 +187,6 @@ __device__ double radial_value(
     return value;
 }
 
-__device__ std::size_t coefficient_index(
-    int species,
-    int radial,
-    int angular,
-    int m,
-    int radial_count,
-    int max_angular) {
-    const int angular_count = max_angular + 1;
-    return (static_cast<std::size_t>(species) * radial_count + radial)
-        * static_cast<std::size_t>(angular_count * angular_count)
-        + static_cast<std::size_t>(angular * angular + angular + m);
-}
-
 __device__ double cutoff_value(double distance, double cutoff) {
     if (distance >= cutoff) {
         return 0.0;
@@ -362,7 +350,9 @@ __device__ double coefficient_at(
     int coefficient_size) {
     return coefficients[
         static_cast<std::size_t>(center) * coefficient_size
-        + coefficient_index(species, radial, angular, m, radial_count, max_angular)];
+        + mdescriptor::detail::local_coefficient_index(
+            static_cast<std::size_t>(species), radial, angular, m,
+            radial_count, max_angular)];
 }
 
 __global__ void assemble_features(
@@ -408,15 +398,8 @@ __global__ void assemble_features(
         int remainder = local % pair_stride;
         int first = 0;
         int second = 0;
-        for (int candidate = 0; candidate < species_count; ++candidate) {
-            const int count = species_count - candidate;
-            if (pair < count) {
-                first = candidate;
-                second = candidate + pair;
-                break;
-            }
-            pair -= count;
-        }
+        mdescriptor::detail::local_decode_species_pair(
+            pair, species_count, first, second);
         const int angular = remainder / (radial_count * radial_count);
         remainder %= radial_count * radial_count;
         const int first_radial = remainder / radial_count;
@@ -440,22 +423,12 @@ __global__ void assemble_features(
     const int local = feature;
     const int neighbor_species = local / (angular_count * angular_count * radial_count);
     int remainder = local % (angular_count * angular_count * radial_count);
-    // The spherical expansion layout is (species, l, m, n), while the
-    // coefficient storage reserves the maximum m width for every l.  Decode
-    // the compact l/m/n ordering without using a second layout convention.
     int found_angular = 0;
     int found_m = 0;
     int found_radial = 0;
-    for (int candidate_l = 0; candidate_l <= max_angular; ++candidate_l) {
-        const int block = (2 * candidate_l + 1) * radial_count;
-        if (remainder < block) {
-            found_angular = candidate_l;
-            found_m = remainder / radial_count - candidate_l;
-            found_radial = remainder % radial_count;
-            break;
-        }
-        remainder -= block;
-    }
+    mdescriptor::detail::local_decode_spherical_feature(
+        remainder, radial_count, max_angular,
+        found_radial, found_angular, found_m);
     output[output_index] = coefficient_at(
         coefficients, center, neighbor_species, found_radial, found_angular, found_m,
         radial_count, coefficient_max_angular, coefficient_size);
@@ -497,11 +470,11 @@ std::vector<double> compute_local_descriptors(
     const int radial_count = max_radial + 1;
     // SoapRadialSpectrum only consumes the l=0 coefficient block.  Avoid
     // constructing the unused higher-angular channels on the device.
-    const int coefficient_max_angular = kind == 2 ? 0 : max_angular;
+    const int coefficient_max_angular = detail::local_coefficient_max_angular(
+        options, descriptor_kind);
     const int coefficient_angular_count = coefficient_max_angular + 1;
-    const int coefficient_angular_block = coefficient_angular_count * coefficient_angular_count;
-    const int coefficient_size = static_cast<int>(species.size()) * radial_count
-        * coefficient_angular_block;
+    const int coefficient_size = static_cast<int>(detail::local_coefficient_count(
+        options, descriptor_kind));
     const std::size_t output_size = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(features);
     const std::size_t coefficient_total = static_cast<std::size_t>(batch.atoms())
@@ -511,6 +484,8 @@ std::vector<double> compute_local_descriptors(
     const std::size_t active_output_size = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(active_features);
 
+    RadialBasisSet radial_bases;
+    radial_bases.reset(max_radial, coefficient_max_angular, cutoff);
     std::vector<double> gto_constants;
     std::vector<double> gamma_a;
     std::vector<double> gamma_b;
@@ -521,7 +496,7 @@ std::vector<double> compute_local_descriptors(
     orthonormalization.reserve(
         static_cast<std::size_t>(coefficient_angular_count) * radial_count * radial_count);
     for (int angular = 0; angular < coefficient_angular_count; ++angular) {
-        const GtoRadialBasis basis(radial_count, cutoff, angular);
+        const GtoRadialBasis& basis = radial_bases[static_cast<std::size_t>(angular)];
         gto_constants.insert(gto_constants.end(), basis.gto_constants.begin(), basis.gto_constants.end());
         gamma_a.insert(gamma_a.end(), basis.gamma_a.begin(), basis.gamma_a.end());
         gamma_b.push_back(basis.gamma_b);

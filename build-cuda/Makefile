@@ -478,6 +478,30 @@ cpp/src/common/control.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/_cuda.dir/build.make CMakeFiles/_cuda.dir/cpp/src/common/control.cpp.s
 .PHONY : cpp/src/common/control.cpp.s
 
+cpp/src/common/matrix_output.o: cpp/src/common/matrix_output.cpp.o
+.PHONY : cpp/src/common/matrix_output.o
+
+# target to build an object file
+cpp/src/common/matrix_output.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.o
+.PHONY : cpp/src/common/matrix_output.cpp.o
+
+cpp/src/common/matrix_output.i: cpp/src/common/matrix_output.cpp.i
+.PHONY : cpp/src/common/matrix_output.i
+
+# target to preprocess a source file
+cpp/src/common/matrix_output.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.i
+.PHONY : cpp/src/common/matrix_output.cpp.i
+
+cpp/src/common/matrix_output.s: cpp/src/common/matrix_output.cpp.s
+.PHONY : cpp/src/common/matrix_output.s
+
+# target to generate assembly for a file
+cpp/src/common/matrix_output.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/_native.dir/build.make CMakeFiles/_native.dir/cpp/src/common/matrix_output.cpp.s
+.PHONY : cpp/src/common/matrix_output.cpp.s
+
 cpp/src/common/neighbor.o: cpp/src/common/neighbor.cpp.o
 .PHONY : cpp/src/common/neighbor.o
 
@@ -1122,6 +1146,9 @@ help:
 	@echo "... cpp/src/common/control.o"
 	@echo "... cpp/src/common/control.i"
 	@echo "... cpp/src/common/control.s"
+	@echo "... cpp/src/common/matrix_output.o"
+	@echo "... cpp/src/common/matrix_output.i"
+	@echo "... cpp/src/common/matrix_output.s"
 	@echo "... cpp/src/common/neighbor.o"
 	@echo "... cpp/src/common/neighbor.i"
 	@echo "... cpp/src/common/neighbor.s"

@@ -2885,8 +2885,11 @@ CMakeFiles/_cuda.dir/cpp/cuda/src/extended_descriptors.cu.o
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/batch.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/control.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/math3.hpp
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/mbtr.hpp
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/rotational_bispectrum.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/detail/species.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/matrix.hpp
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp
  /home/nicheal/MDescriptor/cpp/src/common/local_common.hpp
  /home/nicheal/MDescriptor/cpp/src/common/local_layout.hpp

@@ -103,6 +103,7 @@ set(MDESCRIPTOR_CPP_SOURCES
     cpp/src/standalone/sine_matrix.cpp
     cpp/src/standalone/ewald_sum_matrix.cpp
     cpp/src/standalone/matrix_dispatch.cpp
+    cpp/src/common/matrix_output.cpp
     cpp/src/standalone/mbtr.cpp
     cpp/src/standalone/ead.cpp
     cpp/src/standalone/ace.cpp

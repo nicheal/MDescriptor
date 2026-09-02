@@ -1,4 +1,5 @@
-#include "matrix_common.hpp"
+#include "extra_common.hpp"
+#include "matrix_values.hpp"
 
 #ifdef _OPENMP
 #include <omp.h>

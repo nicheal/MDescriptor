@@ -210,6 +210,8 @@ CMakeFiles/_native.dir/cpp/src/bindings/module.cpp.o: \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/dpa4c.hpp \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/extra.hpp \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/local_descriptors.hpp \
+ /home/nicheal/MDescriptor/cpp/include/mdescriptor/matrix.hpp \
+ /home/nicheal/MDescriptor/cpp/src/common/matrix_output.hpp \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/nep.hpp \
  /home/nicheal/MDescriptor/cpp/include/mdescriptor/neighbor.hpp \
  /home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/pybind11/include/pybind11/numpy.h \

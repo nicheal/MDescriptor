@@ -480,6 +480,35 @@ struct GtoRadialBasis {
     }
 };
 
+struct RadialBasisSet {
+    int max_radial = -1;
+    int max_angular = -1;
+    double radius = 0.0;
+    std::vector<GtoRadialBasis> bases;
+
+    bool matches(int max_radial_, int max_angular_, double radius_) const noexcept {
+        return max_radial == max_radial_
+            && max_angular == max_angular_
+            && radius == radius_;
+    }
+
+    void reset(int max_radial_, int max_angular_, double radius_) {
+        max_radial = max_radial_;
+        max_angular = max_angular_;
+        radius = radius_;
+        const int radial_count = max_radial + 1;
+        bases.clear();
+        bases.reserve(static_cast<std::size_t>(max_angular + 1));
+        for (int angular = 0; angular <= max_angular; ++angular) {
+            bases.emplace_back(radial_count, radius, angular);
+        }
+    }
+
+    const GtoRadialBasis& operator[](std::size_t angular) const noexcept {
+        return bases[angular];
+    }
+};
+
 inline void real_spherical_harmonics_into(
     const std::array<double, 3>& vector,
     int max_angular,
@@ -565,32 +594,54 @@ inline double cutoff_value(double distance, double cutoff) {
     return 0.5 * (1.0 + std::cos(kPi * (distance - cutoff + width) / width));
 }
 
-inline std::size_t coefficient_index(std::size_t species, int radial, int angular, int m, int n_radial, int max_angular) {
-    return ((species * static_cast<std::size_t>(n_radial) + static_cast<std::size_t>(radial))
-        * static_cast<std::size_t>(max_angular + 1) + static_cast<std::size_t>(angular))
-        * static_cast<std::size_t>(2 * max_angular + 1) + static_cast<std::size_t>(max_angular + m);
+inline void compute_edge_basis_into(
+    double distance,
+    const std::array<double, 3>& displacement,
+    const LocalDescriptorOptions& options,
+    const RadialBasisSet& radial_bases,
+    double scaling,
+    std::vector<double>& harmonics,
+    std::vector<double>& legendre,
+    std::vector<double>& radial,
+    std::vector<double>& radial_raw,
+    std::vector<double>& edge_basis) {
+    const int n_radial = options.max_radial + 1;
+    const int max_angular = options.max_angular;
+    const std::size_t harmonic_count = static_cast<std::size_t>(max_angular + 1)
+        * static_cast<std::size_t>(max_angular + 1);
+    edge_basis.assign(harmonic_count * static_cast<std::size_t>(n_radial), 0.0);
+    real_spherical_harmonics_into(displacement, max_angular, harmonics, legendre);
+    for (int angular = 0; angular <= max_angular; ++angular) {
+        radial_bases[static_cast<std::size_t>(angular)].radial_integral_into(
+            distance, angular, options.density_width, radial, radial_raw);
+        for (int m = -angular; m <= angular; ++m) {
+            const std::size_t harmonic_offset = static_cast<std::size_t>(
+                angular * angular + angular + m) * static_cast<std::size_t>(n_radial);
+            const double harmonic = harmonics[static_cast<std::size_t>(
+                angular * angular + angular + m)];
+            for (int radial_index = 0; radial_index < n_radial; ++radial_index) {
+                edge_basis[harmonic_offset + static_cast<std::size_t>(radial_index)]
+                    = scaling * radial[static_cast<std::size_t>(radial_index)] * harmonic;
+            }
+        }
+    }
 }
 
 inline void compute_coefficients_into(
-    const StructureBatchView& batch,
     const NeighborGraph& graph,
     std::int64_t center,
     const LocalDescriptorOptions& options,
     const std::vector<std::int32_t>& atom_types,
-    const std::vector<GtoRadialBasis>& radial_bases,
-    bool lode,
+    const RadialBasisSet& radial_bases,
     std::vector<double>& coefficients,
     std::vector<double>& harmonics,
     std::vector<double>& legendre,
     std::vector<double>& radial,
-    std::vector<double>& radial_raw) {
+    std::vector<double>& radial_raw,
+    std::vector<double>& edge_basis) {
     const int n_radial = options.max_radial + 1;
-    const int width = 2 * options.max_angular + 1;
-    const std::size_t size = options.species.size() * static_cast<std::size_t>(n_radial)
-        * static_cast<std::size_t>(options.max_angular + 1) * static_cast<std::size_t>(width);
-    coefficients.assign(size, 0.0);
-    radial.resize(static_cast<std::size_t>(n_radial));
-    radial_raw.resize(static_cast<std::size_t>(n_radial));
+    coefficients.assign(static_cast<std::size_t>(local_coefficient_count(
+        options, LocalDescriptorKind::SphericalExpansion)), 0.0);
     const NeighborView neighbors = graph.for_center(center);
     for (std::size_t index = 0; index < neighbors.size; ++index) {
         const auto type = static_cast<std::size_t>(atom_types[static_cast<std::size_t>(neighbors.atoms[index])]);
@@ -604,28 +655,17 @@ inline void compute_coefficients_into(
             neighbors.displacements[index * 3 + 1],
             neighbors.displacements[index * 3 + 2],
         };
-        real_spherical_harmonics_into(displacement, options.max_angular, harmonics, legendre);
-        for (int l = 0; l <= options.max_angular; ++l) {
-            if (lode) {
-                const double density = 1.0 / std::max(
-                    std::pow(distance * distance + options.density_width * options.density_width, 0.5 * options.exponent),
-                    1e-12);
-                for (int n = 0; n < n_radial; ++n) {
-                    radial[static_cast<std::size_t>(n)] = density * scaling
-                        * std::exp(-(n + 1.0) * distance * distance / (options.radial_radius * options.radial_radius));
-                }
-            } else {
-                radial_bases[static_cast<std::size_t>(l)].radial_integral_into(
-                    distance, l, options.density_width, radial, radial_raw);
-                for (double& value : radial) {
-                    value *= scaling;
-                }
-            }
-            for (int n = 0; n < n_radial; ++n) {
-                for (int m = -l; m <= l; ++m) {
-                    coefficients[coefficient_index(type, n, l, m, n_radial, options.max_angular)]
-                        += radial[static_cast<std::size_t>(n)]
-                        * harmonics[static_cast<std::size_t>(l * l + l + m)];
+        compute_edge_basis_into(
+            distance, displacement, options, radial_bases, scaling,
+            harmonics, legendre, radial, radial_raw, edge_basis);
+        for (int angular = 0; angular <= options.max_angular; ++angular) {
+            for (int m = -angular; m <= angular; ++m) {
+                const std::size_t edge_offset = static_cast<std::size_t>(
+                    angular * angular + angular + m) * static_cast<std::size_t>(n_radial);
+                for (int radial_index = 0; radial_index < n_radial; ++radial_index) {
+                    coefficients[local_coefficient_index(
+                        type, radial_index, angular, m, n_radial, options.max_angular)]
+                        += edge_basis[edge_offset + static_cast<std::size_t>(radial_index)];
                 }
             }
         }
@@ -794,21 +834,11 @@ inline void compute_lode_values(
     const int n_radial = options.max_radial + 1;
     const std::int64_t features = local_feature_count(options, LocalDescriptorKind::LodeSphericalExpansion);
     std::fill(output, output + batch.atoms * features, 0.0);
-    static thread_local int cached_max_radial = -1;
-    static thread_local int cached_max_angular = -1;
-    static thread_local double cached_radius = 0.0;
-    static thread_local std::vector<GtoRadialBasis> cached_radial_bases;
-    if (cached_max_radial != options.max_radial
-        || cached_max_angular != options.max_angular
-        || cached_radius != options.radial_radius) {
-        cached_radial_bases.clear();
-        cached_radial_bases.reserve(static_cast<std::size_t>(options.max_angular + 1));
-        for (int l = 0; l <= options.max_angular; ++l) {
-            cached_radial_bases.emplace_back(n_radial, options.radial_radius, l);
-        }
-        cached_max_radial = options.max_radial;
-        cached_max_angular = options.max_angular;
-        cached_radius = options.radial_radius;
+    static thread_local RadialBasisSet cached_radial_bases;
+    if (!cached_radial_bases.matches(
+            options.max_radial, options.max_angular, options.radial_radius)) {
+        cached_radial_bases.reset(
+            options.max_radial, options.max_angular, options.radial_radius);
     }
     const auto& radial_bases = cached_radial_bases;
 #ifdef _OPENMP

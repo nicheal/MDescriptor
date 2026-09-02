@@ -1,5 +1,8 @@
 #include "mdescriptor/cuda/extended_descriptors.hpp"
 
+#include "mdescriptor/detail/mbtr.hpp"
+#include "mdescriptor/detail/rotational_bispectrum.hpp"
+#include "mdescriptor/matrix.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "local_spherical_common.hpp"
 
@@ -26,11 +29,19 @@ namespace py = pybind11;
 namespace mdescriptor::cuda {
 namespace {
 
+namespace mbtr = mdescriptor::detail::mbtr;
+
 using I32 = std::int32_t;
 using I64 = std::int64_t;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
+constexpr int kMatrixKindSine = static_cast<int>(::mdescriptor::MatrixKind::Sine);
+constexpr int kMatrixKindEwald = static_cast<int>(::mdescriptor::MatrixKind::Ewald);
+constexpr int kMatrixKindCoulomb = static_cast<int>(::mdescriptor::MatrixKind::Coulomb);
+constexpr int kMatrixPermutationNone = static_cast<int>(::mdescriptor::MatrixPermutation::None);
+constexpr int kMatrixPermutationSortedL2 = static_cast<int>(::mdescriptor::MatrixPermutation::SortedL2);
+constexpr int kMatrixPermutationEigenspectrum = static_cast<int>(::mdescriptor::MatrixPermutation::Eigenspectrum);
 
 void check_cuda(cudaError_t status, const char* operation) {
     if (status == cudaSuccess) return;
@@ -370,6 +381,54 @@ Value option(const py::dict& options, const char* key, Value fallback) {
     const py::str name(key);
     if (!options.contains(name) || options[name].is_none()) return fallback;
     return py::cast<Value>(options[name]);
+}
+
+struct RotationalCudaOptions {
+    int kind = 0;
+    int nmax = 3;
+    int lmax = 3;
+    int twojmax = 3;
+    int diagonal = 3;
+    double cutoff = 3.5;
+    double alpha = 2.0;
+    double rfac0 = 1.0;
+    double rmin0 = 0.0;
+    double rcutfac = 1.0;
+    bool weight_on = false;
+    bool normalize_u = false;
+};
+
+RotationalCudaOptions rotational_options(
+    const std::string& name, const py::dict& options) {
+    RotationalCudaOptions result;
+    if (name == "SO3") {
+        result.kind = 0;
+        result.nmax = option(options, "nmax", 3);
+    } else if (name == "SO4") {
+        result.kind = 1;
+        result.nmax = 1;
+        result.rfac0 = option(options, "rfac0", 1.0);
+    } else if (name == "SNAP") {
+        result.kind = 2;
+        result.nmax = 1;
+        result.rfac0 = option(options, "rfac0", 0.99363);
+    } else if (name == "LBispectrum") {
+        result.kind = 3;
+        result.nmax = 1;
+        result.rfac0 = option(options, "rfac0", 0.99363);
+    } else {
+        throw std::invalid_argument("unknown CUDA rotational descriptor: " + name);
+    }
+    result.lmax = option(options, "lmax", 3);
+    result.twojmax = option(options, "twojmax", 3);
+    result.diagonal = option(options, "diagonal", 3);
+    result.cutoff = option(options, "rcut", 3.5);
+    result.alpha = option(options, "alpha", 2.0);
+    result.rmin0 = option(options, "rmin0", 0.0);
+    result.rcutfac = option(options, "rcutfac", 1.0);
+    result.weight_on = option(options, "weight_on", false);
+    result.normalize_u = option(options, "normalize_U", false);
+    return result;
 }
 
 std::vector<I32> species_option(const py::dict& options) {
@@ -1445,10 +1504,7 @@ __device__ bool inverse3_device(const double* matrix, double* inverse) {
 }
 
 __device__ double cell_volume_device(const double* cell) {
-    return fabs(
-        cell[0] * (cell[4] * cell[8] - cell[5] * cell[7])
-        - cell[1] * (cell[3] * cell[8] - cell[5] * cell[6])
-        + cell[2] * (cell[3] * cell[7] - cell[4] * cell[6]));
+    return mdescriptor::detail::mbtr::cell_volume(cell);
 }
 
 __device__ void fractional_device(
@@ -1602,7 +1658,7 @@ __global__ void matrix_kernel(
     const I64 end = offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
     double* matrix = matrices + structure * static_cast<I64>(n_atoms_max) * n_atoms_max;
-    double* row = output + structure * (permutation == 2
+    double* row = output + structure * (permutation == kMatrixPermutationEigenspectrum
         ? n_atoms_max : n_atoms_max * n_atoms_max);
     for (int index = 0; index < n_atoms_max * n_atoms_max; ++index) matrix[index] = 0.0;
     for (int i = 0; i < count; ++i) {
@@ -1610,14 +1666,14 @@ __global__ void matrix_kernel(
         for (int j = 0; j < count; ++j) {
             const double zj = static_cast<double>(numbers[begin + j]);
             double value = 0.0;
-            if (i == j && kind != 1) {
+            if (i == j && kind != kMatrixKindEwald) {
                 value = 0.5 * pow(zi, exponent);
-            } else if (kind == 2) {
+            } else if (kind == kMatrixKindCoulomb) {
                 const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
                 const double dy = positions[(begin + i) * 3 + 1] - positions[(begin + j) * 3 + 1];
                 const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
                 value = zi * zj / sqrt(dx * dx + dy * dy + dz * dz);
-            } else if (kind == 0) {
+            } else if (kind == kMatrixKindSine) {
                 double inverse[9]{};
                 if (inverse3_device(cells + structure * 9, inverse)) {
                     const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
@@ -1658,7 +1714,7 @@ __global__ void matrix_kernel(
             matrix[i * n_atoms_max + j] = value;
         }
     }
-    if (permutation == 2) {
+    if (permutation == kMatrixPermutationEigenspectrum) {
         for (int i = 0; i < count; ++i) row[i] = matrix[i * n_atoms_max + i];
         for (int iteration = 0; iteration < 64 * n_atoms_max * n_atoms_max; ++iteration) {
             int p = 0;
@@ -1702,22 +1758,49 @@ __global__ void matrix_kernel(
     }
     int order[256];
     double norms[256];
+    double maximum_norm_squared = 1.0;
     for (int i = 0; i < count; ++i) {
         order[i] = i;
         double norm2 = 0.0;
-        for (int j = 0; j < count; ++j) norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j];
+        const int grouped_end = count & ~3;
+        for (int j = 0; j < grouped_end; j += 4) {
+            norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j]
+                + matrix[i * n_atoms_max + j + 1] * matrix[i * n_atoms_max + j + 1]
+                + matrix[i * n_atoms_max + j + 2] * matrix[i * n_atoms_max + j + 2]
+                + matrix[i * n_atoms_max + j + 3] * matrix[i * n_atoms_max + j + 3];
+        }
+        for (int j = grouped_end; j < count; ++j) {
+            norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j];
+        }
         norms[i] = norm2;
+        maximum_norm_squared = max(maximum_norm_squared, norm2);
     }
-    if (permutation == 1) {
+    if (permutation == kMatrixPermutationSortedL2) {
         for (int i = 1; i < count; ++i) {
             int current = i;
-            while (current > 0 && (norms[current] > norms[current - 1]
-                || (fabs(norms[current] - norms[current - 1]) <= 4.0 * DBL_EPSILON
-                    && order[current] < order[current - 1]))) {
+            while (current > 0 && norms[current] > norms[current - 1]) {
                 const double norm_saved = norms[current]; norms[current] = norms[current - 1]; norms[current - 1] = norm_saved;
                 const int index_saved = order[current]; order[current] = order[current - 1]; order[current - 1] = index_saved;
                 --current;
             }
+        }
+        const double tie_tolerance = 4.0 * DBL_EPSILON * maximum_norm_squared;
+        for (int group_begin = 0; group_begin < count;) {
+            int group_end = group_begin + 1;
+            while (group_end < count
+                && norms[group_end - 1] - norms[group_end] <= tie_tolerance) {
+                ++group_end;
+            }
+            for (int i = group_begin + 1; i < group_end; ++i) {
+                int current = i;
+                while (current > group_begin && order[current] < order[current - 1]) {
+                    const int index_saved = order[current];
+                    order[current] = order[current - 1];
+                    order[current - 1] = index_saved;
+                    --current;
+                }
+            }
+            group_begin = group_end;
         }
     }
     for (int i = 0; i < n_atoms_max; ++i) {
@@ -1841,13 +1924,13 @@ py::dict compute_matrix_descriptor(
         }
     }
     const std::string permutation_name = option(options, "permutation", std::string("sorted_l2"));
-    const int permutation = permutation_name == "none" ? 0
-        : permutation_name == "sorted_l2" ? 1 : 2;
+    const int permutation = permutation_name == "none" ? kMatrixPermutationNone
+        : permutation_name == "sorted_l2" ? kMatrixPermutationSortedL2 : kMatrixPermutationEigenspectrum;
     if (permutation_name != "none" && permutation_name != "sorted_l2"
         && permutation_name != "eigenspectrum") {
         throw std::invalid_argument("invalid CUDA matrix permutation");
     }
-    const I64 columns = permutation == 2
+    const I64 columns = permutation == kMatrixPermutationEigenspectrum
         ? n_atoms_max : static_cast<I64>(n_atoms_max) * n_atoms_max;
     const std::size_t output_size = static_cast<std::size_t>(host_batch.structures)
         * static_cast<std::size_t>(columns);
@@ -1882,9 +1965,7 @@ py::dict compute_matrix_descriptor(
 }
 
 __device__ int pair_channel_device(int first, int second, int species_count) {
-    const int lower = min(first, second);
-    const int upper = max(first, second);
-    return lower * species_count - lower * (lower + 1) / 2 + upper;
+    return mdescriptor::detail::mbtr::pair_channel(first, second, species_count);
 }
 
 __global__ void acsf_kernel(
@@ -2098,24 +2179,6 @@ py::dict compute_acsf_descriptor(
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
 
-__device__ double gaussian_bin_device(
-    double value,
-    double weight,
-    double grid_min,
-    double grid_max,
-    double grid_sigma,
-    int grid_n,
-    bool normalize,
-    int bin) {
-    const double dx = (grid_max - grid_min) / (grid_n - 1);
-    const double lower = grid_min - 0.5 * dx + bin * dx;
-    const double upper = lower + dx;
-    double result = 0.5 * (erf((upper - value) / (grid_sigma * sqrt(2.0)))
-        - erf((lower - value) / (grid_sigma * sqrt(2.0)))) / dx;
-    if (!normalize) result *= grid_sigma * sqrt(2.0 * kPi);
-    return weight * result;
-}
-
 __device__ void add_histogram_device(
     double* target,
     double value,
@@ -2125,12 +2188,8 @@ __device__ void add_histogram_device(
     double grid_sigma,
     int grid_n,
     bool normalize) {
-    if (weight == 0.0 || value < grid_min - grid_sigma * 8.0
-        || value > grid_max + grid_sigma * 8.0) return;
-    for (int bin = 0; bin < grid_n; ++bin) {
-        target[bin] += gaussian_bin_device(
-            value, weight, grid_min, grid_max, grid_sigma, grid_n, normalize, bin);
-    }
+    mdescriptor::detail::mbtr::add_histogram(
+        target, value, weight, grid_min, grid_max, grid_sigma, grid_n, normalize);
 }
 
 __device__ double mbtr_weight_device(
@@ -2142,23 +2201,8 @@ __device__ double mbtr_weight_device(
     double first,
     double second,
     double third) {
-    if (weighting == 1) {
-        const double value = exp(-scale * (first + second + third));
-        return value >= threshold ? value : 0.0;
-    }
-    if (weighting == 2) {
-        return first <= r_cut ? 1.0 / fmax(first * first, 1e-30) : 0.0;
-    }
-    if (weighting == 3) {
-        const double x_first = fmin(1.0, fmax(0.0, first / r_cut));
-        const double x_second = fmin(1.0, fmax(0.0, second / r_cut));
-        const double first_value = 1.0 + sharpness * pow(x_first, sharpness + 1.0)
-            - (sharpness + 1.0) * pow(x_first, sharpness);
-        const double second_value = 1.0 + sharpness * pow(x_second, sharpness + 1.0)
-            - (sharpness + 1.0) * pow(x_second, sharpness);
-        return first <= r_cut && second <= r_cut ? first_value * second_value : 0.0;
-    }
-    return 1.0;
+    return mdescriptor::detail::mbtr::weight(
+        weighting, scale, threshold, r_cut, sharpness, first, second, third);
 }
 
 __device__ int mbtr_species(
@@ -2177,44 +2221,13 @@ __device__ void normalize_mbtr_device(
     int geometry,
     int grid_n,
     bool local) {
-    if (normalization == 1) {
-        double squared = 0.0;
-        for (I64 index = 0; index < features; ++index) squared += values[index] * values[index];
-        const double norm = sqrt(squared);
-        if (norm > 0.0) for (I64 index = 0; index < features; ++index) values[index] /= norm;
-    } else if (normalization == 2 && atom_count > 0) {
-        for (I64 index = 0; index < features; ++index) values[index] /= atom_count;
-    } else if (normalization == 3 && !local && geometry != 0) {
-        const int pair_count = species_count * (species_count + 1) / 2;
-        if (geometry == 1 || geometry == 2) {
-            for (int first = 0; first < species_count; ++first) {
-                for (int second = first; second < species_count; ++second) {
-                    const double product = first == second
-                        ? 0.5 * species_counts[first] * species_counts[second]
-                        : static_cast<double>(species_counts[first]) * species_counts[second];
-                    if (product <= 0.0) continue;
-                    const double factor = volume / (product * 4.0 * kPi);
-                    const I64 begin = static_cast<I64>(
-                        pair_channel_device(first, second, species_count)) * grid_n;
-                    for (int bin = 0; bin < grid_n; ++bin) values[begin + bin] *= factor;
-                }
-            }
-        } else {
-            for (int first = 0; first < species_count; ++first) {
-                for (int center = 0; center < species_count; ++center) {
-                    for (int third = first; third < species_count; ++third) {
-                        const double product = static_cast<double>(species_counts[first])
-                            * species_counts[center] * species_counts[third];
-                        if (product <= 0.0) continue;
-                        const int channel = center * pair_count
-                            + pair_channel_device(first, third, species_count);
-                        const double factor = volume / product;
-                        const I64 begin = static_cast<I64>(channel) * grid_n;
-                        for (int bin = 0; bin < grid_n; ++bin) values[begin + bin] *= factor;
-                    }
-                }
-            }
-        }
+    if (normalization == mdescriptor::detail::mbtr::kNormalizationL2) {
+        mdescriptor::detail::mbtr::normalize_l2(values, features);
+    } else if (normalization == mdescriptor::detail::mbtr::kNormalizationNAtoms) {
+        mdescriptor::detail::mbtr::normalize_n_atoms(values, features, atom_count);
+    } else if (normalization == mdescriptor::detail::mbtr::kNormalizationValleOganov) {
+        mdescriptor::detail::mbtr::normalize_valle_oganov(
+            values, volume, species_counts, species_count, geometry, grid_n, local);
     }
 }
 
@@ -2270,7 +2283,7 @@ __global__ void mbtr_kernel(
             if (type >= 0) ++species_counts[type];
         }
     }
-    if (geometry == 0) {
+    if (geometry == mbtr::kGeometryAtomicNumber) {
         if (local) {
             const int type = mbtr_species(numbers[row], species, species_count);
             if (type >= 0) add_histogram_device(
@@ -2293,7 +2306,8 @@ __global__ void mbtr_kernel(
         const I64 center = row;
         const I64 graph_begin = graph_offsets[center];
         const I64 graph_end = graph_offsets[center + 1];
-        if (geometry == 1 || geometry == 2) {
+        if (geometry == mbtr::kGeometryDistance
+            || geometry == mbtr::kGeometryInverseDistance) {
             for (I64 edge = graph_begin; edge < graph_end; ++edge) {
                 const I32 atom = graph_atoms[edge];
                 const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
@@ -2303,7 +2317,8 @@ __global__ void mbtr_kernel(
                         && graph_shifts[edge * 3 + 2] == 0)) continue;
                 const int type = mbtr_species(numbers[atom], species, species_count);
                 if (type < 0) continue;
-                const double value = geometry == 1 ? distance : 1.0 / distance;
+                const double value = geometry == mbtr::kGeometryDistance
+                    ? distance : 1.0 / distance;
                 add_histogram_device(
                     target + (type + 1) * grid_n, value,
                     mbtr_weight_device(weighting, scale, threshold, r_cut, sharpness,
@@ -2327,7 +2342,7 @@ __global__ void mbtr_kernel(
                         (first_distance * first_distance + second_distance * second_distance
                             - third_distance * third_distance)
                             / (2.0 * first_distance * second_distance)));
-                    const double value = geometry == 4 ? cosine
+                    const double value = geometry == mbtr::kGeometryCosine ? cosine
                         : acos(cosine) * 180.0 / kPi;
                     const int first_type = mbtr_species(
                         numbers[graph_atoms[first]], species, species_count) + 1;
@@ -2343,7 +2358,7 @@ __global__ void mbtr_kernel(
                         grid_n, normalize_gaussians);
                     add_histogram_device(
                         target + (reserved + (first_type - 1) * element_count + second_type) * grid_n,
-                        (geometry == 4 ? cosine
+                        (geometry == mbtr::kGeometryCosine ? cosine
                             : acos(fmin(1.0, fmax(-1.0,
                                 (first_distance * first_distance + third_distance * third_distance
                                     - second_distance * second_distance)
@@ -2352,7 +2367,7 @@ __global__ void mbtr_kernel(
                         weight, grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
                     add_histogram_device(
                         target + (reserved + (second_type - 1) * element_count + first_type) * grid_n,
-                        (geometry == 4 ? cosine
+                        (geometry == mbtr::kGeometryCosine ? cosine
                             : acos(fmin(1.0, fmax(-1.0,
                                 (second_distance * second_distance + third_distance * third_distance
                                     - first_distance * first_distance)
@@ -2376,7 +2391,8 @@ __global__ void mbtr_kernel(
         if (center_type < 0) continue;
         const I64 graph_begin = graph_offsets[center];
         const I64 graph_end = graph_offsets[center + 1];
-        if (geometry == 1 || geometry == 2) {
+        if (geometry == mbtr::kGeometryDistance
+            || geometry == mbtr::kGeometryInverseDistance) {
             for (I64 first = graph_begin; first < graph_end; ++first) {
                 const I32 first_atom = graph_atoms[first];
                 const double distance = sqrt(fmax(0.0, graph_distance2[first]));
@@ -2387,7 +2403,8 @@ __global__ void mbtr_kernel(
                 if (!periodic && first_atom < center) continue;
                 const int first_type = mbtr_species(numbers[first_atom], species, species_count);
                 if (first_type < 0) continue;
-                const double value = geometry == 1 ? distance : 1.0 / distance;
+                const double value = geometry == mbtr::kGeometryDistance
+                    ? distance : 1.0 / distance;
                 const double pair_weight = mbtr_weight_device(
                     weighting, scale, threshold, r_cut, sharpness, distance, 0.0, 0.0)
                     * (periodic ? 0.5 : 1.0);
@@ -2411,7 +2428,7 @@ __global__ void mbtr_kernel(
                         (first_distance * first_distance + second_distance * second_distance
                             - third_distance * third_distance)
                             / (2.0 * first_distance * second_distance)));
-                    const double value = geometry == 4 ? cosine
+                    const double value = geometry == mbtr::kGeometryCosine ? cosine
                         : acos(cosine) * 180.0 / kPi;
                     const int first_type = mbtr_species(numbers[graph_atoms[first]], species, species_count);
                     const int second_type = mbtr_species(numbers[graph_atoms[second]], species, species_count);
@@ -2460,6 +2477,28 @@ py::dict nested_dict_option(
     }
 }
 
+py::dict mbtr_config_option(const py::dict& options) {
+    const py::str payload_key("_cuda_payload");
+    const py::str config_key("mbtr_config");
+    if (!options.contains(payload_key) || options[payload_key].is_none()) {
+        return py::dict();
+    }
+    py::dict payload;
+    try {
+        payload = py::cast<py::dict>(options[payload_key]);
+    } catch (const py::cast_error&) {
+        throw std::invalid_argument("_cuda_payload must be an object");
+    }
+    if (!payload.contains(config_key) || payload[config_key].is_none()) {
+        return py::dict();
+    }
+    try {
+        return py::cast<py::dict>(payload[config_key]);
+    } catch (const py::cast_error&) {
+        throw std::invalid_argument("_cuda_payload.mbtr_config must be an object");
+    }
+}
+
 py::dict compute_mbtr_descriptor(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -2467,11 +2506,13 @@ py::dict compute_mbtr_descriptor(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options) {
-    const auto species = species_option(options);
+    const py::dict canonical = mbtr_config_option(options);
+    const bool has_canonical = py::len(canonical) != 0;
+    const auto species = has_canonical ? species_option(canonical) : species_option(options);
     if (species.empty()) throw std::invalid_argument(name + " species must not be empty");
-    int geometry = 1;
-    int weighting = 0;
-    int normalization = 0;
+    int geometry = mbtr::kGeometryDistance;
+    int weighting = mbtr::kWeightingUnity;
+    int normalization = mbtr::kNormalizationNone;
     double grid_min = 0.0;
     double grid_max = 6.0;
     double grid_sigma = 0.1;
@@ -2481,41 +2522,56 @@ py::dict compute_mbtr_descriptor(
     double r_cut = 0.0;
     double sharpness = 2.0;
     bool normalize_gaussians = option(options, "normalize_gaussians", true);
-    const bool local = name == "LMBTR";
-    if (name == "ValleOganov") {
+    bool local = name == "LMBTR";
+    if (has_canonical) {
+        geometry = option(canonical, "geometry", mbtr::kGeometryDistance);
+        weighting = option(canonical, "weighting", mbtr::kWeightingUnity);
+        normalization = option(canonical, "normalization", mbtr::kNormalizationNone);
+        grid_min = option(canonical, "grid_min", 0.0);
+        grid_max = option(canonical, "grid_max", 6.0);
+        grid_sigma = option(canonical, "grid_sigma", 0.1);
+        grid_n = option(canonical, "grid_n", 50);
+        normalize_gaussians = option(canonical, "normalize_gaussians", true);
+        scale = option(canonical, "scale", 0.5);
+        threshold = option(canonical, "threshold", 1e-3);
+        r_cut = option(canonical, "r_cut", 0.0);
+        sharpness = option(canonical, "sharpness", 2.0);
+        local = option(canonical, "local", local);
+    } else if (name == "ValleOganov") {
         const std::string function = option(options, "function", std::string("distance"));
-        geometry = function == "angle" ? 3 : 1;
+        geometry = function == "angle" ? mbtr::kGeometryAngle : mbtr::kGeometryDistance;
         grid_n = option(options, "n", 50);
         grid_sigma = option(options, "sigma", 0.1);
         r_cut = option(options, "r_cut", 6.0);
         grid_min = 0.0;
-        grid_max = geometry == 3 ? 180.0 : r_cut;
-        weighting = geometry == 3 ? 3 : 2;
+        grid_max = geometry == mbtr::kGeometryAngle ? 180.0 : r_cut;
+        weighting = geometry == mbtr::kGeometryAngle
+            ? mbtr::kWeightingSmoothCutoff : mbtr::kWeightingInverseSquare;
         sharpness = 2.0;
-        normalization = 3;
+        normalization = mbtr::kNormalizationValleOganov;
         const std::string normalization_name = option(
             options, "normalization", std::string("valle_oganov"));
-        if (normalization_name == "none") normalization = 0;
-        else if (normalization_name == "l2") normalization = 1;
-        else if (normalization_name == "n_atoms") normalization = 2;
+        if (normalization_name == "none") normalization = mbtr::kNormalizationNone;
+        else if (normalization_name == "l2") normalization = mbtr::kNormalizationL2;
+        else if (normalization_name == "n_atoms") normalization = mbtr::kNormalizationNAtoms;
     } else {
         const py::dict geometry_object = nested_dict_option(options, "geometry");
         const py::dict grid_object = nested_dict_option(options, "grid");
         const py::dict weighting_object = nested_dict_option(options, "weighting");
         const std::string geometry_name = nested_string(
             geometry_object, "function", "distance");
-        if (geometry_name == "atomic_number") geometry = 0;
-        else if (geometry_name == "distance") geometry = 1;
-        else if (geometry_name == "inverse_distance") geometry = 2;
-        else if (geometry_name == "angle") geometry = 3;
-        else if (geometry_name == "cosine") geometry = 4;
+        if (geometry_name == "atomic_number") geometry = mbtr::kGeometryAtomicNumber;
+        else if (geometry_name == "distance") geometry = mbtr::kGeometryDistance;
+        else if (geometry_name == "inverse_distance") geometry = mbtr::kGeometryInverseDistance;
+        else if (geometry_name == "angle") geometry = mbtr::kGeometryAngle;
+        else if (geometry_name == "cosine") geometry = mbtr::kGeometryCosine;
         else throw std::invalid_argument("unsupported CUDA MBTR geometry");
         const std::string weighting_name = nested_string(
             weighting_object, "function", "unity");
-        if (weighting_name == "unity" || weighting_name == "none") weighting = 0;
-        else if (weighting_name == "exp") weighting = 1;
-        else if (weighting_name == "inverse_square") weighting = 2;
-        else if (weighting_name == "smooth_cutoff") weighting = 3;
+        if (weighting_name == "unity" || weighting_name == "none") weighting = mbtr::kWeightingUnity;
+        else if (weighting_name == "exp") weighting = mbtr::kWeightingExponential;
+        else if (weighting_name == "inverse_square") weighting = mbtr::kWeightingInverseSquare;
+        else if (weighting_name == "smooth_cutoff") weighting = mbtr::kWeightingSmoothCutoff;
         else throw std::invalid_argument("unsupported CUDA MBTR weighting");
         grid_min = nested_number(grid_object, "min", 0.0);
         grid_max = nested_number(grid_object, "max", 6.0);
@@ -2523,26 +2579,28 @@ py::dict compute_mbtr_descriptor(
         grid_n = static_cast<int>(nested_number(grid_object, "n", 50));
         scale = nested_number(weighting_object, "scale", 0.5);
         threshold = nested_number(weighting_object, "threshold", 1e-3);
-        const double default_cutoff = weighting == 0 ? 0.0 : grid_max;
+        const double default_cutoff = weighting == mbtr::kWeightingUnity ? 0.0 : grid_max;
         r_cut = nested_number(weighting_object, "r_cut", default_cutoff);
         sharpness = nested_number(weighting_object, "sharpness", 2.0);
         const std::string normalization_name = option(
             options, "normalization", std::string("none"));
-        if (normalization_name == "l2") normalization = 1;
-        else if (normalization_name == "n_atoms") normalization = 2;
-        else if (normalization_name == "valle_oganov") normalization = 3;
+        if (normalization_name == "l2") normalization = mbtr::kNormalizationL2;
+        else if (normalization_name == "n_atoms") normalization = mbtr::kNormalizationNAtoms;
+        else if (normalization_name == "valle_oganov") normalization = mbtr::kNormalizationValleOganov;
     }
-    if (geometry != 0 && r_cut <= 0.0) {
+    if (geometry != mbtr::kGeometryAtomicNumber && r_cut <= 0.0) {
         r_cut = grid_max;
     }
-    if (weighting == 1 && scale > 0.0) {
-        const double multiplier = geometry == 3 || geometry == 4 ? 0.5 : 1.0;
+    if (weighting == mbtr::kWeightingExponential && scale > 0.0) {
+        const double multiplier = geometry == mbtr::kGeometryAngle
+            || geometry == mbtr::kGeometryCosine ? 0.5 : 1.0;
         r_cut = std::max(r_cut, multiplier * -log(threshold) / scale);
     }
-    const bool distance_geometry = geometry == 1 || geometry == 2;
+    const bool distance_geometry = geometry == mbtr::kGeometryDistance
+        || geometry == mbtr::kGeometryInverseDistance;
     const int species_count = static_cast<int>(species.size());
     const int pair_count = species_count * (species_count + 1) / 2;
-    const I64 channels = geometry == 0 ? species_count
+    const I64 channels = geometry == mbtr::kGeometryAtomicNumber ? species_count
         : local ? (distance_geometry ? species_count + 1
             : (species_count + 1) * (3 * (species_count + 1) - 1) / 2)
         : distance_geometry ? pair_count : species_count * pair_count;
@@ -2555,7 +2613,7 @@ py::dict compute_mbtr_descriptor(
         "could not clear CUDA MBTR output");
     DeviceBuffer<I32> d_species;
     d_species.upload(species.data(), species.size(), context.stream(), "could not upload MBTR species");
-    if (geometry != 0) {
+    if (geometry != mbtr::kGeometryAtomicNumber) {
         graph.build_dpa(context, batch, host_batch, r_cut, true, false, false);
     }
     if (rows > 0) {
@@ -3549,29 +3607,11 @@ __device__ double legendre_device(int degree, double x) {
     return current;
 }
 
-struct DeviceComplex {
-    double real = 0.0;
-    double imag = 0.0;
-};
-
-__device__ DeviceComplex complex_add(DeviceComplex first, DeviceComplex second) {
-    return {first.real + second.real, first.imag + second.imag};
-}
-
-__device__ DeviceComplex complex_scale(DeviceComplex value, double scale) {
-    return {value.real * scale, value.imag * scale};
-}
-
-__device__ DeviceComplex complex_conjugate(DeviceComplex value) {
-    return {value.real, -value.imag};
-}
-
-__device__ DeviceComplex complex_multiply(DeviceComplex first, DeviceComplex second) {
-    return {
-        first.real * second.real - first.imag * second.imag,
-        first.real * second.imag + first.imag * second.real,
-    };
-}
+using DeviceComplex = mdescriptor::detail::rotational::Complex;
+using mdescriptor::detail::rotational::complex_add;
+using mdescriptor::detail::rotational::complex_conjugate;
+using mdescriptor::detail::rotational::complex_multiply;
+using mdescriptor::detail::rotational::complex_scale;
 
 __device__ double factorial_for_so3_device(int value) {
     return value < 0 ? 0.0 : tgamma(static_cast<double>(value) + 1.0);
@@ -3754,62 +3794,15 @@ __global__ void so3_kernel(
     }
 }
 
-__device__ double factorial_device(int value) {
-    return value < 0 ? 0.0 : tgamma(static_cast<double>(value) + 1.0);
-}
-
-__device__ double clebsch_gordan_device(int l1, int l2, int l, int m1, int m2) {
-    const int aa2 = 2 * m1 - l1;
-    const int bb2 = 2 * m2 - l2;
-    const int numerator = aa2 + bb2 + l;
-    if (numerator % 2 != 0) return 0.0;
-    const int m = numerator / 2;
-    if (m < 0 || m > l) return 0.0;
-    const int z_min = max(0, max(
-        -(l - l2 + aa2) / 2,
-        -(l - l1 - bb2) / 2));
-    const int z_max = min(
-        (l1 + l2 - l) / 2,
-        min((l1 - aa2) / 2, (l2 + bb2) / 2));
-    double sum = 0.0;
-    for (int z = z_min; z <= z_max; ++z) {
-        const double denominator = factorial_device(z)
-            * factorial_device((l1 + l2 - l) / 2 - z)
-            * factorial_device((l1 - aa2) / 2 - z)
-            * factorial_device((l2 + bb2) / 2 - z)
-            * factorial_device((l - l2 + aa2) / 2 + z)
-            * factorial_device((l - l1 - bb2) / 2 + z);
-        if (denominator != 0.0) {
-            sum += (z % 2 == 0 ? 1.0 : -1.0) / denominator;
-        }
-    }
-    const double delta = sqrt(
-        factorial_device((l1 + l2 - l) / 2)
-        * factorial_device((l1 - l2 + l) / 2)
-        * factorial_device((-l1 + l2 + l) / 2)
-        / factorial_device((l1 + l2 + l) / 2 + 1));
-    const double scale = sqrt(
-        factorial_device((l1 + aa2) / 2)
-        * factorial_device((l1 - aa2) / 2)
-        * factorial_device((l2 + bb2) / 2)
-        * factorial_device((l2 - bb2) / 2)
-        * factorial_device(m)
-        * factorial_device(l - m)
-        * (l + 1.0));
-    return sum * delta * scale;
-}
-
 __device__ int rotational_u_offset(int order, int angular) {
-    int offset = 0;
-    for (int value = 1; value <= angular; ++value) offset += value * value;
-    if (angular == 0) offset = 0;
+    const int offset = static_cast<int>(
+        mdescriptor::detail::rotational::u_block_offset(angular));
     (void)order;
     return offset;
 }
 
 __device__ int rotational_u_size(int order) {
-    return rotational_u_offset(order, order)
-        + (order + 1) * (order + 1);
+    return static_cast<int>(mdescriptor::detail::rotational::u_total_size(order));
 }
 
 __device__ void hyperspherical_u_device(
@@ -3819,162 +3812,45 @@ __device__ void hyperspherical_u_device(
     double rmin0,
     double rfac0,
     DeviceComplex* output) {
-    const int size = rotational_u_size(order);
-    for (int index = 0; index < size; ++index) output[index] = {};
-    const double radius = sqrt(vector[0] * vector[0] + vector[1] * vector[1]
-        + vector[2] * vector[2]);
-    if (radius <= 1e-14) {
-        output[0] = {1.0, 0.0};
-        return;
-    }
-    const double psi = rfac0 * kPi * (radius - rmin0) / fmax(cutoff - rmin0, 1e-12);
-    const double sine = sin(psi);
-    const DeviceComplex a{cos(psi), -sine * vector[2] / radius};
-    const DeviceComplex b{sine * vector[1] / radius, -sine * vector[0] / radius};
-    const DeviceComplex conjugate_a = complex_conjugate(a);
-    const DeviceComplex conjugate_b = complex_conjugate(b);
-    output[0] = {1.0, 0.0};
-    for (int angular = 1; angular <= order; ++angular) {
-        const int base = rotational_u_offset(order, angular);
-        const int previous = rotational_u_offset(order, angular - 1);
-        int mb = 0;
-        while (2 * mb <= angular) {
-            const int row = base + mb * (angular + 1);
-            const int previous_row = previous + mb * angular;
-            output[row] = {};
-            for (int ma = 0; ma < angular; ++ma) {
-                const double first_root = sqrt(static_cast<double>(angular - ma)
-                    / static_cast<double>(angular - mb));
-                const double second_root = sqrt(static_cast<double>(ma + 1)
-                    / static_cast<double>(angular - mb));
-                output[row + ma] = complex_add(output[row + ma], complex_scale(
-                    complex_multiply(conjugate_a, output[previous_row + ma]), first_root));
-                output[row + ma + 1] = complex_add(output[row + ma + 1], complex_scale(
-                    complex_multiply(conjugate_b, output[previous_row + ma]), -second_root));
-            }
-            ++mb;
-        }
-        int left = base;
-        int right = base + (angular + 1) * (angular + 1) - 1;
-        int mbpar = 1;
-        mb = 0;
-        while (2 * mb <= angular) {
-            int mapar = mbpar;
-            for (int ma = 0; ma <= angular; ++ma) {
-                output[right] = mapar == 1
-                    ? complex_conjugate(output[left])
-                    : complex_scale(complex_conjugate(output[left]), -1.0);
-                mapar = -mapar;
-                ++left;
-                --right;
-            }
-            mbpar = -mbpar;
-            ++mb;
-        }
-    }
-}
-
-__device__ bool rotational_component_device(
-    int requested,
-    int order,
-    int diagonal,
-    bool lbispectrum,
-    int* l1_result,
-    int* l2_result,
-    int* l_result) {
-    int remaining = requested;
-    for (int l1 = 0; l1 <= order; ++l1) {
-        if (lbispectrum && diagonal == 2) {
-            if (remaining == 0) {
-                *l1_result = l1;
-                *l2_result = l1;
-                *l_result = l1;
-                return true;
-            }
-            --remaining;
-            continue;
-        }
-        for (int l2 = 0; l2 <= l1; ++l2) {
-            if (lbispectrum && diagonal == 1 && l2 != l1) continue;
-            for (int l = l1 - l2; l <= min(order, l1 + l2); l += 2) {
-                if (lbispectrum && diagonal == 2 && l != l1) continue;
-                if (lbispectrum && diagonal == 3 && l < l1) continue;
-                if (!lbispectrum && l < l1) continue;
-                if (remaining == 0) {
-                    *l1_result = l1;
-                    *l2_result = l2;
-                    *l_result = l;
-                    return true;
-                }
-                --remaining;
-            }
-        }
-    }
-    return false;
+    mdescriptor::detail::rotational::hyperspherical_u(
+        vector[0], vector[1], vector[2], order, cutoff, rfac0, rmin0, output);
 }
 
 __device__ double bispectrum_component_device(
     const DeviceComplex* total,
-    int order,
-    int l1,
-    int l2,
-    int l) {
-    if ((l1 + l2 + l) % 2 != 0) return 0.0;
-    DeviceComplex z[256]{};
-    int z_index = 0;
-    for (int mb = 0; 2 * mb <= l; ++mb) {
-        for (int ma = 0; ma <= l; ++ma) {
-            const int ma1_min = max(0, (2 * ma - l - l2 + l1) / 2);
-            const int ma2_max = (2 * ma - l - (2 * ma1_min - l1) + l2) / 2;
-            const int na = min(l1, (2 * ma - l + l2 + l1) / 2) - ma1_min + 1;
-            const int mb1_min = max(0, (2 * mb - l - l2 + l1) / 2);
-            const int mb2_max = (2 * mb - l - (2 * mb1_min - l1) + l2) / 2;
-            const int nb = min(l1, (2 * mb - l + l2 + l1) / 2) - mb1_min + 1;
-            DeviceComplex value{};
-            for (int ib = 0; ib < nb; ++ib) {
-                DeviceComplex inner{};
-                const int mb1 = mb1_min + ib;
-                const int mb2 = mb2_max - ib;
-                for (int ia = 0; ia < na; ++ia) {
-                    const int ma1 = ma1_min + ia;
-                    const int ma2 = ma2_max - ia;
-                    const double coefficient = clebsch_gordan_device(l1, l2, l, ma1, ma2);
-                    const DeviceComplex first = total[
-                        rotational_u_offset(order, l1) + mb1 * (l1 + 1) + ma1];
-                    const DeviceComplex second = total[
-                        rotational_u_offset(order, l2) + mb2 * (l2 + 1) + ma2];
-                    inner = complex_add(inner, complex_scale(
-                        complex_multiply(first, second), coefficient));
-                }
-                value = complex_add(value, complex_scale(
-                    inner, clebsch_gordan_device(l1, l2, l, mb1, mb2)));
-            }
-            if (z_index < 256) z[z_index] = value;
-            ++z_index;
-        }
-    }
+    int component,
+    const I64* z_inner_offsets,
+    const I64* inner_term_offsets,
+    const double* inner_outer_coefficients,
+    const I64* term_first_indices,
+    const I64* term_second_indices,
+    const double* term_coefficients,
+    const I64* projection_offsets,
+    const I64* projection_u_indices,
+    const I64* projection_z_indices,
+    const double* projection_scales) {
     DeviceComplex bispectrum{};
-    z_index = 0;
-    for (int mb = 0; 2 * mb < l; ++mb) {
-        for (int ma = 0; ma <= l; ++ma) {
-            const DeviceComplex value = total[
-                rotational_u_offset(order, l) + mb * (l + 1) + ma];
-            bispectrum = complex_add(bispectrum, complex_multiply(
-                complex_conjugate(value), z[z_index++]));
+    for (I64 projection = projection_offsets[component];
+         projection < projection_offsets[component + 1]; ++projection) {
+        DeviceComplex z{};
+        const I64 z_index = projection_z_indices[projection];
+        for (I64 inner = z_inner_offsets[z_index];
+             inner < z_inner_offsets[z_index + 1]; ++inner) {
+            DeviceComplex value{};
+            for (I64 term = inner_term_offsets[inner];
+                 term < inner_term_offsets[inner + 1]; ++term) {
+                value = complex_add(value, complex_multiply(
+                    complex_scale(
+                        total[term_first_indices[term]], term_coefficients[term]),
+                    total[term_second_indices[term]]));
+            }
+            z = complex_add(z, complex_scale(
+                value, inner_outer_coefficients[inner]));
         }
-    }
-    if (l % 2 == 0) {
-        const int mb = l / 2;
-        for (int ma = 0; ma < mb; ++ma) {
-            const DeviceComplex value = total[
-                rotational_u_offset(order, l) + mb * (l + 1) + ma];
-            bispectrum = complex_add(bispectrum, complex_multiply(
-                complex_conjugate(value), z[z_index++]));
-        }
-        const DeviceComplex value = total[
-            rotational_u_offset(order, l) + mb * (l + 1) + mb];
-        bispectrum = complex_add(bispectrum, complex_scale(complex_multiply(
-            complex_conjugate(value), z[z_index++]), 0.5));
+        bispectrum = complex_add(bispectrum, complex_scale(
+            complex_multiply(
+                complex_conjugate(total[projection_u_indices[projection]]), z),
+            projection_scales[projection]));
     }
     return 2.0 * bispectrum.real;
 }
@@ -3987,11 +3863,20 @@ __global__ void rotational_kernel(
     const double* graph_distance2,
     const double* neighbor_weights,
     const double* neighbor_radii,
+    const I64* bispectrum_z_inner_offsets,
+    const I64* bispectrum_inner_term_offsets,
+    const double* bispectrum_inner_outer_coefficients,
+    const I64* bispectrum_term_first_indices,
+    const I64* bispectrum_term_second_indices,
+    const double* bispectrum_term_coefficients,
+    const I64* bispectrum_projection_offsets,
+    const I64* bispectrum_projection_u_indices,
+    const I64* bispectrum_projection_z_indices,
+    const double* bispectrum_projection_scales,
     int kind,
     int nmax,
     int lmax,
     int twojmax,
-    int diagonal,
     double cutoff,
     double rfac0,
     double rmin0,
@@ -4024,7 +3909,7 @@ __global__ void rotational_kernel(
         }
         for (I64 first = begin; first < end; ++first) {
             const double radius = sqrt(fmax(0.0, graph_distance2[first]));
-            if (radius <= 1e-8) continue;
+            if (radius <= mdescriptor::detail::rotational::kBispectrumMinimumRadius) continue;
             const I32 first_atom = graph_atoms[first];
             const double neighbor_cutoff = neighbor_radii == nullptr ? cutoff
                 : (neighbor_radii[center] + neighbor_radii[first_atom]) * rcutfac;
@@ -4033,9 +3918,9 @@ __global__ void rotational_kernel(
             DeviceComplex values[700]{};
             hyperspherical_u_device(
                 vector, expansion, neighbor_cutoff, rmin0, rfac0, values);
-            const double cutoff_value = radius <= rmin0 ? 1.0
-                : 0.5 * (cos(kPi * (radius - rmin0)
-                    / (neighbor_cutoff - rmin0)) + 1.0);
+            const double cutoff_value =
+                mdescriptor::detail::rotational::bispectrum_cutoff(
+                    radius, neighbor_cutoff, rmin0);
             const double neighbor_weight = kind == 1
                 ? static_cast<double>(numbers[first_atom])
                 : (neighbor_weights == nullptr ? 1.0 : neighbor_weights[first_atom]);
@@ -4057,15 +3942,17 @@ __global__ void rotational_kernel(
             }
         }
         for (int feature = 0; feature < features; ++feature) {
-            int l1 = 0;
-            int l2 = 0;
-            int angular = 0;
-            if (rotational_component_device(
-                    feature, expansion, diagonal, kind == 3,
-                    &l1, &l2, &angular)) {
-                target[feature] = bispectrum_component_device(
-                    total, expansion, l1, l2, angular);
-            }
+            target[feature] = bispectrum_component_device(
+                total, feature, bispectrum_z_inner_offsets,
+                bispectrum_inner_term_offsets,
+                bispectrum_inner_outer_coefficients,
+                bispectrum_term_first_indices,
+                bispectrum_term_second_indices,
+                bispectrum_term_coefficients,
+                bispectrum_projection_offsets,
+                bispectrum_projection_u_indices,
+                bispectrum_projection_z_indices,
+                bispectrum_projection_scales);
         }
         return;
     }
@@ -4092,7 +3979,6 @@ __global__ void rotational_kernel(
             wanted_l = order == 0 ? 0 : component % (order + 1);
             n1 = order == 0 ? 0 : (component / (order + 1)) % (order + 1);
             n2 = order == 0 ? 0 : (component / ((order + 1) * (order + 1))) % (order + 1);
-            (void)diagonal;
         }
         double value = 0.0;
         for (I64 first = begin; first < end; ++first) {
@@ -4137,30 +4023,6 @@ __global__ void rotational_kernel(
     (void)rfac0;
 }
 
-std::vector<I32> rotational_component_table(int order, int diagonal, bool lbispectrum) {
-    std::vector<I32> result;
-    for (int l1 = 0; l1 <= order; ++l1) {
-        if (lbispectrum && diagonal == 2) {
-            result.push_back(l1);
-            result.push_back(l1);
-            result.push_back(l1);
-            continue;
-        }
-        for (int l2 = 0; l2 <= l1; ++l2) {
-            if (lbispectrum && diagonal == 1 && l2 != l1) continue;
-            for (int l = l1 - l2; l <= std::min(order, l1 + l2); l += 2) {
-                if (lbispectrum && diagonal == 2 && l != l1) continue;
-                if (lbispectrum && diagonal == 3 && l < l1) continue;
-                if (!lbispectrum && l < l1) continue;
-                result.push_back(l1);
-                result.push_back(l2);
-                result.push_back(l);
-            }
-        }
-    }
-    return result;
-}
-
 py::dict compute_rotational_descriptor(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -4170,39 +4032,38 @@ py::dict compute_rotational_descriptor(
     const py::dict& options) {
     const auto species = batch_species(host_batch);
     if (species.empty()) throw std::invalid_argument(name + " requires at least one atom");
-    int kind = name == "SO3" ? 0 : name == "SO4" ? 1 : name == "SNAP" ? 2 : 3;
-    int nmax = name == "SO3" ? option(options, "nmax", 3) : 1;
-    int lmax = option(options, "lmax", 3);
-    int twojmax = option(options, "twojmax", 3);
-    int diagonal = option(options, "diagonal", 3);
-    double cutoff = option(options, name == "SO3" ? "rcut" : "rcut", 3.5);
-    const double alpha = option(options, "alpha", 2.0);
-    if (name == "LBispectrum") cutoff = option(options, "rcut", 3.5);
-    const double rfac0 = option(options, "rfac0", name == "SO4" ? 1.0 : 0.99363);
-    const double rmin0 = option(options, "rmin0", 0.0);
-    const double rcutfac = option(options, "rcutfac", 1.0);
-    const bool normalize_u = option(options, "normalize_U", false);
-    if (cutoff <= 0.0 || alpha <= 0.0 || lmax < 0 || nmax < 1
-        || diagonal < 0 || diagonal > 3
-        || (kind != 0 && twojmax < 0)) {
+    const RotationalCudaOptions config = rotational_options(name, options);
+    const int kind = config.kind;
+    if (!std::isfinite(config.cutoff) || !std::isfinite(config.alpha)
+        || !std::isfinite(config.rfac0) || !std::isfinite(config.rmin0)
+        || !std::isfinite(config.rcutfac)
+        || config.cutoff <= 0.0 || config.alpha <= 0.0 || config.rfac0 <= 0.0
+        || config.rmin0 < 0.0 || config.rcutfac <= 0.0
+        || config.lmax < 0 || config.nmax < 1
+        || config.diagonal < 0 || config.diagonal > 3
+        || (kind != 0 && config.twojmax < 0)) {
         throw std::invalid_argument("invalid CUDA rotational descriptor parameters");
     }
-    if (kind == 0 && (nmax > 8 || lmax > 8)) {
+    if (kind == 0 && (config.nmax > 8 || config.lmax > 8)) {
         throw std::invalid_argument(
             "CUDA SO3 supports nmax and lmax up to 8 in the current kernel");
     }
     I64 computed = 0;
+    detail::rotational::BispectrumPlan bispectrum_plan;
+    detail::rotational::FlattenedBispectrumPlan flattened_plan;
     if (kind == 0) {
-        computed = static_cast<I64>(lmax + 1) * nmax * (nmax + 1) / 2;
+        computed = static_cast<I64>(config.lmax + 1) * config.nmax * (config.nmax + 1) / 2;
     } else {
-        const int order = name == "LBispectrum" ? twojmax : 2 * lmax;
+        const int order = mdescriptor::detail::rotational::expansion_order(
+            kind, config.lmax, config.twojmax);
         if (order > 10) {
             throw std::invalid_argument(
                 name + " CUDA expansion order is limited to 10");
         }
-        const auto components = rotational_component_table(
-            order, diagonal, name == "LBispectrum");
-        computed = static_cast<I64>(components.size() / 3U);
+        bispectrum_plan = detail::rotational::make_bispectrum_plan(
+            order, config.diagonal, name == "LBispectrum");
+        flattened_plan = detail::rotational::flatten(bispectrum_plan);
+        computed = static_cast<I64>(bispectrum_plan.components.size());
     }
     const I64 features = payload_or_option_feature_count(options, computed, name);
     if (features != computed) throw std::invalid_argument(name + " CUDA feature count mismatch");
@@ -4219,28 +4080,73 @@ py::dict compute_rotational_descriptor(
     }
     const py::str radii_key("element_radii");
     if (name == "LBispectrum" && options.contains(radii_key) && !options[radii_key].is_none()) {
-        const auto configured = species_dictionary_values(options[radii_key], species, cutoff * 0.5);
-        radii.resize(static_cast<std::size_t>(host_batch.atoms), cutoff * 0.5);
+        const auto configured = species_dictionary_values(options[radii_key], species, config.cutoff * 0.5);
+        radii.resize(static_cast<std::size_t>(host_batch.atoms), config.cutoff * 0.5);
         for (I64 atom = 0; atom < host_batch.atoms; ++atom) {
             const auto found = std::find(species.begin(), species.end(), host_batch.numbers[atom]);
             if (found != species.end()) radii[static_cast<std::size_t>(atom)]
                 = configured[static_cast<std::size_t>(found - species.begin())];
         }
     }
-    const double graph_cutoff = radii.empty() ? cutoff
-        : 2.0 * *std::max_element(radii.begin(), radii.end()) * rcutfac;
-    graph.build_dpa(context, batch, host_batch, graph_cutoff, true, false, false);
+    const double graph_cutoff = radii.empty() ? config.cutoff
+        : 2.0 * *std::max_element(radii.begin(), radii.end()) * config.rcutfac;
+    graph.build_dpa(
+        context, batch, host_batch, graph_cutoff, true, false,
+        mdescriptor::detail::rotational::kBispectrumIncludeExactSelf);
     DeviceBuffer<double> d_weights;
     DeviceBuffer<double> d_radii;
     d_weights.upload(weights.data(), weights.size(), context.stream(), "could not upload rotational weights");
     d_radii.upload(radii.data(), radii.size(), context.stream(), "could not upload rotational radii");
+    DeviceBuffer<I64> d_bispectrum_z_inner_offsets;
+    DeviceBuffer<I64> d_bispectrum_inner_term_offsets;
+    DeviceBuffer<double> d_bispectrum_inner_outer_coefficients;
+    DeviceBuffer<I64> d_bispectrum_term_first_indices;
+    DeviceBuffer<I64> d_bispectrum_term_second_indices;
+    DeviceBuffer<double> d_bispectrum_term_coefficients;
+    DeviceBuffer<I64> d_bispectrum_projection_offsets;
+    DeviceBuffer<I64> d_bispectrum_projection_u_indices;
+    DeviceBuffer<I64> d_bispectrum_projection_z_indices;
+    DeviceBuffer<double> d_bispectrum_projection_scales;
+    if (kind != 0) {
+        d_bispectrum_z_inner_offsets.upload(
+            flattened_plan.z_inner_offsets.data(), flattened_plan.z_inner_offsets.size(),
+            context.stream(), "could not upload CUDA bispectrum Z offsets");
+        d_bispectrum_inner_term_offsets.upload(
+            flattened_plan.inner_term_offsets.data(), flattened_plan.inner_term_offsets.size(),
+            context.stream(), "could not upload CUDA bispectrum inner offsets");
+        d_bispectrum_inner_outer_coefficients.upload(
+            flattened_plan.inner_outer_coefficients.data(),
+            flattened_plan.inner_outer_coefficients.size(), context.stream(),
+            "could not upload CUDA bispectrum outer coefficients");
+        d_bispectrum_term_first_indices.upload(
+            flattened_plan.term_first_indices.data(), flattened_plan.term_first_indices.size(),
+            context.stream(), "could not upload CUDA bispectrum first indices");
+        d_bispectrum_term_second_indices.upload(
+            flattened_plan.term_second_indices.data(), flattened_plan.term_second_indices.size(),
+            context.stream(), "could not upload CUDA bispectrum second indices");
+        d_bispectrum_term_coefficients.upload(
+            flattened_plan.term_coefficients.data(), flattened_plan.term_coefficients.size(),
+            context.stream(), "could not upload CUDA bispectrum CG coefficients");
+        d_bispectrum_projection_offsets.upload(
+            flattened_plan.projection_offsets.data(), flattened_plan.projection_offsets.size(),
+            context.stream(), "could not upload CUDA bispectrum projection offsets");
+        d_bispectrum_projection_u_indices.upload(
+            flattened_plan.projection_u_indices.data(), flattened_plan.projection_u_indices.size(),
+            context.stream(), "could not upload CUDA bispectrum projection U indices");
+        d_bispectrum_projection_z_indices.upload(
+            flattened_plan.projection_z_indices.data(), flattened_plan.projection_z_indices.size(),
+            context.stream(), "could not upload CUDA bispectrum projection Z indices");
+        d_bispectrum_projection_scales.upload(
+            flattened_plan.projection_scales.data(), flattened_plan.projection_scales.size(),
+            context.stream(), "could not upload CUDA bispectrum projection scales");
+    }
     const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     DeviceBuffer<double> d_so3_basis;
     int so3_quadrature_count = 0;
     if (kind == 0) {
         const auto so3_basis = so3_basis_host(
-            nmax, lmax, cutoff, alpha, &so3_quadrature_count);
+            config.nmax, config.lmax, config.cutoff, config.alpha, &so3_quadrature_count);
         d_so3_basis.upload(
             so3_basis.data(), so3_basis.size(), context.stream(),
             "could not upload CUDA SO3 radial basis");
@@ -4253,15 +4159,23 @@ py::dict compute_rotational_descriptor(
             so3_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
                 block_size, 0, context.stream()>>>(
                 batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(),
-                graph.distance2(), nmax, lmax, cutoff, alpha, option(options, "weight_on", false),
-                so3_quadrature_count, d_so3_basis.get(), features, batch.atoms(), output);
+                graph.distance2(), config.nmax, config.lmax, config.cutoff, config.alpha,
+                config.weight_on, so3_quadrature_count, d_so3_basis.get(), features,
+                batch.atoms(), output);
             check_cuda(cudaGetLastError(), "CUDA SO3 kernel launch failed");
         } else {
             rotational_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
                 block_size, 0, context.stream()>>>(
                 batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(), graph.distance2(),
-                d_weights.get(), d_radii.get(), kind, nmax, lmax, twojmax, diagonal, cutoff,
-                rfac0, rmin0, rcutfac, normalize_u, static_cast<int>(features), batch.atoms(), output);
+                d_weights.get(), d_radii.get(),
+                d_bispectrum_z_inner_offsets.get(), d_bispectrum_inner_term_offsets.get(),
+                d_bispectrum_inner_outer_coefficients.get(),
+                d_bispectrum_term_first_indices.get(), d_bispectrum_term_second_indices.get(),
+                d_bispectrum_term_coefficients.get(), d_bispectrum_projection_offsets.get(),
+                d_bispectrum_projection_u_indices.get(), d_bispectrum_projection_z_indices.get(),
+                d_bispectrum_projection_scales.get(), kind, config.nmax, config.lmax,
+                config.twojmax, config.cutoff, config.rfac0, config.rmin0, config.rcutfac,
+                config.normalize_u, static_cast<int>(features), batch.atoms(), output);
             check_cuda(cudaGetLastError(), "CUDA rotational kernel launch failed");
         }
     }
@@ -6468,13 +6382,13 @@ py::dict compute_extended_descriptor(
         return compute_acsf_descriptor(context, batch, graph, host_batch, options);
     }
     if (name == "CoulombMatrix") {
-        return compute_matrix_descriptor(context, batch, host_batch, 2, name, options);
+        return compute_matrix_descriptor(context, batch, host_batch, kMatrixKindCoulomb, name, options);
     }
     if (name == "SineMatrix") {
-        return compute_matrix_descriptor(context, batch, host_batch, 0, name, options);
+        return compute_matrix_descriptor(context, batch, host_batch, kMatrixKindSine, name, options);
     }
     if (name == "EwaldSumMatrix") {
-        return compute_matrix_descriptor(context, batch, host_batch, 1, name, options);
+        return compute_matrix_descriptor(context, batch, host_batch, kMatrixKindEwald, name, options);
     }
     if (name == "MBTR" || name == "LMBTR" || name == "ValleOganov") {
         return compute_mbtr_descriptor(context, batch, graph, host_batch, name, options);
