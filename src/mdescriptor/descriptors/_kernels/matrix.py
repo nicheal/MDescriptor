@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from ...core.errors import CancelledError
 from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
 from .structure import _StructureKernel
 
@@ -15,6 +16,20 @@ _MATRIX_KINDS = {
     "ewald": 1,
     "coulomb": 2,
 }
+
+
+def _complete_empty_batch(control: Any, structures: int) -> None:
+    """Preserve native reset/progress semantics for the zero-atom fast path."""
+
+    if control is None:
+        return
+    if control.cancelled():
+        raise CancelledError("descriptor computation was cancelled")
+    control.reset(structures)
+    for _ in range(structures):
+        if control.cancelled():
+            raise CancelledError("descriptor computation was cancelled")
+        control.mark_completed()
 
 
 class _MatrixKernel(_StructureKernel):
@@ -45,6 +60,7 @@ class _MatrixKernel(_StructureKernel):
         columns = max_atoms if self.permutation == "eigenspectrum" else max_atoms * max_atoms
         values: Any
         if not len(counts) or not np.any(counts):
+            _complete_empty_batch(control, len(counts))
             values = np.zeros((len(counts), columns), dtype=np.float64)
         else:
             values = _cpp.compute_matrix(

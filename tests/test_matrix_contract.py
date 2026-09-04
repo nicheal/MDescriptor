@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from tests._public import CoulombMatrix, EwaldSumMatrix, SineMatrix, StructureBatch
+from tests._public import (
+    ComputeControl,
+    CoulombMatrix,
+    EwaldSumMatrix,
+    SineMatrix,
+    StructureBatch,
+)
 
 MATRIX_DESCRIPTORS = (
     ("CoulombMatrix", CoulombMatrix, {}),
@@ -35,6 +41,28 @@ def _batch() -> StructureBatch:
         ),
     ]
     return StructureBatch.from_ase(systems)
+
+
+def _batch_with_empty_frame() -> StructureBatch:
+    return StructureBatch(
+        np.array([11, 17], dtype=np.int32),
+        np.array([[0.0, 0.0, 0.0], [1.2, 0.1, 0.0]], dtype=np.float64),
+        np.stack([np.diag([8.0, 8.0, 8.0]), np.diag([8.0, 8.0, 8.0])]),
+        np.ones((2, 3), dtype=np.int32),
+        np.array([0, 2, 2], dtype=np.int64),
+        ("full", "empty"),
+    )
+
+
+def _empty_batch() -> StructureBatch:
+    return StructureBatch(
+        np.empty(0, dtype=np.int32),
+        np.empty((0, 3), dtype=np.float64),
+        np.stack([np.eye(3), np.eye(3)]),
+        np.ones((2, 3), dtype=np.int32),
+        np.array([0, 0, 0], dtype=np.int64),
+        ("empty-0", "empty-1"),
+    )
 
 
 def _descriptor(descriptor_type, parameters, permutation: str):
@@ -103,3 +131,36 @@ def test_matrix_descriptors_share_eigenspectrum_contract(
         expected = expected[np.argsort(np.abs(expected))[::-1]]
         np.testing.assert_allclose(actual[index, :count], expected, rtol=1e-8, atol=1e-10)
         np.testing.assert_array_equal(actual[index, count:], 0.0)
+
+
+@pytest.mark.parametrize("name, descriptor_type, parameters", MATRIX_DESCRIPTORS)
+def test_matrix_descriptors_accept_empty_frames_and_report_progress(
+    name, descriptor_type, parameters
+) -> None:
+    descriptor = _descriptor(descriptor_type, parameters, "none")
+    control = ComputeControl()
+    try:
+        result = descriptor.compute(_batch_with_empty_frame(), control=control)
+    finally:
+        descriptor.close()
+
+    assert result.values.shape == (2, 16), name
+    np.testing.assert_array_equal(result.values[1], 0.0)
+    assert control.total() == 2
+    assert control.completed() == 2
+
+
+@pytest.mark.parametrize("name, descriptor_type, parameters", MATRIX_DESCRIPTORS)
+def test_all_empty_matrix_batch_keeps_zero_width_compatibility_and_progress(
+    name, descriptor_type, parameters
+) -> None:
+    descriptor = descriptor_type(permutation="none", **parameters)
+    control = ComputeControl()
+    try:
+        result = descriptor.compute(_empty_batch(), control=control)
+    finally:
+        descriptor.close()
+
+    assert result.values.shape == (2, 0), name
+    assert control.total() == 2
+    assert control.completed() == 2

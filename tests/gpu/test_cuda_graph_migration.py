@@ -118,6 +118,33 @@ def test_cuda_neighbor_list_matches_cpu_order_and_filtering(
 
 
 @pytest.mark.gpu
+def test_cuda_half_neighbor_list_deduplicates_periodic_self_images() -> None:
+    """Half-list filtering must have an independent periodic-image oracle."""
+
+    _load_cuda_plugin()
+    batch = StructureBatch.from_ase(
+        [Atoms("H", positions=[[0.0, 0.0, 0.0]], cell=np.eye(3) * 2.0, pbc=True)]
+    )
+    descriptor = NeighborList(
+        cutoff=2.01,
+        full_neighbor_list=False,
+        self_pairs=False,
+        execution=ExecutionOptions(device="cuda"),
+    )
+    try:
+        result = _compute_or_skip(descriptor, batch)
+    finally:
+        descriptor.close()
+
+    assert result.values.shape == (3, 4)
+    assert {tuple(row) for row in result.samples[:, 3:]} == {
+        (1, 0, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+    }
+
+
+@pytest.mark.gpu
 def test_cuda_spherical_expansion_by_pair_matches_cpu_order() -> None:
     """Pair feature rows are ordered on CUDA, without host-side reordering."""
 

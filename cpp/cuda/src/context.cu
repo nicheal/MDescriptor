@@ -1,4 +1,5 @@
 #include "mdescriptor/cuda/context.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include <cuda_runtime.h>
 
@@ -7,23 +8,6 @@
 #include <string>
 
 namespace mdescriptor::cuda {
-namespace {
-
-void check_cuda(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) {
-        return;
-    }
-    if (status == cudaErrorMemoryAllocation) {
-        throw CudaOutOfMemory(operation);
-    }
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
-}
-
-} // namespace
 
 CudaExecutionContext::CudaExecutionContext(int device) : device_(device) {
     int device_count = 0;

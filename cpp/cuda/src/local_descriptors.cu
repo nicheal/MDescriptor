@@ -1,4 +1,5 @@
 #include "mdescriptor/cuda/local_descriptors.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include "mdescriptor/neighbor.hpp"
 #include "local_layout.hpp"
@@ -20,20 +21,6 @@ using mdescriptor::detail::GtoRadialBasis;
 using mdescriptor::detail::RadialBasisSet;
 using mdescriptor::LocalDescriptorKind;
 using mdescriptor::LocalDescriptorOptions;
-
-void check_cuda(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) {
-        return;
-    }
-    if (status == cudaErrorMemoryAllocation) {
-        throw CudaOutOfMemory(operation);
-    }
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
-}
 
 __device__ int species_index(
     std::int32_t number,

@@ -1,4 +1,5 @@
 #include "mdescriptor/cuda/extended_descriptors.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include "mdescriptor/detail/mbtr.hpp"
 #include "mdescriptor/detail/rotational_bispectrum.hpp"
@@ -44,16 +45,6 @@ constexpr int kMatrixPermutationSortedL2 = static_cast<int>(::mdescriptor::Matri
 constexpr int kMatrixPermutationEigenspectrum = static_cast<int>(::mdescriptor::MatrixPermutation::Eigenspectrum);
 constexpr int kRotationalUCapacity = static_cast<int>(
     mdescriptor::detail::rotational::u_total_size(10));
-
-void check_cuda(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) return;
-    if (status == cudaErrorMemoryAllocation) throw CudaOutOfMemory(operation);
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
-}
 
 template <typename T>
 class DeviceBuffer {
@@ -1632,6 +1623,15 @@ __global__ void matrix_kernel(
     double* row = output + structure * (permutation == kMatrixPermutationEigenspectrum
         ? n_atoms_max : n_atoms_max * n_atoms_max);
 
+    if (count <= 0) {
+        const I64 columns = permutation == kMatrixPermutationEigenspectrum
+            ? n_atoms_max : static_cast<I64>(n_atoms_max) * n_atoms_max;
+        for (I64 index = 0; index < columns; ++index) {
+            row[index] = 0.0;
+        }
+        return;
+    }
+
     const double* cell = cells + structure * 9;
     double inverse[9]{};
     const bool inverse_valid = kind == kMatrixKindCoulomb || inverse3_device(cell, inverse);
@@ -1867,43 +1867,6 @@ __global__ void spherical_pair_kernel(
     }
 }
 
-template <int MaxAngular>
-void launch_spherical_pair(
-    int requested,
-    cudaStream_t stream,
-    const I64* graph_offsets,
-    const I32* graph_atoms,
-    const I32* graph_shifts,
-    const double* graph_displacements,
-    const double* graph_distance2,
-    I64 atoms,
-    double cutoff,
-    double density_width,
-    int radial_count,
-    const double* gto_constants,
-    const double* gamma_a,
-    const double* gamma_b,
-    const double* orthonormalization,
-    double* records,
-    double* output) {
-    if (requested == MaxAngular) {
-        const I64 total_hint = static_cast<I64>(atoms > 0 ? 1 : 0);
-        (void)total_hint;
-        // The kernel reads the final graph offset, so its launch count is
-        // supplied by the caller and does not require a host graph copy.
-        return;
-    }
-    if constexpr (MaxAngular < 31) {
-        launch_spherical_pair<MaxAngular + 1>(
-            requested, stream, graph_offsets, graph_atoms, graph_shifts,
-            graph_displacements, graph_distance2, atoms, cutoff, density_width,
-            radial_count, gto_constants, gamma_a, gamma_b, orthonormalization,
-            records, output);
-    } else {
-        throw std::invalid_argument("CUDA pair descriptor max_angular is too large");
-    }
-}
-
 py::dict compute_matrix_descriptor(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -1912,6 +1875,13 @@ py::dict compute_matrix_descriptor(
     const std::string& name,
     const py::dict& options) {
     int n_atoms_max = option(options, "n_atoms_max", 0);
+    const std::string permutation_name = option(options, "permutation", std::string("sorted_l2"));
+    const int permutation = permutation_name == "none" ? kMatrixPermutationNone
+        : permutation_name == "sorted_l2" ? kMatrixPermutationSortedL2 : kMatrixPermutationEigenspectrum;
+    if (permutation_name != "none" && permutation_name != "sorted_l2"
+        && permutation_name != "eigenspectrum") {
+        throw std::invalid_argument("invalid CUDA matrix permutation");
+    }
     if (n_atoms_max <= 0) {
         for (I64 structure = 0; structure < host_batch.structures; ++structure) {
             n_atoms_max = std::max(
@@ -1919,25 +1889,23 @@ py::dict compute_matrix_descriptor(
                 static_cast<int>(host_batch.offsets[structure + 1] - host_batch.offsets[structure]));
         }
     }
+    if (n_atoms_max <= 0 && host_batch.atoms == 0) {
+        py::dict result;
+        result["values"] = values_array({}, host_batch.structures, 0);
+        result["level"] = "structure";
+        result["labels"] = labels_option(options, name, 0);
+        result["metadata"] = metadata(options, name);
+        return result;
+    }
     if (n_atoms_max <= 0 || n_atoms_max > 256) {
         throw std::invalid_argument(
             "CUDA matrix descriptors require 1 <= n_atoms_max <= 256");
     }
     for (I64 structure = 0; structure < host_batch.structures; ++structure) {
         const I64 count = host_batch.offsets[structure + 1] - host_batch.offsets[structure];
-        if (count <= 0) {
-            throw std::invalid_argument("matrix descriptors do not accept empty structures");
-        }
         if (count > n_atoms_max) {
             throw std::invalid_argument("structure exceeds n_atoms_max");
         }
-    }
-    const std::string permutation_name = option(options, "permutation", std::string("sorted_l2"));
-    const int permutation = permutation_name == "none" ? kMatrixPermutationNone
-        : permutation_name == "sorted_l2" ? kMatrixPermutationSortedL2 : kMatrixPermutationEigenspectrum;
-    if (permutation_name != "none" && permutation_name != "sorted_l2"
-        && permutation_name != "eigenspectrum") {
-        throw std::invalid_argument("invalid CUDA matrix permutation");
     }
     const I64 columns = permutation == kMatrixPermutationEigenspectrum
         ? n_atoms_max : static_cast<I64>(n_atoms_max) * n_atoms_max;
@@ -3275,186 +3243,6 @@ __global__ void lode_exact_kernel(
                                 lode_prefactors, gamma_a, gamma_b,
                                 orthonormalization);
                     }
-                }
-            }
-        }
-    }
-}
-
-__device__ double lode_reciprocal_factor(
-    const double* positions,
-    I64 structure_begin,
-    I64 structure_end,
-    I64 center,
-    I64 atom,
-    const double* inverse,
-    double k_cutoff,
-    double sigma,
-    int exponent) {
-    const double b0x = 2.0 * kPi * inverse[0];
-    const double b0y = 2.0 * kPi * inverse[3];
-    const double b0z = 2.0 * kPi * inverse[6];
-    const double b1x = 2.0 * kPi * inverse[1];
-    const double b1y = 2.0 * kPi * inverse[4];
-    const double b1z = 2.0 * kPi * inverse[7];
-    const double b2x = 2.0 * kPi * inverse[2];
-    const double b2y = 2.0 * kPi * inverse[5];
-    const double b2z = 2.0 * kPi * inverse[8];
-    const double min_norm = fmin(sqrt(b0x * b0x + b0y * b0y + b0z * b0z),
-        fmin(sqrt(b1x * b1x + b1y * b1y + b1z * b1z),
-            sqrt(b2x * b2x + b2y * b2y + b2z * b2z)));
-    const int bound = min_norm > 1e-12
-        ? min(16, max(1, static_cast<int>(ceil(k_cutoff / min_norm)) + 1)) : 16;
-    const double cx = positions[center * 3 + 0];
-    const double cy = positions[center * 3 + 1];
-    const double cz = positions[center * 3 + 2];
-    const double ax = positions[atom * 3 + 0];
-    const double ay = positions[atom * 3 + 1];
-    const double az = positions[atom * 3 + 2];
-    double result = 0.0;
-    for (int i = -bound; i <= bound; ++i) {
-        for (int j = -bound; j <= bound; ++j) {
-            for (int k = -bound; k <= bound; ++k) {
-                const double vx = i * b0x + j * b1x + k * b2x;
-                const double vy = i * b0y + j * b1y + k * b2y;
-                const double vz = i * b0z + j * b1z + k * b2z;
-                const double norm2 = vx * vx + vy * vy + vz * vz;
-                if (norm2 <= 1e-24 || norm2 >= k_cutoff * k_cutoff) continue;
-                const double density = lode_fourier_device(
-                    sqrt(norm2), sigma, exponent);
-                const double phase = vx * (ax - cx) + vy * (ay - cy) + vz * (az - cz);
-                result += density * cos(phase);
-            }
-        }
-    }
-    (void)structure_begin;
-    (void)structure_end;
-    return result;
-}
-
-__global__ void lode_kernel(
-    const I32* numbers,
-    const I64* offsets,
-    const I64* graph_offsets,
-    const I32* graph_atoms,
-    const double* graph_displacements,
-    const double* graph_distance2,
-    const I32* species,
-    int species_count,
-    double density_width,
-    double cutoff,
-    double radial_radius,
-    double k_cutoff,
-    int exponent,
-    int radial_count,
-    int max_angular,
-    I64 structures,
-    I64 atoms,
-    I64 features,
-    const double* cells,
-    double* output) {
-    const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (center >= atoms) return;
-    I64 structure = 0;
-    while (structure + 1 < structures && offsets[structure + 1] <= center) ++structure;
-    double inverse[9]{};
-    if (!inverse3_device(cells + structure * 9, inverse)) return;
-    const int center_type = species_index(numbers[center], species, species_count);
-    if (center_type < 0) return;
-    const int angular_count = max_angular + 1;
-    const int angular_block = angular_count * angular_count;
-    const I64 center_stride = static_cast<I64>(species_count) * radial_count * angular_block;
-    double* target = output + center * features + static_cast<I64>(center_type) * center_stride;
-    const I64 begin = graph_offsets[center];
-    const I64 end = graph_offsets[center + 1];
-    const I64 structure_begin = offsets[structure];
-    const I64 structure_end = offsets[structure + 1];
-    for (I64 edge = begin; edge < end; ++edge) {
-        const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
-        if (distance <= 1e-12 || distance >= cutoff) continue;
-        const int neighbor_type = species_index(
-            numbers[graph_atoms[edge]], species, species_count);
-        if (neighbor_type < 0) continue;
-        const double short_cutoff = 0.5 * (1.0 + cos(kPi * distance / cutoff));
-            const double* vector = graph_displacements + edge * 3;
-        double harmonics[441]{};
-        harmonic_values<20>(vector, harmonics, max_angular);
-        for (int angular = 0; angular <= max_angular; ++angular) {
-            for (int m = -angular; m <= angular; ++m) {
-                for (int radial = 0; radial < radial_count; ++radial) {
-                    const double radial_value = short_cutoff
-                        * exp(-(radial + 1.0) * distance * distance
-                            / (radial_radius * radial_radius));
-                    const I64 index = static_cast<I64>(neighbor_type) * radial_count * angular_block
-                        + static_cast<I64>(angular * angular + angular + m) * radial_count + radial;
-                    target[index] += radial_value * harmonics[angular * angular + angular + m];
-                }
-            }
-        }
-    }
-}
-
-// Position-aware LODE kernel.  Keeping the reciprocal sum in a separate
-// kernel makes the device pointer contract explicit and avoids any host
-// reciprocal-space materialization.
-__global__ void lode_kernel_with_positions(
-    const I32* numbers,
-    const double* positions,
-    const I64* offsets,
-    const I64* graph_offsets,
-    const I32* graph_atoms,
-    const double* graph_displacements,
-    const double* graph_distance2,
-    const I32* species,
-    int species_count,
-    double density_width,
-    double cutoff,
-    double radial_radius,
-    double k_cutoff,
-    int exponent,
-    int radial_count,
-    int max_angular,
-    I64 structures,
-    I64 atoms,
-    I64 features,
-    const double* cells,
-    double* output) {
-    const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (center >= atoms) return;
-    I64 structure = 0;
-    while (structure + 1 < structures && offsets[structure + 1] <= center) ++structure;
-    double inverse[9]{};
-    if (!inverse3_device(cells + structure * 9, inverse)) return;
-    const int center_type = species_index(numbers[center], species, species_count);
-    if (center_type < 0) return;
-    const int angular_count = max_angular + 1;
-    const int angular_block = angular_count * angular_count;
-    const I64 center_stride = static_cast<I64>(species_count) * radial_count * angular_block;
-    double* target = output + center * features + static_cast<I64>(center_type) * center_stride;
-    const I64 begin = graph_offsets[center];
-    const I64 end = graph_offsets[center + 1];
-    for (I64 edge = begin; edge < end; ++edge) {
-        const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
-        if (distance <= 1e-12 || distance >= cutoff) continue;
-        const int neighbor_type = species_index(numbers[graph_atoms[edge]], species, species_count);
-        if (neighbor_type < 0) continue;
-        const double short_cutoff = 0.5 * (1.0 + cos(kPi * distance / cutoff));
-        const double long_factor = lode_reciprocal_factor(
-            positions, offsets[structure], offsets[structure + 1], center,
-            graph_atoms[edge], inverse, k_cutoff, density_width, exponent);
-        const double* vector = graph_displacements + edge * 3;
-        double harmonics[441]{};
-        harmonic_values<20>(vector, harmonics, max_angular);
-        for (int angular = 0; angular <= max_angular; ++angular) {
-            for (int m = -angular; m <= angular; ++m) {
-                for (int radial = 0; radial < radial_count; ++radial) {
-                    const double short_value = exp(-(radial + 1.0) * distance * distance
-                        / (radial_radius * radial_radius));
-                    const double radial_value = short_cutoff * short_value
-                        * (1.0 + long_factor / (1.0 + radial));
-                    const I64 index = static_cast<I64>(neighbor_type) * radial_count * angular_block
-                        + static_cast<I64>(angular * angular + angular + m) * radial_count + radial;
-                    target[index] += radial_value * harmonics[angular * angular + angular + m];
                 }
             }
         }

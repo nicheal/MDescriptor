@@ -1,5 +1,6 @@
 #include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "mdescriptor/detail/neighbor_filter.hpp"
 #include "descriptor_common.hpp"
 #include "local_common.hpp"
 
@@ -40,7 +41,9 @@ DescriptorPairTable compute_neighbor_list(
                     continue;
                 }
                 const std::int64_t atom = neighbors.atoms[index];
-                if (!full_neighbor_list && atom < center) {
+                if (!full_neighbor_list && !keep_half_neighbor(
+                    center, atom, neighbors.shifts[index * 3 + 0],
+                    neighbors.shifts[index * 3 + 1], neighbors.shifts[index * 3 + 2])) {
                     continue;
                 }
                 values.push_back(static_cast<double>(center));

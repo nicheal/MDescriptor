@@ -1,4 +1,5 @@
 #include "mdescriptor/cuda/neighbor_graph.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include <cuda_runtime.h>
 #include <thrust/copy.h>
@@ -37,39 +38,20 @@ void ensure_and_upload(
     cudaStream_t stream) {
     if (count > *capacity) {
         if (*destination != nullptr) {
-            if (cudaFree(*destination) != cudaSuccess) {
-                throw std::runtime_error("could not release the CUDA neighbor graph");
-            }
+            check_cuda(cudaFree(*destination), "could not release the CUDA neighbor graph");
             *destination = nullptr;
         }
-        const auto allocation = cudaMalloc(
-            reinterpret_cast<void**>(destination), count * sizeof(Value));
-        if (allocation == cudaErrorMemoryAllocation) {
-            throw CudaOutOfMemory("could not allocate the CUDA neighbor graph");
-        }
-        if (allocation != cudaSuccess) {
-            throw std::runtime_error("could not allocate the CUDA neighbor graph");
-        }
+        check_cuda(
+            cudaMalloc(reinterpret_cast<void**>(destination), count * sizeof(Value)),
+            "could not allocate the CUDA neighbor graph");
         *capacity = count;
     }
-    if (count != 0 && cudaMemcpyAsync(
-        *destination, source, count * sizeof(Value), cudaMemcpyHostToDevice, stream) != cudaSuccess) {
-        throw std::runtime_error("could not upload the CUDA neighbor graph");
+    if (count != 0) {
+        check_cuda(
+            cudaMemcpyAsync(
+                *destination, source, count * sizeof(Value), cudaMemcpyHostToDevice, stream),
+            "could not upload the CUDA neighbor graph");
     }
-}
-
-void check_cuda(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) {
-        return;
-    }
-    if (status == cudaErrorMemoryAllocation) {
-        throw CudaOutOfMemory(operation);
-    }
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
 }
 
 bool inverse_row_major3(const double* matrix, double* inverse) {

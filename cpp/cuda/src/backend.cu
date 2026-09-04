@@ -1,4 +1,6 @@
 #include "mdescriptor/cuda/backend.hpp"
+#include "mdescriptor/cuda/descriptor_dispatch.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include "mdescriptor/cuda/batch.hpp"
 #include "mdescriptor/cuda/local_descriptors.hpp"
@@ -6,6 +8,7 @@
 #include "mdescriptor/local_descriptors.hpp"
 #include "mdescriptor/nep.hpp"
 #include "mdescriptor/detail/batch.hpp"
+#include "mdescriptor/detail/neighbor_filter.hpp"
 #include "local_layout.hpp"
 
 #include <pybind11/numpy.h>
@@ -147,14 +150,7 @@ std::int64_t feature_count_for(
         const auto value = py::cast<std::int64_t>(options[feature_key]);
         return value > 0 ? value : 0;
     }
-    if (name == "AtomicComposition" || name == "SortedDistances"
-        || name == "SphericalExpansionByPair" || name == "SOAP"
-        || name == "SOAPTurbo" || name == "ACSF" || name == "ACE"
-        || name == "LodeSphericalExpansion" || name == "CoulombMatrix"
-        || name == "SineMatrix" || name == "EwaldSumMatrix" || name == "MBTR"
-        || name == "LMBTR" || name == "ValleOganov" || name == "EAD"
-        || name == "SO3" || name == "SO4" || name == "SNAP"
-        || name == "LBispectrum" || name == "MTP" || name == "C00PSMLFF") {
+    if (is_extended_descriptor(name)) {
         return 0;
     }
     throw std::invalid_argument("CUDA backend does not support this descriptor");
@@ -304,7 +300,8 @@ __global__ void write_neighbor_records(
         if (!self_pairs && atom == center && shift_x == 0 && shift_y == 0 && shift_z == 0) {
             continue;
         }
-        if (!full_neighbor_list && atom < center) {
+        if (!full_neighbor_list && !detail::keep_half_neighbor(
+            center, atom, shift_x, shift_y, shift_z)) {
             continue;
         }
         double* record = output + row * 9;
@@ -344,26 +341,13 @@ __global__ void count_filtered_neighbor_records(
             && shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
             continue;
         }
-        if (!full_neighbor_list && atom < center) {
+        if (!full_neighbor_list && !detail::keep_half_neighbor(
+            center, atom, shift[0], shift[1], shift[2])) {
             continue;
         }
         ++count;
     }
     output_offsets[center + 1] = count;
-}
-
-void check_cuda_backend(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) {
-        return;
-    }
-    if (status == cudaErrorMemoryAllocation) {
-        throw CudaOutOfMemory(operation);
-    }
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
 }
 
 } // namespace
@@ -432,12 +416,12 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                     *context_, device_batch_, arrays.view, cutoff, true, false,
                     true, false, true, NeighborGraphOrdering::Canonical);
                 if (arrays.view.atoms > 0) {
-                    check_cuda_backend(
+                    check_cuda(
                         cudaMalloc(
                             reinterpret_cast<void**>(&device_output_offsets),
                             atom_output_offsets.size() * sizeof(std::int64_t)),
                         "could not allocate CUDA neighbor output offsets");
-                    check_cuda_backend(
+                    check_cuda(
                         cudaMemsetAsync(
                             device_output_offsets, 0,
                             atom_output_offsets.size() * sizeof(std::int64_t),
@@ -450,14 +434,14 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                         device_graph_.offsets(), device_graph_.atoms(), device_graph_.shifts(),
                         arrays.view.atoms, full_neighbor_list, self_pairs,
                         device_output_offsets);
-                    check_cuda_backend(
+                    check_cuda(
                         cudaGetLastError(), "CUDA neighbor filtering kernel launch failed");
                     const auto execution_policy = thrust::cuda::par.on(context_->stream());
                     thrust::inclusive_scan(
                         execution_policy, device_output_offsets + 1,
                         device_output_offsets + atom_output_offsets.size(),
                         device_output_offsets + 1);
-                    check_cuda_backend(
+                    check_cuda(
                         cudaMemcpyAsync(
                             atom_output_offsets.data(), device_output_offsets,
                             atom_output_offsets.size() * sizeof(std::int64_t),
@@ -481,11 +465,11 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                         device_graph_.displacements(), device_graph_.distance2(),
                         device_output_offsets, arrays.view.atoms, full_neighbor_list, self_pairs,
                         output);
-                    check_cuda_backend(cudaGetLastError(), "CUDA neighbor kernel launch failed");
+                    check_cuda(cudaGetLastError(), "CUDA neighbor kernel launch failed");
                     round_tripped = context_->download_output(static_cast<std::size_t>(rows) * 9);
                 }
                 if (device_output_offsets != nullptr) {
-                    check_cuda_backend(
+                    check_cuda(
                         cudaFree(device_output_offsets),
                         "could not release CUDA neighbor output offsets");
                     device_output_offsets = nullptr;
@@ -613,14 +597,7 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         return std::move(result);
     }
 
-    if (name_ == "AtomicComposition" || name_ == "SortedDistances"
-        || name_ == "SphericalExpansionByPair" || name_ == "SOAP"
-        || name_ == "SOAPTurbo" || name_ == "ACSF" || name_ == "ACE"
-        || name_ == "LodeSphericalExpansion" || name_ == "CoulombMatrix"
-        || name_ == "SineMatrix" || name_ == "EwaldSumMatrix" || name_ == "MBTR"
-        || name_ == "LMBTR" || name_ == "ValleOganov" || name_ == "EAD"
-        || name_ == "SO3" || name_ == "SO4" || name_ == "SNAP"
-        || name_ == "LBispectrum" || name_ == "MTP" || name_ == "C00PSMLFF") {
+    if (is_extended_descriptor(name_)) {
         const auto result = compute_extended_descriptor(
             *context_, device_batch_, device_graph_, arrays.view,
             name_, options_, control, rotational_plan_.get());

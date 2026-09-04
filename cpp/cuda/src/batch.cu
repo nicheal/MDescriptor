@@ -1,4 +1,5 @@
 #include "mdescriptor/cuda/batch.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include <cuda_runtime.h>
 
@@ -11,20 +12,6 @@
 namespace mdescriptor::cuda {
 namespace {
 
-void check_copy(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) {
-        return;
-    }
-    if (status == cudaErrorMemoryAllocation) {
-        throw CudaOutOfMemory(operation);
-    }
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
-}
-
 template <typename Value>
 void ensure_and_copy(
     Value** destination,
@@ -35,17 +22,17 @@ void ensure_and_copy(
     const char* operation) {
     if (count > *capacity) {
         if (*destination != nullptr) {
-            check_copy(cudaFree(*destination), operation);
+            check_cuda(cudaFree(*destination), operation);
             *destination = nullptr;
         }
         *capacity = 0;
-        check_copy(
+        check_cuda(
             cudaMalloc(reinterpret_cast<void**>(destination), count * sizeof(Value)),
             operation);
         *capacity = count;
     }
     if (count != 0) {
-        check_copy(
+        check_cuda(
             cudaMemcpyAsync(
                 *destination, source, count * sizeof(Value),
                 cudaMemcpyHostToDevice, stream),
@@ -59,7 +46,7 @@ void ensure_capacity(Value** destination, std::size_t* capacity, std::size_t cou
         return;
     }
     if (*destination != nullptr) {
-        check_copy(cudaFree(*destination), "could not release CUDA batch storage");
+        check_cuda(cudaFree(*destination), "could not release CUDA batch storage");
         *destination = nullptr;
     }
     *capacity = 0;
@@ -69,7 +56,7 @@ void ensure_capacity(Value** destination, std::size_t* capacity, std::size_t cou
     if (count > std::numeric_limits<std::size_t>::max() / sizeof(Value)) {
         throw CudaOutOfMemory("requested CUDA batch storage is too large");
     }
-    check_copy(
+    check_cuda(
         cudaMalloc(reinterpret_cast<void**>(destination), count * sizeof(Value)),
         "could not allocate CUDA batch storage");
     *capacity = count;
@@ -217,7 +204,7 @@ void DeviceBatch::upload(
     host_offsets_.clear();
     structures_ = batch.structures;
     atoms_ = batch.atoms;
-    check_copy(cudaSetDevice(context.device()), "could not select the CUDA device");
+    check_cuda(cudaSetDevice(context.device()), "could not select the CUDA device");
     ensure_and_copy(
         &numbers_, &numbers_capacity_, batch.numbers,
         static_cast<std::size_t>(atoms_), context.stream(), "could not upload numbers");
@@ -402,7 +389,7 @@ bool DeviceBatch::expand_nep(
     expand_nep_batch_kernel<<<blocks, 128, 0, stream>>>(
         static_cast<int>(structure_count), source.numbers(), source.positions(), source.cells(),
         source.offsets(), offsets_, expansion_counts_, numbers_, positions_);
-    check_copy(cudaGetLastError(), "CUDA NEP batch expansion failed");
+    check_cuda(cudaGetLastError(), "CUDA NEP batch expansion failed");
     return true;
 }
 
@@ -416,10 +403,10 @@ void DeviceBatch::ensure_positions_soa(CudaExecutionContext& context) {
     }
     if (positions_capacity_ > positions_soa_capacity_) {
         if (positions_soa_ != nullptr) {
-            check_copy(cudaFree(positions_soa_), "could not release CUDA SoA positions");
+            check_cuda(cudaFree(positions_soa_), "could not release CUDA SoA positions");
             positions_soa_ = nullptr;
         }
-        check_copy(
+        check_cuda(
             cudaMalloc(
                 reinterpret_cast<void**>(&positions_soa_),
                 positions_capacity_ * sizeof(double)),
@@ -432,7 +419,7 @@ void DeviceBatch::ensure_positions_soa(CudaExecutionContext& context) {
         (static_cast<std::size_t>(atoms_) + block_size - 1U) / block_size);
     stage_positions_aos_to_soa_kernel<<<blocks, block_size, 0, context.stream()>>>(
         static_cast<int>(atoms_), static_cast<int>(positions_soa_stride_), positions_, positions_soa_);
-    check_copy(cudaGetLastError(), "could not stage CUDA SoA positions");
+    check_cuda(cudaGetLastError(), "could not stage CUDA SoA positions");
 }
 
 void DeviceBatch::clear() noexcept {

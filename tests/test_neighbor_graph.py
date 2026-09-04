@@ -2,7 +2,7 @@ import numpy as np
 
 from mdescriptor.descriptors._kernels.core import _build_neighbor_graph
 from mdescriptor.descriptors._kernels.extra import _periodic_neighbors
-from tests._public import StructureBatch
+from tests._public import NeighborList, StructureBatch
 
 
 def test_native_neighbor_graph_matches_bruteforce_periodic_images():
@@ -63,3 +63,27 @@ def test_python_neighbor_view_filters_only_exact_self():
     neighbors = _periodic_neighbors(system, 0, 2.3)
     assert all(shift != (0, 0, 0) for _, _, _, shift in neighbors[0])
     assert any(shift == (1, 0, 0) for _, _, _, shift in neighbors[0])
+
+
+def test_half_neighbor_list_deduplicates_periodic_images_of_one_atom():
+    batch = StructureBatch(
+        np.array([1], dtype=np.int32),
+        np.array([[0.0, 0.0, 0.0]], dtype=np.float64),
+        np.eye(3, dtype=np.float64)[None, ...] * 2.0,
+        np.ones((1, 3), dtype=np.int32),
+        np.array([0, 1], dtype=np.int64),
+        ("periodic-one-atom",),
+    )
+
+    result = NeighborList(
+        cutoff=2.01,
+        full_neighbor_list=False,
+        self_pairs=False,
+    ).compute(batch)
+
+    assert result.values.shape == (3, 4)
+    assert {tuple(row) for row in result.samples[:, 3:]} == {
+        (1, 0, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+    }

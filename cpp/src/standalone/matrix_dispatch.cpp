@@ -86,9 +86,6 @@ void compute_matrix(
     }
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         const std::int64_t count = batch.offsets[structure + 1] - batch.offsets[structure];
-        if (count <= 0 && options.kind == MatrixKind::Coulomb) {
-            throw std::invalid_argument("matrix descriptors do not accept empty structures");
-        }
         if (count > layout.n_atoms_max) {
             throw std::invalid_argument("structure exceeds n_atoms_max");
         }

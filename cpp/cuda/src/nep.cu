@@ -1,4 +1,5 @@
 #include "mdescriptor/cuda/nep.hpp"
+#include "mdescriptor/cuda/error.hpp"
 
 #include <cuda_runtime.h>
 
@@ -123,20 +124,6 @@ __device__ __constant__ const float kZ8[9][9] = {
     {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
 };
-
-void check_cuda(cudaError_t status, const char* operation) {
-    if (status == cudaSuccess) {
-        return;
-    }
-    if (status == cudaErrorMemoryAllocation) {
-        throw CudaOutOfMemory(operation);
-    }
-    if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver
-        || status == cudaErrorSystemDriverMismatch) {
-        throw CudaUnavailable(operation);
-    }
-    throw std::runtime_error(operation);
-}
 
 template <typename Value>
 void upload_values(
