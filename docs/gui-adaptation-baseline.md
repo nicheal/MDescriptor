@@ -49,12 +49,10 @@ so descriptors can share a label without changing their numerical interfaces.
 For nested object properties, the same fields may be present on the nested
 schema.
 
-The current built-ins advertise CPU execution and the CUDA-capable descriptors
-(`NeighborList`, `NEP`, `SphericalExpansion`, `SoapRadialSpectrum`,
-`SoapPowerSpectrum`, `DPA4`, and `DPA4C`) advertise
-`execution.devices == ["cpu", "cuda"]`.
-The remaining built-ins advertise `execution.devices == ["cpu"]`. A GUI
-should offer only the devices declared by the selected descriptor. Selecting
+The current built-ins advertise CPU execution and all 28 built-in descriptors
+advertise `execution.devices == ["cpu", "cuda"]`; the canonical names are
+listed in `docs/descriptor-inventory.md`. A GUI should offer only the devices
+declared by the selected descriptor. Selecting
 an undeclared device produces a structured `unsupported_device` configuration
 error; CUDA plugin or driver failures use `device_unavailable`,
 `backend_error`, or `backend_out_of_memory`.

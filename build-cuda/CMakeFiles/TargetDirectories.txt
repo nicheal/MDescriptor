@@ -1,8 +1,0 @@
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/_native.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/_cuda.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/edit_cache.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/rebuild_cache.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/list_install_components.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/install.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/install/local.dir
-/home/nicheal/MDescriptor/build-cuda/CMakeFiles/install/strip.dir

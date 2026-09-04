@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from os import PathLike
-from types import MappingProxyType
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
 from ..models import (
     LoadedModel,
@@ -16,6 +15,7 @@ from ..models import (
     discard_loaded_model,
     shared_loaded_model,
 )
+from ..models.session import identity_model_artifact
 from .adapter import DescriptorAdapter
 from .control import ComputeControl
 from .errors import (
@@ -153,35 +153,19 @@ class ModelBackedAdapter(DescriptorAdapter):
             ) from exc
 
     def _load_shared_artifact(self, resolved: ResolvedModel) -> tuple[Any, Any]:
-        """Load only artifacts consumed by a Python-side model implementation.
+        """Delegate format-specific loading to the concrete kernel strategy.
 
-        The NEP and MTP native calculators parse and cache their read-only model
-        objects in C++ using ``resolved.digest``. Reading the whole text/JSON
-        file into the Python ``LoadedModel`` cache would duplicate memory while
-        never reaching the kernel. DPA4/DPA4C are different: their restricted
-        Python checkpoint reader produces the preloaded weights consumed by the
-        NumPy adapter, so those weights remain in the shared artifact cache.
+        Native kernels that read a path themselves need only an immutable
+        identity in the shared cache.  A kernel that owns a Python-side runtime
+        can expose ``load_model_artifact`` and return its validated config and
+        weights.  Keeping that decision on the kernel avoids format/name
+        dispatch in this resource/session seam.
         """
 
-        if resolved.path.suffix.lower() == ".pt":
-            if self.name not in {"DPA4", "DPA4C"}:
-                raise ModelLoadError(
-                    f"official .pt checkpoint loading is not available for {self.name}; "
-                    "only DPA4/DPA4C checkpoints have the bundled NumPy loader"
-                )
-            from ..descriptors.model_backed.dpa import load_dpa_checkpoint
-
-            expected_descriptor: Literal["DPA4", "DPA4C"] = (
-                "DPA4" if self.name == "DPA4" else "DPA4C"
-            )
-            info, weights = load_dpa_checkpoint(
-                resolved.path,
-                expected_descriptor=expected_descriptor,
-            )
-            return info, weights
-        return MappingProxyType(
-            {"format": resolved.path.suffix.lower().lstrip("."), "digest": resolved.digest}
-        ), None
+        loader = getattr(self.kernel_type, "load_model_artifact", None)
+        if callable(loader):
+            return loader(resolved)
+        return identity_model_artifact(resolved)
 
     @property
     def model_path(self) -> str | None:

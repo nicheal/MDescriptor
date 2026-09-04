@@ -2,45 +2,17 @@
 
 from __future__ import annotations
 
-import importlib
-import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 from ase import Atoms
 from ase.io import read
+from tests._cuda import load_cuda_for_tests
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
 from mdescriptor.descriptors import NEP
 from mdescriptor.models import NEP_MODEL
-
-
-def _load_cuda_plugin() -> None:
-    """Make a source-tree CUDA build visible to the editable package."""
-
-    try:
-        importlib.import_module("mdescriptor._cuda")
-        return
-    except (ImportError, OSError):
-        pass
-
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [
-        Path(configured) if configured else None,
-        Path(__file__).parents[2] / "build-cuda",
-    ]
-    for candidate in candidates:
-        if candidate is None or not any(candidate.glob("_cuda*.so")):
-            continue
-        mdescriptor.__path__.insert(0, str(candidate))
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    pytest.skip("CUDA plugin is not installed in this test environment")
 
 
 def _batch() -> StructureBatch:
@@ -122,7 +94,7 @@ def _isolated_batch() -> StructureBatch:
 def test_cuda_nep_matches_cpu_contract_and_values() -> None:
     """CUDA NEP preserves the atom result contract and reference tolerance."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _batch()
     cpu = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cpu", num_threads=1))
     gpu = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cuda"))
@@ -163,7 +135,7 @@ def test_cuda_nep_matches_cpu_contract_and_values() -> None:
 def test_cuda_nep_periodic_carbon_is_stable_against_nepadapters() -> None:
     """Periodic cell-list order must not move NEP outside the reference tolerance."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     from nep_adapters import NEPCalculator
 
     structure = read(
@@ -202,7 +174,7 @@ def test_cuda_nep_periodic_carbon_is_stable_against_nepadapters() -> None:
 def test_cuda_nep_mixed_periodic_and_isolated_batch_matches_cpu() -> None:
     """The device-expanded periodic and isolated structures share one graph."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _mixed_periodic_isolated_batch()
     cpu = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cpu", num_threads=1))
     gpu = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cuda"))
@@ -227,7 +199,7 @@ def test_cuda_nep_mixed_periodic_and_isolated_batch_matches_cpu() -> None:
 def test_cuda_nep_isolated_batch_matches_cpu() -> None:
     """An all-isolated batch must not apply periodic wrapping or cross-talk."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _isolated_batch()
     cpu = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cpu", num_threads=1))
     gpu = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cuda"))

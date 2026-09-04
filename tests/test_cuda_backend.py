@@ -16,6 +16,7 @@ from mdescriptor import (
     StructureBatch,
     _runtime,
 )
+from mdescriptor.core.backends import CudaBackend
 from mdescriptor.descriptors import DPA4, DPA4C, SOAP, NeighborList
 
 ROOT = Path(__file__).parents[1]
@@ -73,7 +74,10 @@ def test_cuda_graph_migration_has_no_host_graph_or_pair_reorder() -> None:
     """The migrated public paths must not reintroduce their old CPU seams."""
 
     backend = (ROOT / "cpp/cuda/src/backend.cu").read_text(encoding="utf-8")
-    extended = (ROOT / "cpp/cuda/src/extended_descriptors.cu").read_text(encoding="utf-8")
+    extended = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "cpp/cuda/src").glob("extended_descriptors_*.cu"))
+    )
     graph = (ROOT / "cpp/cuda/src/neighbor_graph.cu").read_text(encoding="utf-8")
     assert "mdescriptor::build_neighbor_graph" not in backend
     assert "cpu_pair_order" not in extended
@@ -132,10 +136,57 @@ def test_cuda_plugin_is_lazy_and_receives_public_control(monkeypatch) -> None:
         assert calls[0][1]["execution"] == {"device": "cuda", "num_threads": 3}
         assert result.metadata["execution"] == {"device": "cuda", "num_threads": 3}
         assert result.samples.shape == (2, 6)
-        assert control.total() == 0
+        assert control.total() == 1
     finally:
         descriptor.close()
     assert calls[-1][0] == "close"
+
+
+def test_cuda_blocking_restores_pair_atom_indices(monkeypatch) -> None:
+    """Pair samples stay in full-batch atom space across 32-structure blocks."""
+
+    class BlockBackend:
+        feature_count = 4
+
+        def compute(self, batch, control):
+            structures = batch.structures
+            indices = np.arange(structures, dtype=np.float64)
+            records = np.column_stack((indices, indices, np.zeros((structures, 3))))
+            return {
+                "values": np.zeros((structures, 4), dtype=np.float64),
+                "level": "pair",
+                "row_offsets": np.arange(structures + 1, dtype=np.int64),
+                "pair_records": records,
+                "labels": ("dx", "dy", "dz", "distance"),
+            }
+
+        def metadata(self):
+            return {}
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(_runtime, "create_cuda_backend", lambda name, options: BlockBackend())
+    batch = StructureBatch(
+        np.ones(33, dtype=np.int32),
+        np.zeros((33, 3), dtype=np.float64),
+        np.tile(np.eye(3, dtype=np.float64), (33, 1, 1)),
+        np.zeros((33, 3), dtype=np.int32),
+        np.arange(34, dtype=np.int64),
+        tuple(str(index) for index in range(33)),
+    )
+    backend = CudaBackend("NeighborList", {"_cuda_feature_count": 4})
+    control = ComputeControl()
+    try:
+        result = backend.compute(batch, control)
+    finally:
+        backend.close()
+
+    assert result.values.shape == (33, 4)
+    np.testing.assert_array_equal(result.samples[:, 0], np.arange(33))
+    np.testing.assert_array_equal(result.samples[:, 1:], 0)
+    assert control.total() == 33
+    assert control.completed() == 33
 
 
 @pytest.mark.parametrize("descriptor_type", [DPA4, DPA4C])

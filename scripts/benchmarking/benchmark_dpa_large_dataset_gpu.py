@@ -19,11 +19,11 @@ from ase.io import read
 from benchmark_dpa_deepmd_project_gpu import (
     DeepMDReference,
     _accuracy,
-    _load_cuda_plugin,
     _sha256,
 )
 
 from mdescriptor import ExecutionOptions, StructureBatch
+from mdescriptor._cuda_loader import load_cuda_plugin
 from mdescriptor.descriptors import DPA4, DPA4C
 from mdescriptor.models import DPA4_MODEL, DPA4C_MODEL
 
@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     if not names or any(name not in model_paths for name in names):
         raise SystemExit("descriptors must contain only DPA4 and DPA4C")
 
-    _load_cuda_plugin()
+    load_cuda_plugin(ROOT / "build-cuda")
     chunks, total_atoms, max_chunk_atoms = _load_chunks(args.chunk_frames)
     print(
         f"dataset={DATASET}, frames={sum(chunk.structures for chunk in chunks)}, "

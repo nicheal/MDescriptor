@@ -2,44 +2,16 @@
 
 from __future__ import annotations
 
-import importlib
-import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 from ase import Atoms
+from tests._cuda import load_cuda_for_tests
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
 from mdescriptor.descriptors import DPA4, DPA4C
 from mdescriptor.models import DPA4_MODEL, DPA4C_MODEL
-
-
-def _load_cuda_plugin() -> None:
-    """Make a source-tree CUDA build visible to the editable package."""
-
-    try:
-        importlib.import_module("mdescriptor._cuda")
-        return
-    except (ImportError, OSError):
-        pass
-
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [
-        Path(configured) if configured else None,
-        Path(__file__).parents[2] / "build-cuda",
-    ]
-    for candidate in candidates:
-        if candidate is None or not any(candidate.glob("_cuda*.so")):
-            continue
-        mdescriptor.__path__.insert(0, str(candidate))
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    pytest.skip("CUDA plugin is not installed in this test environment")
 
 
 def _batch() -> StructureBatch:
@@ -92,7 +64,7 @@ def test_cuda_dpa_matches_cpu_contract_and_values(
 ) -> None:
     """CUDA DPA descriptors preserve the public result and numerical contract."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _batch()
     cpu = descriptor_type(
         model=model,
@@ -156,7 +128,7 @@ def test_cuda_dpa_device_graph_matches_cpu_for_periodic_and_isolated_batch(
     ill-conditioned periodic H2 example into a cross-backend precision gate.
     """
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     structures = _periodic_structures()
     batch = StructureBatch.from_ase(
         structures,

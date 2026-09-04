@@ -222,7 +222,20 @@ if(MDESCRIPTOR_BUILD_CUDA)
         cpp/cuda/src/batch.cu
         cpp/cuda/src/neighbor_graph.cu
         cpp/cuda/src/local_descriptors.cu
-        cpp/cuda/src/extended_descriptors.cu
+        cpp/cuda/src/extended_descriptors_dispatch.cu
+        cpp/cuda/src/extended_descriptors_soap.cu
+        cpp/cuda/src/extended_descriptors_matrix.cu
+        cpp/cuda/src/extended_descriptors_acsf.cu
+        cpp/cuda/src/extended_descriptors_mbtr.cu
+        cpp/cuda/src/extended_descriptors_basic.cu
+        cpp/cuda/src/extended_descriptors_ead_lode.cu
+        cpp/cuda/src/extended_descriptors_rotational.cu
+        cpp/cuda/src/extended_descriptors_c00ps.cu
+        cpp/cuda/src/extended_descriptors_soap_turbo.cu
+        cpp/cuda/src/extended_descriptors_mtp.cu
+        cpp/cuda/src/extended_descriptors_ace.cu
+        cpp/cuda/src/extended_descriptors_generic.cu
+        cpp/cuda/src/extended_descriptors_rotational_cache.cu
         cpp/cuda/src/nep.cu
         cpp/cuda/src/dpa4c.cu
         cpp/cuda/src/dpa4.cu

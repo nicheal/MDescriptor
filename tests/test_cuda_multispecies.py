@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
-import os
-from pathlib import Path
-
 import numpy as np
 import pytest
 from ase import Atoms
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
 from mdescriptor.descriptors import (
     LMBTR,
@@ -20,32 +15,7 @@ from mdescriptor.descriptors import (
     SphericalExpansion,
     ValleOganov,
 )
-
-
-def _load_cuda_plugin() -> None:
-    """Make a source-tree CUDA build visible to the editable package."""
-
-    try:
-        importlib.import_module("mdescriptor._cuda")
-        return
-    except (ImportError, OSError):
-        pass
-
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [
-        Path(configured) if configured else None,
-        Path(__file__).parents[1] / "build-cuda",
-    ]
-    for candidate in candidates:
-        if candidate is None or not any(candidate.glob("_cuda*.so")):
-            continue
-        mdescriptor.__path__.insert(0, str(candidate))
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    pytest.skip("CUDA plugin is not installed in this test environment")
+from tests._cuda import load_cuda_for_tests
 
 
 def _batch() -> StructureBatch:
@@ -73,7 +43,7 @@ def _batch() -> StructureBatch:
 def test_cuda_multispecies_spectra_match_cpu(name, descriptor_type) -> None:
     """The CUDA spectra must match the CPU reference for two species."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _batch()
     parameters = {
         "species": [1, 8],
@@ -171,7 +141,7 @@ def test_cuda_mbtr_family_matches_cpu(
 ) -> None:
     """CPU and CUDA consume the same resolved MBTR controls."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _mbtr_batch()
     cpu = descriptor_type(
         **parameters,

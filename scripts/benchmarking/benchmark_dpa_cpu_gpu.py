@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib
 import json
-import os
 import platform
 import time
 from pathlib import Path
@@ -21,8 +19,8 @@ from typing import Any
 import numpy as np
 from ase.io import read
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, StructureBatch
+from mdescriptor._cuda_loader import load_cuda_plugin
 from mdescriptor.descriptors import DPA4, DPA4C
 from mdescriptor.models import DPA4_MODEL, DPA4C_MODEL
 
@@ -37,28 +35,6 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _load_cuda_plugin() -> None:
-    """Load the source-tree CUDA extension without touching the driver early."""
-
-    candidates: list[Path] = []
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    if configured:
-        candidates.append(Path(configured))
-    candidates.append(ROOT / "build-cuda")
-    for candidate in candidates:
-        if not any(candidate.glob("_cuda*.so")):
-            continue
-        candidate_text = str(candidate)
-        if candidate_text not in mdescriptor.__path__:
-            mdescriptor.__path__.insert(0, candidate_text)
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    raise RuntimeError("CUDA plugin is not available in this checkout")
 
 
 def _single_structure(batch: StructureBatch, index: int) -> StructureBatch:
@@ -241,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     if not names or any(name not in descriptor_specs for name in names):
         raise SystemExit("descriptors must contain only DPA4 and DPA4C")
 
-    _load_cuda_plugin()
+    load_cuda_plugin(ROOT / "build-cuda")
     workloads = _workloads()
     measurements = []
     for name in names:

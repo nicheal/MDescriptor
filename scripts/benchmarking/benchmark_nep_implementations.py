@@ -9,9 +9,7 @@ its reported prediction time and its official ``descriptor.out`` output.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
-import os
 import platform
 import re
 import shutil
@@ -26,8 +24,8 @@ import numpy as np
 from ase import Atoms
 from ase.io import read, write
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, StructureBatch
+from mdescriptor._cuda_loader import load_cuda_plugin
 from mdescriptor.descriptors import NEP
 from mdescriptor.models import NEP_MODEL
 
@@ -35,24 +33,6 @@ ROOT = Path(__file__).resolve().parents[2]
 CARBON_DATASET = ROOT / "benchmarks/_datasets/legacy/carbon_dataset_pbc.xyz"
 TOLERANCE = {"rtol": 1.0e-6, "atol": 1.0e-7}
 PREDICTION_RE = re.compile(r"Time used for predicting = ([0-9.eE+-]+) s\.")
-
-
-def _load_cuda_plugin() -> None:
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [Path(configured)] if configured else []
-    candidates.append(ROOT / "build-cuda")
-    for candidate in candidates:
-        if not any(candidate.glob("_cuda*.so")):
-            continue
-        candidate_text = str(candidate)
-        if candidate_text not in mdescriptor.__path__:
-            mdescriptor.__path__.insert(0, candidate_text)
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    raise RuntimeError("CUDA plugin is not available in this checkout")
 
 
 def _carbon_batch(frame_count: int | None) -> tuple[list[Atoms], StructureBatch]:
@@ -276,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.gpumd_output_significant_digits <= 0:
         raise SystemExit("gpumd-output-significant-digits must be positive")
 
-    _load_cuda_plugin()
+    load_cuda_plugin(ROOT / "build-cuda")
     structures, batch = _carbon_batch(args.frames)
     print(
         f"running carbon: {batch.numbers.size} atoms / {batch.offsets.size - 1} frames",

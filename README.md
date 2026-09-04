@@ -57,10 +57,11 @@ through the C++17/OpenMP backend or the custom CUDA backend, while specialised
 configurations retain the NumPy fallback. No network model download is
 performed.
 
-The base wheel keeps the CPU backend as its default. `NeighborList`,
-`SphericalExpansion`, `SoapRadialSpectrum`, and `SoapPowerSpectrum` also
-advertise `execution.device="cuda"`; the other built-ins remain CPU-only.
-CUDA is an opt-in plugin build and never silently falls back to CPU:
+The base wheel keeps the CPU backend as its default. All 28 built-in
+descriptors advertise both CPU and CUDA in the registry; the CUDA path is an
+opt-in plugin and never silently falls back to CPU. The CUDA-capable set
+includes the local, matrix, many-body, rotational, NEP, DPA4, and DPA4C
+families listed in `docs/descriptor-inventory.md`:
 
 ```bash
 cmake -S . -B build-cuda \
@@ -74,11 +75,11 @@ The CUDA target requires a CUDA toolkit and an explicit architecture list.
 Without the plugin or a usable CUDA driver, a CUDA computation reports the
 structured `device_unavailable` error.
 
-基础 wheel 默认使用 CPU。`NeighborList`、`NEP`、`SphericalExpansion`、
-`SoapRadialSpectrum`、`SoapPowerSpectrum`、`DPA4` 和 `DPA4C` 声明支持
-`device="cuda"`；其他
-内置描述符仍为 CPU-only。CUDA 是显式启用的独立插件目标，没有插件或不可用
-驱动时不会静默回退，而是返回结构化的 `device_unavailable` 错误。
+基础 wheel 默认使用 CPU。注册表中的 28 个内置描述符全部声明同时支持
+CPU 和 CUDA，覆盖 local、matrix、many-body、rotational、NEP、DPA4 和
+DPA4C 家族，完整清单见 `docs/descriptor-inventory.md`。CUDA 是显式启用的
+独立插件目标，没有插件或不可用驱动时不会静默回退，而是返回结构化的
+`device_unavailable` 错误。
 
 For end-user distribution, the repository also provides an independent
 `MDescriptor-CUDA` wheel. It contains the CUDA extension and the CUDA

@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib
 import json
-import os
 import platform
 import time
 from pathlib import Path
@@ -21,8 +19,8 @@ import numpy as np
 from ase import Atoms
 from ase.io import read
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, StructureBatch
+from mdescriptor._cuda_loader import load_cuda_plugin
 from mdescriptor.descriptors import NEP
 from mdescriptor.models import NEP_MODEL
 
@@ -31,24 +29,6 @@ TWO_DATASET = ROOT / "benchmarks/_datasets/two-structure-v1-2a727a880fef/structu
 CARBON_DATASET = ROOT / "benchmarks/_datasets/legacy/carbon_dataset_pbc.xyz"
 SOAP_DATASET = ROOT / "benchmarks/_datasets/legacy/soap_diverse_dataset_300.xyz"
 NEP_FIXTURE = ROOT / "tests/golden/nep/external_input.npz"
-
-
-def _load_cuda_plugin() -> None:
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [Path(configured)] if configured else []
-    candidates.append(ROOT / "build-cuda")
-    for candidate in candidates:
-        if not any(candidate.glob("_cuda*.so")):
-            continue
-        candidate_text = str(candidate)
-        if candidate_text not in mdescriptor.__path__:
-            mdescriptor.__path__.insert(0, candidate_text)
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    raise RuntimeError("CUDA plugin is not available in this checkout")
 
 
 def _sha256(path: Path) -> str:
@@ -269,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.warmup < 0 or args.repeat <= 0:
         raise SystemExit("warmup must be non-negative and repeat must be positive")
-    _load_cuda_plugin()
+    load_cuda_plugin(ROOT / "build-cuda")
     result = {
         "schema_version": 1,
         "package": "MDescriptor",

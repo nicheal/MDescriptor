@@ -9,9 +9,7 @@ the requested tolerance or minimum speedup is not met.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
-import os
 import platform
 import time
 from collections.abc import Callable
@@ -21,39 +19,12 @@ from typing import Any
 import numpy as np
 from ase import Atoms
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
+from mdescriptor._cuda_loader import load_cuda_plugin
 from mdescriptor.descriptors import NEP
 from mdescriptor.models import NEP_MODEL
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def _load_cuda_plugin() -> None:
-    """Make a source-tree CUDA build visible to the editable package."""
-
-    try:
-        importlib.import_module("mdescriptor._cuda")
-        return
-    except (ImportError, OSError):
-        pass
-
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [
-        Path(configured) if configured else None,
-        ROOT / "build-cuda",
-    ]
-    for candidate in candidates:
-        if candidate is None or not any(candidate.glob("_cuda*.so")):
-            continue
-        if str(candidate) not in mdescriptor.__path__:
-            mdescriptor.__path__.insert(0, str(candidate))
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    raise RuntimeError("CUDA plugin is not installed in this checkout")
 
 
 def _batch(
@@ -169,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         "minimum_speedup": args.min_speedup,
     }
     try:
-        _load_cuda_plugin()
+        load_cuda_plugin(ROOT / "build-cuda")
     except Exception as error:
         _write_or_print(
             {**base, "status": "unavailable", "reason": f"CUDA plugin: {error}"},

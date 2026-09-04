@@ -700,6 +700,9 @@ class DescriptorAdapter(Descriptor):
         adapted = self._apply_execution_metadata(adapted)
         adapted = self._add_model_identity(adapted)
         adapted = _apply_output(adapted, self._output_options)
+        # Some CUDA layouts (notably batch-derived matrix padding) resolve
+        # their width on the first batch and may widen on a later batch.
+        self._feature_count = adapted.feature_count
         self._metadata_snapshot = dict(adapted.metadata)
         return adapted
 

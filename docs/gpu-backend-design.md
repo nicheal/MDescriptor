@@ -16,7 +16,7 @@ CUDA contract 回归通过；完整发布矩阵仍需按目标平台执行。本
 batch / CSR+SoA graph、NeighborList CUDA kernel，以及
 SphericalExpansion / SOAP radial / SOAP power 的共享 device coefficient
 pipeline，以及普通 NEP descriptor 的 device model/kernel。扩展 CUDA 模块
-`cpp/cuda/src/extended_descriptors.cu` 已覆盖本文件 11 节列出的全部 21 个
+`cpp/cuda/src/extended_descriptors_*.cu` 已覆盖本文件 11 节列出的全部 21 个
 原 CPU-only 描述符；其中 SOAPTurbo、ACE、MTP 和 C00PSMLFF 会把 CPU parser
 生成的扁平系数/evaluator payload 上传到 device。普通 NEP 的全周期
 路径使用 NEPAdapters-compatible 的 device cell-list、周期小盒展开和 float32
@@ -100,13 +100,13 @@ CUDA 不应改变现有 `DescriptorResult` 组装逻辑。
 
 ### `src/mdescriptor/registry/builtins.py`
 
-设备能力由 registry metadata 唯一声明。首批 CUDA 描述符声明：
+设备能力由 registry metadata 唯一声明。当前内置描述符均声明 CPU/CUDA：
 
 ```json
 {"execution": {"devices": ["cpu", "cuda"]}}
 ```
 
-其他描述符继续声明 `devices: ["cpu"]`。adapter 的 `supported_devices` 应从 registry metadata 派生，避免重复维护。
+adapter 的 `supported_devices` 应从 registry metadata 派生，避免重复维护。
 
 DPA4 和 DPA4C 同样声明 `devices: ["cpu", "cuda"]`。模型验证仍由现有
 Torch-free Python loader 完成；在选择 CUDA 时，validation kernel 在关闭前通过
@@ -246,7 +246,7 @@ bounding-box/grid 参数属于紧凑 launch metadata，候选邻居本身不在 
 
 ## 7. 描述符 kernel 分层
 
-首批描述符共享同一套 GPU 中间层：
+standalone 扩展描述符共享同一套 GPU 中间层：
 
 ```text
 DeviceNeighborGraph
@@ -339,7 +339,7 @@ CUDA plugin 依赖匹配版本的基础包，并提供 `_cuda` 扩展和 backend
 | NEP | `cpp/cuda/src/nep.cu` 自有 descriptor/device kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
 | DPA4 | `cpp/cuda/src/dpa4.cu` 自有 FP32 tiled GEMM 和 descriptor kernels | 无（已移除 cuBLAS/cuBLASLt） | `libcudart`；`libcuda` 由宿主驱动提供 |
 | DPA4C | `cpp/cuda/src/dpa4c.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
-| 21 个 standalone 描述符 | `cpp/cuda/src/extended_descriptors.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
+| 21 个 standalone 描述符 | `cpp/cuda/src/extended_descriptors_*.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
 
 三者共享 CUDA context、batch/CSR graph 和 Python lazy plugin loader，但不共享
 BLAS runtime。CPU `_native` 路径仍可使用 SciPy/OpenBLAS；这与独立 CUDA wheel
@@ -393,7 +393,7 @@ C00PSMLFF
 ```
 
 因此当前 registry 的 CUDA 支持矩阵为 28 个描述符；上面的 21 个扩展描述符
-统一由 `extended_descriptors.cu` dispatch，并保持各自 CPU kernel 的 feature
+统一由共享的 extended dispatch registry dispatch，并保持各自 CPU kernel 的 feature
 layout、labels、周期 exact-self 语义和结果 level。
 
 以下内容仍明确排除在 standalone GPU 第一阶段之外：
@@ -600,7 +600,7 @@ MDESCRIPTOR_CUDA_PLUGIN_DIR="$PWD/build-cuda" \
 | G7 | CUDA wheel、GPU CI、benchmark | plugin 可发布并可验证 |
 | G8 | 普通 NEP descriptor GPU 扩展 | coefficients device model、CUDA kernel、parity benchmark |
 | G9 | DPA4/DPA4C CUDA descriptor path | 自有 FP32 kernels、GPU 权重上传、parity gate 和 CUDA wheel 依赖审计 |
-| G10 | 21 个 CPU-only 描述符 CUDA path | `extended_descriptors.cu`、payload flattening、CPU/CUDA contract 和 golden parity |
+| G10 | 21 个 CPU-only 描述符 CUDA path | `extended_descriptors_*.cu`、payload flattening、CPU/CUDA contract 和 golden parity |
 
 本文件记录设计共识和当前实现边界；standalone CUDA runner、GPU 数值 tolerance、
 wheel 发布和跨平台 benchmark 仍应按上述门禁在目标硬件上完成验证。

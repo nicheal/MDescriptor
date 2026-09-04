@@ -1,25 +1,16 @@
 #pragma once
 
-#include <array>
+#include <cstddef>
 #include <string_view>
 
 namespace mdescriptor::cuda {
 
-// Backend feature discovery and compute dispatch must agree on this set.
-inline constexpr std::array<std::string_view, 21> kExtendedDescriptorNames = {
-    "AtomicComposition", "SortedDistances", "SphericalExpansionByPair", "SOAP",
-    "SOAPTurbo", "ACSF", "ACE", "LodeSphericalExpansion", "CoulombMatrix",
-    "SineMatrix", "EwaldSumMatrix", "MBTR", "LMBTR", "ValleOganov", "EAD",
-    "SO3", "SO4", "SNAP", "LBispectrum", "MTP", "C00PSMLFF",
-};
+// The implementation-defined registry owns both names and handlers.  These
+// declarations are the small backend seam used by feature discovery and the
+// dispatch translation unit; callers never maintain a second ordered list.
+inline constexpr std::size_t kExtendedDescriptorCount = 21;
 
-inline bool is_extended_descriptor(std::string_view name) noexcept {
-    for (const auto candidate : kExtendedDescriptorNames) {
-        if (candidate == name) {
-            return true;
-        }
-    }
-    return false;
-}
+std::size_t extended_descriptor_index(std::string_view name) noexcept;
+bool is_extended_descriptor(std::string_view name) noexcept;
 
 } // namespace mdescriptor::cuda

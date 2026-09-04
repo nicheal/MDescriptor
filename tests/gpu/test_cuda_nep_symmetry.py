@@ -2,43 +2,17 @@
 
 from __future__ import annotations
 
-import importlib
-import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 from ase import Atoms
 from ase.io import read
+from tests._cuda import load_cuda_for_tests
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, StructureBatch
 from mdescriptor.descriptors import NEP
 from mdescriptor.models import NEP_MODEL
-
-
-def _load_cuda_plugin() -> None:
-    try:
-        importlib.import_module("mdescriptor._cuda")
-        return
-    except (ImportError, OSError):
-        pass
-
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [Path(configured)] if configured else []
-    candidates.append(Path(__file__).parents[2] / "build-cuda")
-    for candidate in candidates:
-        if not any(candidate.glob("_cuda*.so")):
-            continue
-        candidate_text = str(candidate)
-        if candidate_text not in mdescriptor.__path__:
-            mdescriptor.__path__.insert(0, candidate_text)
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    pytest.skip("CUDA plugin is not installed in this test environment")
 
 
 def _water(*, periodic: bool) -> Atoms:
@@ -116,7 +90,7 @@ def _difference(left: np.ndarray, right: np.ndarray) -> tuple[float, float, floa
 def test_cuda_nep_rotation_translation_permutation_and_determinism(capsys: pytest.CaptureFixture[str]) -> None:
     """CUDA NEP preserves invariance for periodic and isolated structures."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     carbon = read(
         Path(__file__).parents[2] / "benchmarks/_datasets/legacy/carbon_dataset_pbc.xyz",
         index=34,

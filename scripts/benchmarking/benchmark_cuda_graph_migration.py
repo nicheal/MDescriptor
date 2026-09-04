@@ -9,9 +9,7 @@ makes the before/after comparison reproducible.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -22,8 +20,8 @@ from typing import Any
 import numpy as np
 from ase import Atoms
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
+from mdescriptor._cuda_loader import load_cuda_plugin
 from mdescriptor.descriptors import (
     NeighborList,
     SoapPowerSpectrum,
@@ -124,16 +122,6 @@ def _batch(periodic_repeats: int, isolated_repeats: int) -> StructureBatch:
     )
 
 
-def _load_cuda_plugin(plugin_dir: Path) -> None:
-    if not any(plugin_dir.glob("_cuda*.so")):
-        raise RuntimeError(f"CUDA plugin directory has no _cuda*.so: {plugin_dir}")
-    plugin_text = str(plugin_dir.resolve())
-    os.environ["MDESCRIPTOR_CUDA_PLUGIN_DIR"] = plugin_text
-    if plugin_text not in mdescriptor.__path__:
-        mdescriptor.__path__.insert(0, plugin_text)
-    importlib.import_module("mdescriptor._cuda")
-
-
 def _measure(operation: Any, warmup: int, repeat: int) -> tuple[float, list[float], Any]:
     started = time.perf_counter()
     result = operation()
@@ -190,7 +178,7 @@ def _single(args: argparse.Namespace) -> int:
         "isolated_repeats": args.isolated_repeats,
     }
     try:
-        _load_cuda_plugin(args.plugin_dir)
+        load_cuda_plugin(args.plugin_dir)
     except Exception as error:
         print(json.dumps({**base, "status": "unavailable", "reason": str(error)}))
         return 2

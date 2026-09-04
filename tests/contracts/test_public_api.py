@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import inspect
 import json
 import subprocess
@@ -79,6 +80,28 @@ def test_root_import_does_not_load_torch_or_model_modules():
         text=True,
     )
     assert probe.returncode == 0
+
+
+def test_descriptor_namespaces_follow_registry_and_keep_exports_lazy():
+    descriptors = importlib.import_module("mdescriptor.descriptors")
+    standalone = importlib.import_module("mdescriptor.descriptors.standalone")
+    model_backed = importlib.import_module("mdescriptor.descriptors.model_backed")
+
+    assert tuple(descriptors.__all__) == mdescriptor.builtin_registry.names()
+    assert set(standalone.__all__) == {
+        spec.name
+        for spec in mdescriptor.builtin_registry
+        if spec.import_path.split(":", 1)[0].startswith(
+            "mdescriptor.descriptors.standalone."
+        )
+    }
+    assert set(model_backed.__all__) == {"NEP", "DPA4", "DPA4C"}
+    assert "DPA4" in dir(descriptors)
+    assert "DPA4" not in dir(standalone)
+    assert "SOAP" not in dir(model_backed)
+
+    assert model_backed.DPA4.__name__ == "DPA4"
+    assert not hasattr(standalone, "DPA4")
 
 
 def test_compute_control_fallback_keeps_the_public_control_surface():

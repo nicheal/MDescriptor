@@ -1,8 +1,0 @@
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/.libs/libgfortran-83c28eba.so.5.0.0
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/.libs/libquadmath-2284e583.so.0.0.0
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/.libs/libscipy_openblas.so
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/licenses/scipy-openblas32-METADATA.txt
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/licenses/scipy-openblas32-LICENSE.txt
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/docs/gui-adaptation-baseline.md
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/_native.cpython-312-x86_64-linux-gnu.so
-/home/nicheal/MDescriptor/.venv/lib/python3.12/site-packages/mdescriptor/_cuda.cpython-312-x86_64-linux-gnu.so

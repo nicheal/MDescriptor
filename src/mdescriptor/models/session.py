@@ -173,6 +173,20 @@ class LoadedModel:
         return _materialize_mutable(self.weights)
 
 
+def identity_model_artifact(resolved: ResolvedModel) -> tuple[Mapping[str, str], None]:
+    """Represent a path-owned model without eagerly parsing its contents.
+
+    Native kernels that consume the resolved path themselves still participate
+    in the shared artifact cache.  Their immutable identity keeps cache keys
+    and session ownership uniform without pretending that the Python side owns
+    a format-specific parser.
+    """
+
+    return MappingProxyType(
+        {"format": resolved.path.suffix.lower().lstrip("."), "digest": resolved.digest}
+    ), None
+
+
 _CACHE: WeakValueDictionary[tuple[str, int, str], LoadedModel] = WeakValueDictionary()
 _CACHE_LOCK = threading.RLock()
 

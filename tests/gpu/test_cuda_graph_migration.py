@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import importlib
-import os
-from pathlib import Path
-
 import numpy as np
 import pytest
 from ase import Atoms
+from tests._cuda import load_cuda_for_tests
 
-import mdescriptor
 from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
 from mdescriptor.descriptors import (
     NeighborList,
@@ -19,32 +15,6 @@ from mdescriptor.descriptors import (
     SphericalExpansion,
     SphericalExpansionByPair,
 )
-
-
-def _load_cuda_plugin() -> None:
-    """Make a source-tree CUDA build visible to the editable package."""
-
-    try:
-        importlib.import_module("mdescriptor._cuda")
-        return
-    except (ImportError, OSError):
-        pass
-
-    configured = os.environ.get("MDESCRIPTOR_CUDA_PLUGIN_DIR")
-    candidates = [
-        Path(configured) if configured else None,
-        Path(__file__).parents[2] / "build-cuda",
-    ]
-    for candidate in candidates:
-        if candidate is None or not any(candidate.glob("_cuda*.so")):
-            continue
-        mdescriptor.__path__.insert(0, str(candidate))
-        try:
-            importlib.import_module("mdescriptor._cuda")
-        except (ImportError, OSError):
-            continue
-        return
-    pytest.skip("CUDA plugin is not installed in this test environment")
 
 
 def _batch() -> StructureBatch:
@@ -97,7 +67,7 @@ def test_cuda_neighbor_list_matches_cpu_order_and_filtering(
 ) -> None:
     """Device CSR filtering preserves public pair order and exact-self rules."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _batch()
     parameters = {
         "cutoff": 3.5,
@@ -121,7 +91,7 @@ def test_cuda_neighbor_list_matches_cpu_order_and_filtering(
 def test_cuda_half_neighbor_list_deduplicates_periodic_self_images() -> None:
     """Half-list filtering must have an independent periodic-image oracle."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = StructureBatch.from_ase(
         [Atoms("H", positions=[[0.0, 0.0, 0.0]], cell=np.eye(3) * 2.0, pbc=True)]
     )
@@ -148,7 +118,7 @@ def test_cuda_half_neighbor_list_deduplicates_periodic_self_images() -> None:
 def test_cuda_spherical_expansion_by_pair_matches_cpu_order() -> None:
     """Pair feature rows are ordered on CUDA, without host-side reordering."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _batch()
     parameters = {
         "species": [1, 6, 8],
@@ -180,7 +150,7 @@ def test_cuda_spherical_expansion_by_pair_matches_cpu_order() -> None:
 def test_cuda_local_descriptors_use_device_graph_and_match_cpu(descriptor_type: type[object]) -> None:
     """The local descriptor family remains numerically equivalent after graph migration."""
 
-    _load_cuda_plugin()
+    load_cuda_for_tests()
     batch = _batch()
     parameters = {
         "species": [1, 6, 8],
