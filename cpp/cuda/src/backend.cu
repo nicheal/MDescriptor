@@ -11,8 +11,8 @@
 #include "mdescriptor/detail/neighbor_filter.hpp"
 #include "local_layout.hpp"
 
-# pytypes.h only declares object::cast<T>; the definitions live here and a
-# missing include surfaces only as an undefined-symbol link error.
+// pytypes.h only declares object::cast<T>; the definitions live here and a
+// missing include surfaces only as an undefined-symbol link error.
 #include <pybind11/cast.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>

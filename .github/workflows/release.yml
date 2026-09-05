@@ -17,7 +17,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - windows-latest
+          - windows-2022
           - macos-15
 
     steps:
@@ -32,37 +32,37 @@ jobs:
 
       - name: Install CUDA Toolkit (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $installer = "$env:RUNNER_TEMP\cuda_12.8.1_windows_network.exe"
-          Invoke-WebRequest `
-            -Uri "https://developer.download.nvidia.com/compute/cuda/12.8.1/network_installers/cuda_12.8.1_windows_network.exe" `
-            -OutFile $installer
-          Start-Process -FilePath $installer -ArgumentList "-s" -Wait
-          "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" >> $env:GITHUB_ENV
-          Add-Content $env:GITHUB_PATH "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin"
+        id: cuda-toolkit
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: "12.8.1"
+          method: network
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==4.2.0
 
       # Linux wheels build inside a manylinux container, so the toolkit goes
-      # in there; Windows builds against the host installation.  macOS has no
-      # CUDA toolkit and stays CPU-only through MDESCRIPTOR_BUILD_CUDA=AUTO.
+      # in there; Windows builds against the runner's VS2022 toolchain (CUDA
+      # 12.8 has no integration for the VS2026 that windows-latest ships).
+      # macOS has no CUDA toolkit and stays CPU-only through
+      # MDESCRIPTOR_BUILD_CUDA=AUTO.
       - name: Build wheels
         env:
           CIBW_ARCHS_LINUX: x86_64
           CIBW_ARCHS_WINDOWS: AMD64
           CIBW_ARCHS_MACOS: arm64
-          CIBW_BEFORE_ALL_LINUX: >-
-            major="$(. /etc/os-release && echo "${VERSION_ID%%.*}")" &&
-            : "${major:=8}" &&
-            curl -fsSLo /tmp/cuda.repo
-            "https://developer.download.nvidia.com/compute/cuda/repos/rhel${major}/x86_64/cuda-rhel${major}.repo" &&
-            cp /tmp/cuda.repo /etc/yum.repos.d/cuda.repo &&
-            dnf install -y --setopt=install_weak_deps=False cuda-nvcc-12-8 cuda-cudart-devel-12-8
+          CIBW_BEFORE_ALL_LINUX: |
+            dnf install -y dnf-plugins-core
+            dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
+            dnf install -y cuda-compiler-12-8 cuda-cudart-devel-12-8
+            ln -sfn /usr/local/cuda-12.8 /usr/local/cuda
           CIBW_ENVIRONMENT_LINUX: >-
             CUDA_HOME=/usr/local/cuda
             PATH=/usr/local/cuda/bin:$PATH
+          CIBW_ENVIRONMENT_WINDOWS: >-
+            CMAKE_GENERATOR="Visual Studio 17 2022"
+            CUDAToolkit_ROOT="${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
         run: python -m cibuildwheel --output-dir wheelhouse
 
       - name: Upload wheels
