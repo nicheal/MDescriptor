@@ -200,19 +200,57 @@ install(
 )
 endif()
 
-# The CUDA backend is an independently loadable plugin.  It is opt-in so the
-# CPU wheel and its build environment remain completely CUDA-free.  A release
-# build must provide an explicit architecture list, which keeps the produced
-# plugin's compatibility matrix visible in the build invocation.
-option(MDESCRIPTOR_BUILD_CUDA "Build the optional MDescriptor CUDA plugin" OFF)
+# The CPU and CUDA backends ship inside the same wheel; CUDA availability is
+# a runtime choice (execution.device), never a separate distribution.
+# ``MDESCRIPTOR_BUILD_CUDA`` is a tri-state switch: ``ON`` requires a toolkit,
+# ``OFF`` never builds CUDA, and ``AUTO`` (the default) builds it whenever a
+# usable CUDA toolkit is detected so source installs pick up CUDA for free.
+set(MDESCRIPTOR_BUILD_CUDA "AUTO" CACHE STRING
+    "Build the CUDA backend: ON, OFF, or AUTO (build when a CUDA toolkit is detected)")
+set_property(CACHE MDESCRIPTOR_BUILD_CUDA PROPERTY STRINGS ON OFF AUTO)
 option(
     MDESCRIPTOR_BUNDLE_CUDA_RUNTIME
-    "Bundle the CUDA runtime shared library with the CUDA plugin"
-    OFF)
-if(MDESCRIPTOR_BUILD_CUDA)
+    "Bundle the CUDA runtime shared library beside the CUDA backend"
+    ON)
+if(MDESCRIPTOR_BUILD_CUDA STREQUAL "AUTO")
+    find_package(CUDAToolkit QUIET)
+    set(MDESCRIPTOR_CUDA_ENABLED OFF)
+    if(CUDAToolkit_FOUND)
+        if(DEFINED ENV{CUDACXX} AND EXISTS "$ENV{CUDACXX}")
+            set(_MDESCRIPTOR_NVCC "$ENV{CUDACXX}")
+        else()
+            find_program(_MDESCRIPTOR_NVCC nvcc
+                HINTS "${CUDAToolkit_BIN_DIR}" ENV CUDA_PATH ENV CUDA_HOME
+                PATHS /usr/local/cuda/bin)
+        endif()
+        if(_MDESCRIPTOR_NVCC)
+            set(MDESCRIPTOR_CUDA_ENABLED ON)
+            if(NOT DEFINED CMAKE_CUDA_COMPILER)
+                set(CMAKE_CUDA_COMPILER "${_MDESCRIPTOR_NVCC}" CACHE FILEPATH "nvcc location")
+            endif()
+            message(STATUS "CUDA toolkit detected; building the CUDA backend "
+                "(MDESCRIPTOR_BUILD_CUDA=OFF disables it)")
+        else()
+            message(STATUS "CUDA toolkit libraries found without nvcc; building CPU-only")
+        endif()
+    else()
+        message(STATUS "No CUDA toolkit detected; building CPU-only "
+            "(MDESCRIPTOR_BUILD_CUDA=ON forces the CUDA backend)")
+    endif()
+else()
+    set(MDESCRIPTOR_CUDA_ENABLED "${MDESCRIPTOR_BUILD_CUDA}")
+endif()
+
+if(MDESCRIPTOR_CUDA_ENABLED)
+    # This must precede enable_language(): CMake initializes the variable to
+    # the compiler's default architecture while enabling the CUDA language.
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
-        message(FATAL_ERROR
-            "MDESCRIPTOR_BUILD_CUDA requires an explicit CMAKE_CUDA_ARCHITECTURES value")
+        # The published wheel compatibility contract: SASS for Turing through
+        # Hopper plus compute_90 PTX, which the driver JIT-compiles on newer
+        # architectures (Blackwell and successors).
+        set(CMAKE_CUDA_ARCHITECTURES "75-real;80-real;86-real;90-real;90-virtual")
+        message(STATUS
+            "Defaulting CMAKE_CUDA_ARCHITECTURES to ${CMAKE_CUDA_ARCHITECTURES}")
     endif()
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
@@ -287,66 +325,81 @@ if(MDESCRIPTOR_BUILD_CUDA)
         cpp/cuda/include)
     target_link_libraries(_cuda PRIVATE CUDA::cudart)
     if(MDESCRIPTOR_BUNDLE_CUDA_RUNTIME)
-        if(NOT UNIX OR APPLE)
-            message(FATAL_ERROR
-                "MDESCRIPTOR_BUNDLE_CUDA_RUNTIME currently supports Linux only")
-        endif()
-
-        set(_MDESCRIPTOR_CUDA_RUNTIME_DIRS)
-        foreach(_cuda_target CUDA::cudart)
-            get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION)
-            if(NOT _cuda_location)
-                get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION_RELEASE)
-            endif()
-            if(NOT _cuda_location OR NOT EXISTS "${_cuda_location}")
+        if(WIN32)
+            # The runtime DLL ships beside _cuda.pyd: Python's extension
+            # loader searches the module's own directory first, so no extra
+            # DLL-directory bookkeeping is needed.
+            file(GLOB _cuda_cudart_dlls "${CUDAToolkit_BIN_DIR}/cudart64*.dll")
+            if(NOT _cuda_cudart_dlls)
                 message(FATAL_ERROR
-                    "Could not resolve the shared library for ${_cuda_target}")
+                    "Could not find cudart64*.dll under ${CUDAToolkit_BIN_DIR}")
             endif()
-            get_filename_component(_cuda_runtime_dir "${_cuda_location}" DIRECTORY)
-            list(APPEND _MDESCRIPTOR_CUDA_RUNTIME_DIRS "${_cuda_runtime_dir}")
-        endforeach()
-        list(REMOVE_DUPLICATES _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
-
-        # CUDA installs a development symlink, a SONAME symlink, and a
-        # fully-versioned file.  Wheels should contain a real file under the
-        # SONAME name rather than a symlink that may be lost by an archive
-        # tool.
-        set(_MDESCRIPTOR_CUDA_RUNTIME_FILES)
-        foreach(_cuda_library cudart)
-            set(_cuda_soname_link)
-            foreach(_cuda_dir IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
-                file(GLOB _cuda_candidates LIST_DIRECTORIES FALSE
-                    "${_cuda_dir}/lib${_cuda_library}.so.[0-9]*")
-                foreach(_cuda_candidate IN LISTS _cuda_candidates)
-                    get_filename_component(_cuda_candidate_name
-                        "${_cuda_candidate}" NAME)
-                    if(_cuda_candidate_name MATCHES
-                        "^lib${_cuda_library}\\.so\\.[0-9]+$")
-                        set(_cuda_soname_link "${_cuda_candidate}")
-                    endif()
-                endforeach()
+            list(POP_FRONT _cuda_cudart_dlls _cuda_cudart_dll)
+            install(FILES "${_cuda_cudart_dll}" DESTINATION mdescriptor)
+        elseif(UNIX AND NOT APPLE)
+            set(_MDESCRIPTOR_CUDA_RUNTIME_DIRS)
+            foreach(_cuda_target CUDA::cudart)
+                get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION)
+                if(NOT _cuda_location)
+                    get_target_property(_cuda_location "${_cuda_target}" IMPORTED_LOCATION_RELEASE)
+                endif()
+                if(NOT _cuda_location OR NOT EXISTS "${_cuda_location}")
+                    message(FATAL_ERROR
+                        "Could not resolve the shared library for ${_cuda_target}")
+                endif()
+                get_filename_component(_cuda_runtime_dir "${_cuda_location}" DIRECTORY)
+                list(APPEND _MDESCRIPTOR_CUDA_RUNTIME_DIRS "${_cuda_runtime_dir}")
             endforeach()
-            if(NOT _cuda_soname_link)
-                message(FATAL_ERROR
-                    "Could not find the SONAME link for lib${_cuda_library}.so")
-            endif()
-            get_filename_component(_cuda_real_library
-                "${_cuda_soname_link}" REALPATH)
-            get_filename_component(_cuda_soname
-                "${_cuda_soname_link}" NAME)
-            list(APPEND _MDESCRIPTOR_CUDA_RUNTIME_FILES
-                "${_cuda_real_library}|${_cuda_soname}")
-        endforeach()
+            list(REMOVE_DUPLICATES _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
 
-        foreach(_cuda_runtime_entry IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_FILES)
-            string(REPLACE "|" ";" _cuda_runtime_parts "${_cuda_runtime_entry}")
-            list(GET _cuda_runtime_parts 0 _cuda_real_library)
-            list(GET _cuda_runtime_parts 1 _cuda_soname)
-            install(
-                FILES "${_cuda_real_library}"
-                DESTINATION mdescriptor/.cuda_libs
-                RENAME "${_cuda_soname}")
-        endforeach()
+            # CUDA installs a development symlink, a SONAME symlink, and a
+            # fully-versioned file.  Wheels should contain a real file under the
+            # SONAME name rather than a symlink that may be lost by an archive
+            # tool.
+            set(_MDESCRIPTOR_CUDA_RUNTIME_FILES)
+            foreach(_cuda_library cudart)
+                set(_cuda_soname_link)
+                foreach(_cuda_dir IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_DIRS)
+                    file(GLOB _cuda_candidates LIST_DIRECTORIES FALSE
+                        "${_cuda_dir}/lib${_cuda_library}.so.[0-9]*")
+                    foreach(_cuda_candidate IN LISTS _cuda_candidates)
+                        get_filename_component(_cuda_candidate_name
+                            "${_cuda_candidate}" NAME)
+                        if(_cuda_candidate_name MATCHES
+                            "^lib${_cuda_library}\\.so\\.[0-9]+$")
+                            set(_cuda_soname_link "${_cuda_candidate}")
+                        endif()
+                    endforeach()
+                endforeach()
+                if(NOT _cuda_soname_link)
+                    message(FATAL_ERROR
+                        "Could not find the SONAME link for lib${_cuda_library}.so")
+                endif()
+                get_filename_component(_cuda_real_library
+                    "${_cuda_soname_link}" REALPATH)
+                get_filename_component(_cuda_soname
+                    "${_cuda_soname_link}" NAME)
+                list(APPEND _MDESCRIPTOR_CUDA_RUNTIME_FILES
+                    "${_cuda_real_library}|${_cuda_soname}")
+            endforeach()
+
+            foreach(_cuda_runtime_entry IN LISTS _MDESCRIPTOR_CUDA_RUNTIME_FILES)
+                string(REPLACE "|" ";" _cuda_runtime_parts "${_cuda_runtime_entry}")
+                list(GET _cuda_runtime_parts 0 _cuda_real_library)
+                list(GET _cuda_runtime_parts 1 _cuda_soname)
+                install(
+                    FILES "${_cuda_real_library}"
+                    DESTINATION mdescriptor/.cuda_libs
+                    RENAME "${_cuda_soname}")
+            endforeach()
+
+            set_target_properties(
+                _cuda PROPERTIES
+                INSTALL_RPATH "$ORIGIN/.cuda_libs")
+        else()
+            message(FATAL_ERROR
+                "MDESCRIPTOR_BUNDLE_CUDA_RUNTIME supports Linux and Windows only")
+        endif()
 
         # Preserve the license notice alongside the redistributed NVIDIA
         # libraries.  libcuda itself is intentionally not bundled: it belongs
@@ -359,9 +412,6 @@ if(MDESCRIPTOR_BUILD_CUDA)
                 DESTINATION mdescriptor/licenses
                 RENAME NVIDIA-CUDA-EULA.txt)
         endif()
-        set_target_properties(
-            _cuda PROPERTIES
-            INSTALL_RPATH "$ORIGIN/.cuda_libs")
     endif()
     install(
         TARGETS _cuda

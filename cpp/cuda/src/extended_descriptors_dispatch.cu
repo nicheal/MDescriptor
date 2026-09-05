@@ -1,6 +1,9 @@
 #include "extended_dispatch.hpp"
 #include "mdescriptor/cuda/descriptor_dispatch.hpp"
 
+# pytypes.h only declares object::cast<T>; the definitions live here and a
+# missing include surfaces only as an undefined-symbol link error.
+#include <pybind11/cast.h>
 #include <array>
 #include <stdexcept>
 #include <string_view>

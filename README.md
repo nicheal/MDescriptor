@@ -50,59 +50,52 @@ python -m pip install ".[ase]"
 python -m pip install ".[sparse]"
 ```
 
-DPA4 and DPA4C also expose CUDA execution through the optional plugin. Their
-official `.pt` checkpoints are parsed by the bundled restricted NumPy reader
-without importing or installing Torch; the supported default graphs run
-through the C++17/OpenMP backend or the custom CUDA backend, while specialised
-configurations retain the NumPy fallback. No network model download is
-performed.
+DPA4 and DPA4C also expose CUDA execution. Their official `.pt` checkpoints
+are parsed by the bundled restricted NumPy reader without importing or
+installing Torch; the supported default graphs run through the C++17/OpenMP
+backend or the custom CUDA backend, while specialised configurations retain
+the NumPy fallback. No network model download is performed.
 
-The base wheel keeps the CPU backend as its default. All 28 built-in
-descriptors advertise both CPU and CUDA in the registry; the CUDA path is an
-opt-in plugin and never silently falls back to CPU. The CUDA-capable set
-includes the local, matrix, many-body, rotational, NEP, DPA4, and DPA4C
-families listed in `docs/descriptor-inventory.md`:
+Prebuilt wheels ship one package with both backends built in: the CPU backend
+works everywhere and the CUDA backend activates on demand. All 28 built-in
+descriptors advertise both CPU and CUDA in the registry and never silently
+fall back to CPU; without a usable CUDA driver, a CUDA computation reports the
+structured `device_unavailable` error. The CUDA-capable set includes the
+local, matrix, many-body, rotational, NEP, DPA4, and DPA4C families listed in
+`docs/descriptor-inventory.md`.
 
-```bash
-cmake -S . -B build-cuda \
-  -DMDESCRIPTOR_BUILD_CUDA=ON \
-  -DCMAKE_CUDA_ARCHITECTURES=75
-cmake --build build-cuda
-cmake --install build-cuda --prefix /path/to/your/environment
-```
+| Platform | Wheel backends | Runtime requirements |
+| --- | --- | --- |
+| Linux x86_64 | CPU + CUDA | CPU works out of the box; CUDA needs an NVIDIA driver (≥ 525.60.13) and a supported GPU |
+| Windows x86_64 | CPU + CUDA | CPU works out of the box; CUDA needs an NVIDIA driver (≥ 528.33) and a supported GPU |
+| macOS arm64 | CPU | No CUDA backend |
 
-The CUDA target requires a CUDA toolkit and an explicit architecture list.
-Without the plugin or a usable CUDA driver, a CUDA computation reports the
-structured `device_unavailable` error.
+The CUDA backend embeds SASS for sm_75 through sm_90; newer architectures
+(Blackwell and later) run through the embedded compute_90 PTX, which the
+driver JIT-compiles on first use. The CUDA user-space runtime is bundled with
+the wheel, so the target machine needs only the NVIDIA driver — no CUDA
+Toolkit.
 
-基础 wheel 默认使用 CPU。注册表中的 28 个内置描述符全部声明同时支持
-CPU 和 CUDA，覆盖 local、matrix、many-body、rotational、NEP、DPA4 和
-DPA4C 家族，完整清单见 `docs/descriptor-inventory.md`。CUDA 是显式启用的
-独立插件目标，没有插件或不可用驱动时不会静默回退，而是返回结构化的
-`device_unavailable` 错误。
-
-For end-user distribution, the repository also provides an independent
-`MDescriptor-CUDA` wheel. It contains the CUDA extension and the CUDA
-user-space CUDA runtime library, while the host NVIDIA driver remains required.
-The target machine does not need a full CUDA Toolkit:
+Building from source auto-detects a CUDA toolkit (`CUDACXX`, `CUDA_HOME`, or
+nvcc on `PATH`) and enables the CUDA backend when one is found. Pass
+`-DMDESCRIPTOR_BUILD_CUDA=OFF` to opt out or `-DCMAKE_CUDA_ARCHITECTURES=...`
+to target specific GPUs:
 
 ```bash
-python -m build packaging/cuda --wheel --outdir dist \
-  -Ccmake.define.CMAKE_CUDA_ARCHITECTURES=75
-python -m pip install MDescriptor dist/mdescriptor_cuda-*.whl
+python -m pip install . --config-settings=cmake.define.MDESCRIPTOR_BUILD_CUDA=OFF
 ```
 
-The CUDA wheel currently targets Linux and must be built with an architecture
-list covering the deployment GPUs. The convenience wrapper is:
+预编译 wheel 在同一个包里内置 CPU 与 CUDA 两个后端：CPU 开箱即用，CUDA 按
+需激活。注册表中的 28 个内置描述符全部声明同时支持 CPU 和 CUDA，覆盖
+local、matrix、many-body、rotational、NEP、DPA4 和 DPA4C 家族，完整清单见
+`docs/descriptor-inventory.md`；CUDA 不会静默回退到 CPU，驱动不可用时返回
+结构化的 `device_unavailable` 错误。CUDA 后端预编译 sm_75–sm_90 的 SASS，
+更新的架构通过内嵌的 compute_90 PTX 由驱动首次使用时 JIT 编译；CUDA 用户态
+运行时已随 wheel 捆绑，目标机只需 NVIDIA 驱动，无需完整 CUDA Toolkit。
 
-```bash
-python scripts/build_cuda_wheel.py --arch 75
-```
-
-面向最终用户发布时，仓库还提供独立的 `MDescriptor-CUDA` wheel。该 wheel
-包含 CUDA 插件和 CUDA 用户态 Runtime，宿主机仍必须安装 NVIDIA 驱动，
-但目标机不需要完整 CUDA Toolkit。当前 wheel 仅面向 Linux，并且构建时必须
-显式指定目标 GPU 架构。
+源码构建会自动探测 CUDA 工具链（`CUDACXX`、`CUDA_HOME` 或 `PATH` 中的
+nvcc），探测到即同时构建 CUDA 后端；用 `-DMDESCRIPTOR_BUILD_CUDA=OFF`
+关闭，或用 `-DCMAKE_CUDA_ARCHITECTURES=...` 指定目标 GPU 架构。
 
 可选的外部数值对照固定使用 `deepmd-kit==3.2.0`：
 

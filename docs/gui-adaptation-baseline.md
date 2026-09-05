@@ -54,11 +54,11 @@ advertise `execution.devices == ["cpu", "cuda"]`; the canonical names are
 listed in `docs/descriptor-inventory.md`. A GUI should offer only the devices
 declared by the selected descriptor. Selecting
 an undeclared device produces a structured `unsupported_device` configuration
-error; CUDA plugin or driver failures use `device_unavailable`,
+error; CUDA extension or driver failures use `device_unavailable`,
 `backend_error`, or `backend_out_of_memory`.
 
 CUDA execution is synchronous at the public boundary and returns the same
-host-owned NumPy/CSR result contract as CPU execution. The CUDA plugin is
+host-owned NumPy/CSR result contract as CPU execution. The CUDA extension is
 loaded lazily on the first CUDA `compute()` call, so static discovery and
 `describe_descriptor()` do not require a CUDA driver. Cancellation is
 cooperative and is reported as the public `CancelledError`.

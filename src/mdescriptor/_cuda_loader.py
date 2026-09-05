@@ -27,11 +27,12 @@ def load_cuda_plugin(*search_paths: PathLike) -> Path:
     """Load ``mdescriptor._cuda`` and return the directory that provided it.
 
     The optional ``MDESCRIPTOR_CUDA_PLUGIN_DIR`` override is tried first,
-    followed by the caller's explicit paths.  Only when those candidates are
-    unavailable do we fall back to an installed plugin.  A directory is
-    considered a candidate only when it contains a platform extension matching
-    ``_cuda*``; this avoids importing an unrelated package path and keeps the
-    base package driver-free.
+    followed by the caller's explicit paths (development build trees); only
+    when those candidates are unavailable do we fall back to the extension
+    installed beside this package.  A directory is considered a candidate
+    only when it contains a platform extension matching ``_cuda*``; this
+    avoids importing an unrelated package path and keeps the base package
+    driver-free.
     """
 
     candidates: list[Path] = []
@@ -70,9 +71,10 @@ def load_cuda_plugin(*search_paths: PathLike) -> Path:
         location = getattr(module, "__file__", None)
         return Path(location).resolve().parent if location else candidate
 
-    # If no explicit candidate was usable, fall back to an installed plugin.
-    # This import is intentionally last: an editable checkout can have an old
-    # wheel on ``sys.path``, but an explicit build directory must win above it.
+    # If no explicit candidate was usable, fall back to the extension that
+    # ships inside the installed package.  This import is intentionally last:
+    # an editable checkout can have an old wheel on ``sys.path``, but an
+    # explicit build directory must win above it.
     try:
         installed_module: Any = importlib.import_module("mdescriptor._cuda")
     except (ImportError, OSError):

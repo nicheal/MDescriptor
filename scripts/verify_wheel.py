@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+CUDA_RUNTIME_LIBRARY_NAMES = ("libcudart",)
+CUDA_FORBIDDEN_LIBRARY_NAMES = ("libcublas", "libcublasLt")
 
 
 def _restore_paths(value, package_root=None):
@@ -146,6 +150,69 @@ def _verify_vendored_openblas(mdescriptor) -> None:
             raise SystemExit(f"native extension is not linked to bundled OpenBLAS: {probe.stdout}")
 
 
+def _verify_cuda_payload(mdescriptor, expect: str) -> None:
+    """Check the CUDA backend payload inside the wheel tree.
+
+    ``expect`` is ``cuda`` (extension plus bundled runtime must be present),
+    ``cpu-only`` (the CUDA extension must be absent), or ``auto`` (report
+    only).  The Linux ELF closure check also guards against forbidden CUDA
+    libraries such as cuBLAS creeping back into the link.
+    """
+
+    package_root = Path(mdescriptor.__file__).resolve().parent
+    cuda_extensions = sorted(
+        path
+        for path in package_root.iterdir()
+        if path.name.startswith("_cuda") and path.suffix in {".so", ".pyd", ".dylib"}
+    )
+    if expect == "cpu-only":
+        if cuda_extensions:
+            raise SystemExit(f"unexpected CUDA extension in a CPU-only wheel: {cuda_extensions}")
+        print("CUDA payload: absent (CPU-only wheel)")
+        return
+    if expect == "cuda" and len(cuda_extensions) != 1:
+        raise SystemExit(f"expected one CUDA extension, found {cuda_extensions}")
+    if not cuda_extensions:
+        print("CUDA payload: absent")
+        return
+
+    cuda_extension = cuda_extensions[0]
+    if sys.platform.startswith("linux"):
+        runtime_dir = package_root / ".cuda_libs"
+        runtime_files = sorted(
+            path
+            for path in runtime_dir.iterdir()
+            if path.name.startswith(tuple(f"{name}.so." for name in CUDA_RUNTIME_LIBRARY_NAMES))
+        ) if runtime_dir.is_dir() else []
+        if expect == "cuda" and not runtime_files:
+            raise SystemExit(f"missing bundled CUDA runtime under {runtime_dir}")
+        probe = subprocess.run(
+            ["readelf", "-d", str(cuda_extension)], capture_output=True, text=True, check=False
+        )
+        if probe.returncode != 0:
+            raise SystemExit(f"readelf failed for {cuda_extension}: {probe.stderr}")
+        needed = re.findall(r"Shared library: \[([^\]]+)\]", probe.stdout)
+        if not any(
+            library.startswith(f"{name}.so")
+            for name in CUDA_RUNTIME_LIBRARY_NAMES
+            for library in needed
+        ):
+            raise SystemExit(f"{cuda_extension} is not linked to the CUDA runtime")
+        forbidden = [
+            library
+            for name in CUDA_FORBIDDEN_LIBRARY_NAMES
+            for library in needed
+            if library.startswith(f"{name}.so")
+        ]
+        if forbidden:
+            raise SystemExit(f"{cuda_extension} unexpectedly links to {forbidden}")
+    elif sys.platform == "win32":
+        runtime_dlls = sorted(package_root.glob("cudart64*.dll"))
+        if expect == "cuda" and not runtime_dlls:
+            raise SystemExit(f"missing bundled cudart64*.dll beside {cuda_extension}")
+    print(f"CUDA payload: {cuda_extension.name} with bundled runtime")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", type=Path)
@@ -154,6 +221,22 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "tests" / "golden",
     )
+    expect = parser.add_mutually_exclusive_group()
+    expect.add_argument(
+        "--expect-cuda",
+        dest="expect",
+        action="store_const",
+        const="cuda",
+        help="require the CUDA backend and its bundled runtime in the wheel",
+    )
+    expect.add_argument(
+        "--expect-cpu-only",
+        dest="expect",
+        action="store_const",
+        const="cpu-only",
+        help="require the wheel to be free of the CUDA backend",
+    )
+    parser.set_defaults(expect="auto")
     args = parser.parse_args(argv)
     target = None if args.target is None else args.target.resolve()
     if target is not None:
@@ -185,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
     if runtime.get("baseline_version") != mdescriptor.GUI_BASELINE_VERSION:
         raise SystemExit("GUI adaptation baseline version is missing or inconsistent")
     _verify_vendored_openblas(mdescriptor)
+    _verify_cuda_payload(mdescriptor, args.expect)
     names = mdescriptor.list_descriptors()
     if len(names) != 28 or len(set(names)) != 28:
         raise SystemExit(f"unexpected descriptor registry: {names!r}")

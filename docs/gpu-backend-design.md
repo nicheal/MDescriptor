@@ -50,7 +50,7 @@ GPU 不应以 `if device == "cuda"` 的形式散落在各个描述符实现中�
 DescriptorAdapter
   └── BackendKernel
        ├── CpuBackend  → mdescriptor._native
-       └── CudaBackend → 独立 CUDA plugin / mdescriptor._cuda
+       └── CudaBackend → 同包 CUDA 扩展 mdescriptor._cuda
 ```
 
 建议的私有 backend 接口为：
@@ -319,18 +319,20 @@ CUDA 结果至少包含：
 
 ## 10. 构建和发布
 
-现有 CPU `_native` target 保持不变。CUDA 使用独立 target 和 plugin：
+现有 CPU `_native` target 保持不变。CUDA 使用独立 target，与 CPU 后端打进
+同一个 wheel：
 
 ```text
-MDescriptor       # CPU wheel
-MDescriptor-CUDA  # CUDA backend plugin
+MDescriptor  # CPU + CUDA 双后端 wheel
 ```
 
-CUDA plugin 依赖匹配版本的基础包，并提供 `_cuda` 扩展和 backend entry point；不覆盖基础包的 Python 实现文件。
-独立 CUDA wheel 将 CUDA 用户态 Runtime 放在 `mdescriptor/.cuda_libs`，并
-通过 `$ORIGIN/.cuda_libs` 加载；宿主机 NVIDIA 驱动提供 `libcuda`，不随 wheel
-分发。CUDA wheel 的构建入口为 `packaging/cuda/pyproject.toml`，需要在构建时
-显式传入 `CMAKE_CUDA_ARCHITECTURES`。
+`_cuda` 扩展直接安装进 `mdescriptor` 包，与 `_native` 并列；CUDA 用户态
+Runtime 放在 `mdescriptor/.cuda_libs`，通过 `$ORIGIN/.cuda_libs` 加载
+（Windows 上 cudart64 DLL 与 `_cuda.pyd` 同目录）。宿主机 NVIDIA 驱动提供
+`libcuda`，不随 wheel 分发。构建时 `MDESCRIPTOR_BUILD_CUDA` 为三态开关：
+`AUTO`（默认，检测到 CUDA toolkit 即构建）、`ON`（强制，缺失即报错）、
+`OFF`（禁用）。发布 wheel 固定 SASS sm_75/80/86/90 外加 compute_90 PTX
+（更新架构由驱动 JIT），CI 矩阵使用 CUDA 12.8。
 
 ### GPU 描述符依赖审计
 
@@ -341,21 +343,21 @@ CUDA plugin 依赖匹配版本的基础包，并提供 `_cuda` 扩展和 backend
 | DPA4C | `cpp/cuda/src/dpa4c.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
 | 21 个 standalone 描述符 | `cpp/cuda/src/extended_descriptors_*.cu` 自有 descriptor kernels | 无 | `libcudart`；`libcuda` 由宿主驱动提供 |
 
-三者共享 CUDA context、batch/CSR graph 和 Python lazy plugin loader，但不共享
-BLAS runtime。CPU `_native` 路径仍可使用 SciPy/OpenBLAS；这与独立 CUDA wheel
-的依赖边界无关。`MDESCRIPTOR_BUNDLE_CUDA_RUNTIME=ON` 现在只复制
-`libcudart.so.*`，并由 wheel verifier 拒绝 cuBLAS/cuBLASLt 文件或 ELF 依赖。
+三者共享 CUDA context、batch/CSR graph 和 Python lazy CUDA loader，但不共享
+BLAS runtime。CPU `_native` 路径仍可使用 SciPy/OpenBLAS；这与 CUDA 依赖边界
+无关。`MDESCRIPTOR_BUNDLE_CUDA_RUNTIME=ON` 现在只复制 `libcudart`，并由
+wheel verifier 拒绝 cuBLAS/cuBLASLt 文件或 ELF 依赖。
 
 第一阶段支持矩阵：
 
-- Linux x86_64；
+- Linux x86_64 与 Windows x86_64 双后端 wheel，macOS arm64 仅 CPU；
 - 单 GPU；
-- 一个经过 CI 验证的 CUDA toolkit/runtime 主版本；
-- 显式的 `CMAKE_CUDA_ARCHITECTURES`；
+- CUDA 12.8 toolkit/runtime 主版本；
+- 默认 SASS `75-real;80-real;86-real;90-real` + `90-virtual` PTX；
 - 仅支持 `device="cuda"`；
-- 暂不支持 Windows、macOS、ARM、多 GPU 和 GPU index。
+- 暂不支持多 GPU 和 GPU index。
 
-具体 CUDA 版本和最低 compute capability 以实际部署 GPU/driver 与 CI 矩阵为准，并写入 plugin 发布说明。
+具体 CUDA 版本和最低 compute capability 以实际部署 GPU/driver 与 CI 矩阵为准，并写入发布说明。
 
 ## 11. 第一阶段范围
 

@@ -7,7 +7,6 @@ import importlib
 import importlib.machinery
 import importlib.util
 import os
-from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any
 
@@ -87,27 +86,9 @@ def _cuda_factory() -> Any:
 
     try:
         module = importlib.import_module("mdescriptor._cuda")
-    except (ImportError, OSError) as module_error:
-        # A separately distributed plugin may expose the same factory through
-        # an entry point instead of installing a module into the base wheel.
-        try:
-            entries = importlib_metadata.entry_points()
-            if hasattr(entries, "select"):
-                matches = tuple(entries.select(group="mdescriptor.backends", name="cuda"))
-            else:  # pragma: no cover - Python 3.9 compatibility shape
-                legacy_get = getattr(entries, "get", None)
-                matches = tuple(
-                    legacy_get("mdescriptor.backends", ())
-                    if callable(legacy_get)
-                    else ()
-                )
-                matches = tuple(entry for entry in matches if entry.name == "cuda")
-            if not matches:
-                raise module_error
-            module = matches[0].load()
-        except (ImportError, OSError, StopIteration) as exc:
-            _CUDA_LOAD_ERROR = exc
-            raise
+    except (ImportError, OSError) as exc:
+        _CUDA_LOAD_ERROR = exc
+        raise
 
     factory = getattr(module, "create_backend", None)
     if factory is None:
