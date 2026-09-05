@@ -99,6 +99,8 @@ test-sources = [
     "tests",
     "scripts",
     "pyproject.toml",
+    "CMakeLists.txt",
+    "cpp/cuda/src/dpa4.cu",
     "benchmarks/_legacy_oracles/sources.lock.json",
     "benchmarks/_legacy_oracles/soapturbo",
     "benchmarks/_legacy_oracles/lbispectrum",
