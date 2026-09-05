@@ -34,9 +34,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $installer = "$env:RUNNER_TEMP\cuda_12.8.1_windows_network_installer.exe"
+          $installer = "$env:RUNNER_TEMP\cuda_12.8.1_windows_network.exe"
           Invoke-WebRequest `
-            -Uri "https://developer.download.nvidia.com/compute/cuda/12.8.1/network_installers/cuda_12.8.1_windows_network_installer.exe" `
+            -Uri "https://developer.download.nvidia.com/compute/cuda/12.8.1/network_installers/cuda_12.8.1_windows_network.exe" `
             -OutFile $installer
           Start-Process -FilePath $installer -ArgumentList "-s" -Wait
           "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" >> $env:GITHUB_ENV
