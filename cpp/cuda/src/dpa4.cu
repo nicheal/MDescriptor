@@ -723,6 +723,25 @@ void launch_row_major_gemm(
     if (rows <= 0 || columns <= 0 || inner <= 0 || batch_count <= 0) {
         return;
     }
+    // Bound both secondary grid dimensions without changing any dot product.
+    // Use the smallest tile's limit so every dispatch below is launchable.
+    constexpr std::int64_t max_rows = 65535LL * kMatmulTile;
+    constexpr std::int64_t max_batches = 65535;
+    if (rows > max_rows || batch_count > max_batches) {
+        for (std::int64_t batch = 0; batch < batch_count; batch += max_batches) {
+            for (std::int64_t row = 0; row < rows; row += max_rows) {
+                launch_row_major_gemm(
+                    left + batch * left_batch_stride + row * left_row_stride,
+                    right + batch * right_batch_stride,
+                    product + batch * product_batch_stride + row * product_row_stride,
+                    std::min(max_rows, rows - row), columns, inner,
+                    left_row_stride, right_row_stride, product_row_stride,
+                    left_batch_stride, right_batch_stride, product_batch_stride,
+                    std::min(max_batches, batch_count - batch), stream, operation);
+            }
+        }
+        return;
+    }
     const auto fits_fast_index = [](std::int64_t value) {
         return value <= static_cast<std::int64_t>(
             std::numeric_limits<int>::max());

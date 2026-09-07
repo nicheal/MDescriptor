@@ -22,6 +22,31 @@ from mdescriptor.descriptors import DPA4, DPA4C, SOAP, NeighborList
 ROOT = Path(__file__).parents[1]
 
 
+def test_dpa4_blocks_preserve_structures_values_and_progress() -> None:
+    counts = [512] * 32 + [3000, 0, 5]
+    offsets = np.cumsum([0, *counts])
+    batch = StructureBatch(
+        np.ones(offsets[-1], dtype=np.int32),
+        np.column_stack((np.arange(offsets[-1]), np.zeros((offsets[-1], 2)))),
+        np.zeros((len(counts), 3, 3)), np.zeros((len(counts), 3), dtype=np.int32),
+        offsets, tuple(map(str, range(len(counts)))),
+    )
+    received = []
+
+    class Backend:
+        def compute(self, block, control):
+            received.append(block)
+            return {"values": block.positions[:, :1], "row_offsets": block.offsets}
+
+    control = ComputeControl()
+    result = CudaBackend("DPA4", {})._compute_in_structure_blocks(Backend(), batch, control)
+    assert all(block.atoms <= 2048 or block.structures == 1 for block in received)
+    assert tuple(i for block in received for i in block.ids) == batch.ids
+    np.testing.assert_array_equal(result["values"], batch.positions[:, :1])
+    np.testing.assert_array_equal(result["row_offsets"], offsets)
+    assert control.completed() == control.total() == len(counts)
+
+
 def _batch() -> StructureBatch:
     return StructureBatch.from_ase(
         [Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])]

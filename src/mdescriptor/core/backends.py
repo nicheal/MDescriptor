@@ -228,11 +228,17 @@ class CudaBackend:
             control.reset(batch.structures)
         block_size = 32
         results: list[Any] = []
-        for start in range(0, batch.structures, block_size):
+        start = 0
+        while start < batch.structures:
             if control is not None and control.cancelled():
                 raise CancelledError("descriptor computation was cancelled")
             stop = min(start + block_size, batch.structures)
             atom_start = int(batch.offsets[start])
+            # DPA4 stores large edge tensors. Keep ordinary multi-frame
+            # workloads bounded while preserving each structure's full graph.
+            if self.name == "DPA4":
+                while stop > start + 1 and int(batch.offsets[stop]) - atom_start > 2048:
+                    stop -= 1
             block = _slice_structure_batch(batch, start, stop)
             result = implementation.compute(block, _CudaBlockControl(control))
             if isinstance(result, Mapping) and "pair_records" in result:
@@ -253,6 +259,7 @@ class CudaBackend:
                     if control.cancelled():
                         raise CancelledError("descriptor computation was cancelled")
                     control.mark_completed()
+            start = stop
         return _combine_cuda_block_results(results)
 
     def _prepare_matrix_width(self, batch: StructureBatch) -> None:
