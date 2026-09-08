@@ -34,6 +34,7 @@ docs/*
 !docs/numerical-baselines.md
 !docs/gui-adaptation-baseline.md
 !docs/gpu-backend-design.md
+!docs/dpa4-strided-projections.md
 research/
 mdescriptor/*.so
 mdescriptor/*.pyd

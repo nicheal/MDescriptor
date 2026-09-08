@@ -45,6 +45,33 @@ def test_official_checkpoint_and_batch_output():
     assert result.labels[0] == "dpa4:scalar,channel=0"
 
 
+def test_grid_tiles_preserve_values_across_thread_counts():
+    # Three 64-node tiles, including a one-node tail. Separate H2 pairs keep
+    # the edge work small while exercising every grid branch and its scratch.
+    positions = np.zeros((129, 3))
+    positions[:, 0] = (np.arange(129) // 2) * 10.0
+    positions[1::2, 0] += 0.9
+    batch = StructureBatch(
+        np.ones(129, dtype=np.int32),
+        positions,
+        np.zeros((1, 3, 3)),
+        np.zeros((1, 3), dtype=np.int32),
+        np.array([0, 129], dtype=np.int64),
+        ("grid-tiles",),
+    )
+    expected = None
+    for threads in (1, 2, 4):
+        calculator = DPA4(execution=ExecutionOptions(num_threads=threads))
+        try:
+            actual = calculator.compute(batch).values
+        finally:
+            calculator.close()
+        if expected is None:
+            expected = actual
+        else:
+            np.testing.assert_array_equal(actual, expected)
+
+
 def test_geometry_rotation_and_atom_permutation_are_invariant():
     calculator = DPA4(model=MODEL)
     batch = _batch()
@@ -80,13 +107,27 @@ def test_geometry_rotation_and_atom_permutation_are_invariant():
     np.testing.assert_allclose(calculator.compute(permuted).values, reference[order], atol=2e-5)
 
 
-def test_native_backend_matches_bundled_numpy_reference():
+@pytest.mark.parametrize("dense", [False, True], ids=["small", "edge-tile-tail"])
+def test_native_backend_matches_bundled_numpy_reference(dense: bool):
+    batch = _batch()
+    if dense:
+        # 33 mutually neighboring atoms yield 1056 directed edges, crossing
+        # the 1024-edge MLP tile. Include both endpoint types and an isolated atom.
+        positions = np.indices((3, 3, 4)).reshape(3, -1).T[:33] * 1.2
+        batch = StructureBatch(
+            np.resize(np.array([1, 8], dtype=np.int32), 34),
+            np.vstack([positions, [20.0, 20.0, 20.0]]),
+            np.zeros((1, 3, 3)),
+            np.zeros((1, 3), dtype=np.int32),
+            np.array([0, 34], dtype=np.int64),
+            ("dense-with-isolated",),
+        )
     calculator = DPA4(model=MODEL)
     _info, checkpoint = load_dpa_checkpoint(MODEL, expected_descriptor="DPA4")
     reference_runtime = new_runtime(MODEL, checkpoint)
     try:
-        expected = compute_batch(reference_runtime, _batch())
-        actual = calculator.compute(_batch()).values
+        expected = compute_batch(reference_runtime, batch)
+        actual = calculator.compute(batch).values
         np.testing.assert_allclose(actual, expected, rtol=2e-5, atol=4e-5)
     finally:
         calculator.close()

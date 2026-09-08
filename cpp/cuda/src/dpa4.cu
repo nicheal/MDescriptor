@@ -51,6 +51,10 @@ constexpr std::size_t kGridScratchStride =
 // is still bounded independently of the atom count, so increasing it does
 // not make the descriptor workspace scale quadratically with a batch.
 constexpr int kGridTileNodes = 128;
+// Message grids use 64 channels instead of the largest branch's 384, so
+// the existing scratch buffers hold six times as many message nodes.
+constexpr int kMessageGridTileNodes =
+    kGridTileNodes * kGridScratchChannels / kChannels;
 constexpr float kEpsilon = 1.0e-7F;
 constexpr float kNormEpsilon = 1.0e-5F;
 
@@ -354,7 +358,6 @@ struct WorkspaceLayout {
     std::size_t radial = 0;
     std::size_t radial_compact = 0;
     std::size_t radial_input = 0;
-    std::size_t radial_sign = 0;
     std::size_t radial_projection = 0;
     std::size_t radial_m1_output = 0;
     std::size_t envelope = 0;
@@ -399,7 +402,6 @@ WorkspaceLayout make_workspace_layout(
     result.radial = reserve(edges * 256U * sizeof(float), alignof(float));
     result.radial_compact = reserve(edges * 25U * sizeof(float), alignof(float));
     result.radial_input = reserve(edges * 256U * sizeof(float), alignof(float));
-    result.radial_sign = reserve(edges * 2U * 192U * sizeof(float), alignof(float));
     result.radial_projection = reserve(edges * 256U * sizeof(float), alignof(float));
     result.radial_m1_output = reserve(edges * 2U * 384U * sizeof(float), alignof(float));
     result.envelope = reserve(edges * sizeof(float), alignof(float));
@@ -430,7 +432,6 @@ Value* workspace_data(void* workspace, std::size_t offset) {
 
 constexpr int kMatmulTile = 16;
 constexpr int kLargeMatmulTile = 64;
-constexpr int kMatmulThreadTile = 4;
 
 // Row-major GEMM used by the fixed DPA4 graph.  The descriptor only needs a
 // small, known set of FP32 projections, so a tiled kernel avoids carrying an
@@ -495,10 +496,10 @@ __global__ void row_major_strided_gemm_kernel(
     }
 }
 
-// The wide DPA4 projections have at least 64 output columns.  Giving each
-// thread a 4x4 output tile cuts the number of blocks and reuses the same
-// weight tile across sixteen accumulators.  The small kernel above remains
-// the better choice for the 25/32-column radial projections and tiny batches.
+// Each half warp spans 16 adjacent columns. A thread holds eight rows
+// and four/eight column accumulators, reusing each shared-memory load.
+// Padding A separates the banks used by the two row groups in a warp.
+template <int kColumnTile>
 __global__ void row_major_wide_gemm_kernel(
     const float* __restrict__ left,
     const float* __restrict__ right,
@@ -513,192 +514,80 @@ __global__ void row_major_wide_gemm_kernel(
     int right_batch_stride,
     int product_batch_stride,
     int batch_count) {
-    constexpr int kThreadsPerRow = kLargeMatmulTile / kMatmulThreadTile;
-    __shared__ float left_tile[kLargeMatmulTile][kMatmulTile];
-    __shared__ float right_tile[kMatmulTile][kLargeMatmulTile];
-
-    const int thread = static_cast<int>(threadIdx.x);
-    const int thread_row = thread / kThreadsPerRow;
-    const int thread_column = thread % kThreadsPerRow;
-    const int row =
-        static_cast<int>(blockIdx.y) * kLargeMatmulTile
-        + thread_row * kMatmulThreadTile;
-    const int column =
-        static_cast<int>(blockIdx.x) * kLargeMatmulTile
-        + thread_column * kMatmulThreadTile;
-    const int batch = static_cast<int>(blockIdx.z);
-    if (batch >= batch_count) {
-        return;
-    }
-
-    const float* left_batch = left + batch * left_batch_stride;
-    const float* right_batch = right + batch * right_batch_stride;
-    float* product_batch = product + batch * product_batch_stride;
-    float values[kMatmulThreadTile][kMatmulThreadTile] = {};
-
-    for (int start = 0; start < inner; start += kMatmulTile) {
-        for (int index = thread; index < kLargeMatmulTile * kMatmulTile;
-             index += blockDim.x) {
-            const int tile_row = index / kMatmulTile;
-            const int tile_column = index % kMatmulTile;
-            const int source_row =
-                static_cast<int>(blockIdx.y) * kLargeMatmulTile
-                + tile_row;
-            const int source_column = start + tile_column;
-            left_tile[tile_row][tile_column] =
-                source_row < rows && source_column < inner
-                ? left_batch[source_row * left_row_stride + source_column]
-                : 0.0F;
-        }
-        for (int index = thread; index < kMatmulTile * kLargeMatmulTile;
-             index += blockDim.x) {
-            const int tile_row = index / kLargeMatmulTile;
-            const int tile_column = index % kLargeMatmulTile;
-            const int source_row = start + tile_row;
-            const int source_column =
-                static_cast<int>(blockIdx.x) * kLargeMatmulTile
-                + tile_column;
-            right_tile[tile_row][tile_column] =
-                source_row < inner && source_column < columns
-                ? right_batch[source_row * right_row_stride + source_column]
-                : 0.0F;
-        }
-        __syncthreads();
-        // As above, the last K tile is zero-padded, so keep the reduction
-        // fixed-width and let nvcc unroll it.
-#pragma unroll
-        for (int index = 0; index < kMatmulTile; ++index) {
-#pragma unroll
-            for (int output_row = 0; output_row < kMatmulThreadTile;
-                 ++output_row) {
-                const float left_value = left_tile[thread_row * kMatmulThreadTile
-                    + output_row][index];
-#pragma unroll
-                for (int output_column = 0;
-                     output_column < kMatmulThreadTile; ++output_column) {
-                    values[output_row][output_column] = fmaf(
-                        left_value,
-                        right_tile[index][thread_column * kMatmulThreadTile
-                            + output_column],
-                        values[output_row][output_column]);
-                }
-            }
-        }
-        __syncthreads();
-    }
-    for (int output_row = 0; output_row < kMatmulThreadTile; ++output_row) {
-        for (int output_column = 0;
-             output_column < kMatmulThreadTile; ++output_column) {
-            const int destination_row = row + output_row;
-            const int destination_column = column + output_column;
-            if (destination_row < rows && destination_column < columns) {
-                product_batch[destination_row * product_row_stride
-                    + destination_column] = values[output_row][output_column];
-            }
-        }
-    }
-}
-
-// A 128-column tile is a better fit for the large radial projections and
-// grid/readout matrices: each block reuses the weight tile over twice as many
-// output columns without increasing the 32 accumulators held by a thread.
-template <int kRowTile, int kColumnTile, int kThreads>
-__global__ void row_major_wide_columns_gemm_kernel(
-    const float* __restrict__ left,
-    const float* __restrict__ right,
-    float* __restrict__ product,
-    int rows,
-    int columns,
-    int inner,
-    int left_row_stride,
-    int right_row_stride,
-    int product_row_stride,
-    int left_batch_stride,
-    int right_batch_stride,
-    int product_batch_stride,
-    int batch_count) {
-    constexpr int kThreadsPerRow = kColumnTile / kMatmulThreadTile;
-    constexpr int kThreadRows = kThreads / kThreadsPerRow;
-    constexpr int kThreadTileRows =
-        kRowTile / kThreadRows;
-    __shared__ float left_tile[kRowTile][kMatmulTile];
+    constexpr int kThreadsPerRow = 16;
+    constexpr int kRowsPerThread = 8;
+    constexpr int kColumnsPerThread = kColumnTile / kThreadsPerRow;
+    constexpr int kThreads = (kLargeMatmulTile / kRowsPerThread) * kThreadsPerRow;
+    __shared__ float left_tile[kLargeMatmulTile][kMatmulTile + 1];
     __shared__ float right_tile[kMatmulTile][kColumnTile];
 
     const int thread = static_cast<int>(threadIdx.x);
     const int thread_row = thread / kThreadsPerRow;
     const int thread_column = thread % kThreadsPerRow;
-    const int row =
-        static_cast<int>(blockIdx.y) * kRowTile
-        + thread_row * kThreadTileRows;
-    const int column =
-        static_cast<int>(blockIdx.x) * kColumnTile
-        + thread_column * kMatmulThreadTile;
+    const int first_row = static_cast<int>(blockIdx.y) * kLargeMatmulTile;
+    const int first_column = static_cast<int>(blockIdx.x) * kColumnTile;
     const int batch = static_cast<int>(blockIdx.z);
     if (batch >= batch_count) {
         return;
     }
-
     const float* left_batch = left + batch * left_batch_stride;
     const float* right_batch = right + batch * right_batch_stride;
     float* product_batch = product + batch * product_batch_stride;
-    float values[kThreadTileRows][kMatmulThreadTile] = {};
+    float values[kRowsPerThread][kColumnsPerThread] = {};
 
     for (int start = 0; start < inner; start += kMatmulTile) {
-        for (int index = thread; index < kRowTile * kMatmulTile;
-             index += blockDim.x) {
+        for (int index = thread; index < kLargeMatmulTile * kMatmulTile; index += kThreads) {
             const int tile_row = index / kMatmulTile;
             const int tile_column = index % kMatmulTile;
-            const int source_row =
-                static_cast<int>(blockIdx.y) * kRowTile
-                + tile_row;
-            const int source_column = start + tile_column;
             left_tile[tile_row][tile_column] =
-                source_row < rows && source_column < inner
-                ? left_batch[source_row * left_row_stride + source_column]
+                first_row + tile_row < rows && start + tile_column < inner
+                ? left_batch[(first_row + tile_row) * left_row_stride + start + tile_column]
                 : 0.0F;
         }
-        for (int index = thread; index < kMatmulTile * kColumnTile;
-             index += blockDim.x) {
+        for (int index = thread; index < kMatmulTile * kColumnTile; index += kThreads) {
             const int tile_row = index / kColumnTile;
             const int tile_column = index % kColumnTile;
-            const int source_row = start + tile_row;
-            const int source_column =
-                static_cast<int>(blockIdx.x) * kColumnTile
-                + tile_column;
             right_tile[tile_row][tile_column] =
-                source_row < inner && source_column < columns
-                ? right_batch[source_row * right_row_stride + source_column]
+                start + tile_row < inner && first_column + tile_column < columns
+                ? right_batch[(start + tile_row) * right_row_stride + first_column + tile_column]
                 : 0.0F;
         }
         __syncthreads();
+        // Keep the original increasing-K FP32 FMA order, including padding.
 #pragma unroll
         for (int index = 0; index < kMatmulTile; ++index) {
+            float left_values[kRowsPerThread];
+            float right_values[kColumnsPerThread];
 #pragma unroll
-            for (int output_row = 0; output_row < kThreadTileRows;
-                 ++output_row) {
-                const float left_value = left_tile[
-                    thread_row * kThreadTileRows + output_row][index];
+            for (int row = 0; row < kRowsPerThread; ++row) {
+                left_values[row] = left_tile[thread_row * kRowsPerThread + row][index];
+            }
 #pragma unroll
-                for (int output_column = 0;
-                     output_column < kMatmulThreadTile; ++output_column) {
-                    values[output_row][output_column] = fmaf(
-                        left_value,
-                        right_tile[index][thread_column * kMatmulThreadTile
-                            + output_column],
-                        values[output_row][output_column]);
+            for (int column = 0; column < kColumnsPerThread; ++column) {
+                right_values[column] =
+                    right_tile[index][thread_column + column * kThreadsPerRow];
+            }
+#pragma unroll
+            for (int row = 0; row < kRowsPerThread; ++row) {
+#pragma unroll
+                for (int column = 0; column < kColumnsPerThread; ++column) {
+                    values[row][column] = fmaf(
+                        left_values[row], right_values[column], values[row][column]);
                 }
             }
         }
         __syncthreads();
     }
-    for (int output_row = 0; output_row < kThreadTileRows; ++output_row) {
-        for (int output_column = 0;
-             output_column < kMatmulThreadTile; ++output_column) {
-            const int destination_row = row + output_row;
-            const int destination_column = column + output_column;
+#pragma unroll
+    for (int row = 0; row < kRowsPerThread; ++row) {
+#pragma unroll
+        for (int column = 0; column < kColumnsPerThread; ++column) {
+            const int destination_row = first_row + thread_row * kRowsPerThread + row;
+            const int destination_column =
+                first_column + thread_column + column * kThreadsPerRow;
             if (destination_row < rows && destination_column < columns) {
-                product_batch[destination_row * product_row_stride
-                    + destination_column] = values[output_row][output_column];
+                product_batch[destination_row * product_row_stride + destination_column] =
+                    values[row][column];
             }
         }
     }
@@ -755,44 +644,24 @@ void launch_row_major_gemm(
         && fits_fast_index(right_batch_stride)
         && fits_fast_index(product_batch_stride)
         && fits_fast_index(batch_count);
-    if (fast_indexable && columns >= 128 && rows >= 32) {
-        constexpr int kColumnTile = 128;
+    if (fast_indexable && columns >= 64 && rows >= 32) {
+        // Wide, deep projections amortize the extra registers of 128 columns.
+        // A 64-column tile fits the 64/192-channel and short-K grid projections.
+        const bool wide = columns >= 384 && inner >= 128 && rows >= 64;
+        const int column_tile = wide ? 128 : 64;
         const dim3 grid(
-            static_cast<unsigned int>(
-                (columns + kColumnTile - 1) / kColumnTile),
-            static_cast<unsigned int>(
-                (rows + kLargeMatmulTile - 1) / kLargeMatmulTile),
+            static_cast<unsigned int>((columns + column_tile - 1) / column_tile),
+            static_cast<unsigned int>((rows + kLargeMatmulTile - 1) / kLargeMatmulTile),
             static_cast<unsigned int>(batch_count));
-        row_major_wide_columns_gemm_kernel<
-            kLargeMatmulTile, kColumnTile, 256><<<
-            grid, dim3(16 * 16, 1, 1), 0, stream>>>(
+        const auto kernel = wide
+            ? row_major_wide_gemm_kernel<128> : row_major_wide_gemm_kernel<64>;
+        kernel<<<grid, 128, 0, stream>>>(
             left, right, product,
             static_cast<int>(rows), static_cast<int>(columns),
             static_cast<int>(inner), static_cast<int>(left_row_stride),
-            static_cast<int>(right_row_stride),
-            static_cast<int>(product_row_stride),
-            static_cast<int>(left_batch_stride),
-            static_cast<int>(right_batch_stride),
-            static_cast<int>(product_batch_stride),
-            static_cast<int>(batch_count));
-    } else if (fast_indexable && columns >= kLargeMatmulTile && rows >= 32) {
-        const dim3 grid(
-            static_cast<unsigned int>(
-                (columns + kLargeMatmulTile - 1) / kLargeMatmulTile),
-            static_cast<unsigned int>(
-                (rows + kLargeMatmulTile - 1) / kLargeMatmulTile),
-            static_cast<unsigned int>(batch_count));
-        row_major_wide_gemm_kernel<<<
-            grid, dim3(16 * 16, 1, 1), 0, stream>>>(
-            left, right, product,
-            static_cast<int>(rows), static_cast<int>(columns),
-            static_cast<int>(inner), static_cast<int>(left_row_stride),
-            static_cast<int>(right_row_stride),
-            static_cast<int>(product_row_stride),
-            static_cast<int>(left_batch_stride),
-            static_cast<int>(right_batch_stride),
-            static_cast<int>(product_batch_stride),
-            static_cast<int>(batch_count));
+            static_cast<int>(right_row_stride), static_cast<int>(product_row_stride),
+            static_cast<int>(left_batch_stride), static_cast<int>(right_batch_stride),
+            static_cast<int>(product_batch_stride), static_cast<int>(batch_count));
     } else {
         const dim3 grid(
             static_cast<unsigned int>((columns + kMatmulTile - 1) / kMatmulTile),
@@ -1341,7 +1210,6 @@ __global__ void prepare_finalize_kernel(
     const float* degree_inverse,
     const float* gie,
     DeviceModel model,
-    const std::int32_t* active_nodes,
     float* radial_output,
     float* state) {
     const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
@@ -1424,7 +1292,6 @@ __global__ void prepare_finalize_kernel(
             }
         }
     }
-    (void)active_nodes;
 }
 
 __global__ void equivariant_copy_or_norm_kernel(
@@ -1480,37 +1347,28 @@ __global__ void equivariant_copy_or_norm_kernel(
     }
 }
 
-__global__ void copy_state_kernel(
-    const float* source,
-    std::int64_t atoms,
-    float* destination) {
-    const std::int64_t node = static_cast<std::int64_t>(blockIdx.x);
-    if (node >= atoms) {
-        return;
+// The reference skips interaction blocks only for an entire edgeless frame.
+// Read all per-node flags before broadcasting so the in-place update is safe.
+__global__ void broadcast_frame_activity_kernel(
+    const std::int64_t* offsets,
+    std::int32_t* active_nodes) {
+    const std::int64_t frame = static_cast<std::int64_t>(blockIdx.x);
+    const std::int64_t begin = offsets[frame];
+    const std::int64_t end = offsets[frame + 1];
+    __shared__ int active;
+    if (threadIdx.x == 0) {
+        active = 0;
     }
-    for (int index = static_cast<int>(threadIdx.x);
-         index < kFullDim * kChannels; index += blockDim.x) {
-        destination[node * kFullDim * kChannels + index] =
-            source[node * kFullDim * kChannels + index];
+    __syncthreads();
+    for (std::int64_t node = begin + threadIdx.x; node < end; node += blockDim.x) {
+        if (active_nodes[node] != 0) {
+            atomicExch(&active, 1);
+            break;
+        }
     }
-}
-
-__global__ void restore_inactive_state_kernel(
-    const float* snapshot,
-    const std::int32_t* active,
-    std::int64_t atoms,
-    float* state) {
-    const std::int64_t node = static_cast<std::int64_t>(blockIdx.x);
-    if (node >= atoms) {
-        return;
-    }
-    if (active[node] != 0) {
-        return;
-    }
-    for (int index = static_cast<int>(threadIdx.x);
-         index < kFullDim * kChannels; index += blockDim.x) {
-        state[node * kFullDim * kChannels + index] =
-            snapshot[node * kFullDim * kChannels + index];
+    __syncthreads();
+    for (std::int64_t node = begin + threadIdx.x; node < end; node += blockDim.x) {
+        active_nodes[node] = active;
     }
 }
 
@@ -1619,39 +1477,6 @@ __global__ void radial_mix_initial_kernel(
         }
         local[edge * kReducedDim * kChannels + index] =
             value * radial_channel_basis[channel];
-    }
-}
-
-__global__ void pack_radial_values_kernel(
-    std::int64_t edges,
-    const float* local,
-    float* packed) {
-    const std::size_t edge = static_cast<std::size_t>(blockIdx.x);
-    if (edge >= static_cast<std::size_t>(edges)) {
-        return;
-    }
-    for (int index = static_cast<int>(threadIdx.x); index < 256;
-         index += blockDim.x) {
-        packed[edge * 256 + index] =
-            local[edge * kReducedDim * kChannels + index];
-    }
-}
-
-__global__ void pack_radial_m1_inputs_kernel(
-    std::int64_t edges,
-    const float* local,
-    float* packed) {
-    const std::size_t edge = static_cast<std::size_t>(blockIdx.x);
-    if (edge >= static_cast<std::size_t>(edges)) {
-        return;
-    }
-    for (int channel = static_cast<int>(threadIdx.x); channel < 192;
-         channel += blockDim.x) {
-        const std::size_t local_offset = edge * kReducedDim * kChannels;
-        packed[edge * 192 + channel] =
-            local[local_offset + 4 * kChannels + channel];
-        packed[(static_cast<std::size_t>(edges) + edge) * 192 + channel] =
-            local[local_offset + 7 * kChannels + channel];
     }
 }
 
@@ -2057,69 +1882,23 @@ __global__ void attention_kernel(
     }
 }
 
-__global__ void message_grid_kernel(
+__global__ void message_grid_post_kernel(
     const float* aggregate,
     const float* context,
     std::int64_t node_begin,
     std::int64_t tile_nodes,
     DeviceBlock block,
-    const float* grid_to,
-    const float* grid_from,
-    float* scratch_q,
-    float* scratch_c,
-    float* scratch_product,
+    const float* coefficients,
     float* output) {
-    // One block owns one atom.  The old launch used one thread per atom and
-    // serialized the two grid projections and their contractions inside that
-    // thread.  These are batched GEMMs in deepmd-kit, so distribute the
-    // independent output elements over the block instead.
     const std::int64_t local_node = static_cast<std::int64_t>(blockIdx.x);
     if (local_node >= tile_nodes) {
         return;
     }
     const int lane = static_cast<int>(threadIdx.x);
     const std::int64_t node = node_begin + local_node;
-    float* query_projection = scratch_q + local_node * kGridScratchStride;
-    float* context_projection = scratch_c + local_node * kGridScratchStride;
-    float* product = scratch_product + local_node * kGridScratchStride;
     const float* query = aggregate + node * kFullDim * kChannels;
     const float* ctx = context + node * kFullDim * kChannels;
-
-    // First form the coefficient projections once.  The previous loop did
-    // this same contraction independently for every grid row.
-    for (int flat = lane; flat < kGridCoeff * 64; flat += blockDim.x) {
-        const int coefficient = flat / 64;
-        const int channel = flat % 64;
-        const int row = coefficient / kFrames;
-        const int frame = coefficient % kFrames;
-        const int degree = degree_for_row(row);
-        float q_coeff = 0.0F;
-        float c_coeff = 0.0F;
-        for (int input_channel = 0; input_channel < 64; ++input_channel) {
-            const float weight = block.message_frame_expand[
-                degree * 64 * 192 + input_channel * 192
-                + frame * 64 + channel];
-            q_coeff += query[row * 64 + input_channel] * weight;
-            c_coeff += ctx[row * 64 + input_channel] * weight;
-        }
-        query_projection[flat] = q_coeff;
-        context_projection[flat] = c_coeff;
-    }
-    __syncthreads();
-
-    for (int flat = lane; flat < kGridSize * 64; flat += blockDim.x) {
-        const int grid_row = flat / 64;
-        const int channel = flat % 64;
-        float query_value = 0.0F;
-        float context_value = 0.0F;
-        for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
-            const float projector = grid_to[grid_row * kGridCoeff + coefficient];
-            query_value += projector * query_projection[coefficient * 64 + channel];
-            context_value += projector * context_projection[coefficient * 64 + channel];
-        }
-        product[flat] = query_value * context_value;
-    }
-    __syncthreads();
+    const float* query_projection = coefficients + local_node * kGridCoeff * kChannels;
 
     __shared__ float scalar_pair[128];
     __shared__ float scalar_out[64];
@@ -2137,20 +1916,6 @@ __global__ void message_grid_kernel(
                 * block.message_scalar_gate[input * 64 + index];
         }
         scalar_gate[index] = d_sigmoid(value);
-    }
-    __syncthreads();
-
-    // Cache the grid-to-coefficient contraction once per packed coefficient
-    // and input channel instead of recomputing it for every output channel.
-    for (int flat = lane; flat < kGridCoeff * 64; flat += blockDim.x) {
-        const int coefficient = flat / 64;
-        const int input = flat % 64;
-        float value = 0.0F;
-        for (int grid_row = 0; grid_row < kGridSize; ++grid_row) {
-            value += grid_from[coefficient * kGridSize + grid_row]
-                * product[grid_row * 64 + input];
-        }
-        query_projection[flat] = value;
     }
     __syncthreads();
 
@@ -2327,9 +2092,11 @@ __global__ void linear2_residual_kernel(
     const float* activation,
     std::int64_t atoms,
     DeviceBlock block,
+    const std::int32_t* active_nodes,
     float* new_state) {
     const std::int64_t node = static_cast<std::int64_t>(blockIdx.x);
-    if (node >= atoms) {
+    // new_state still holds the pre-block state; leave edgeless frames intact.
+    if (node >= atoms || active_nodes[node] == 0) {
         return;
     }
     const int lane = static_cast<int>(threadIdx.x);
@@ -2545,6 +2312,65 @@ void so3_linear(
     }
 }
 
+void message_grid(
+    const float* aggregate,
+    const float* context,
+    std::int64_t node_begin,
+    std::int64_t tile_nodes,
+    const DeviceBlock& block,
+    const float* grid_to,
+    const float* grid_from,
+    float* scratch0,
+    float* scratch1,
+    float* scratch2,
+    float* output,
+    cudaStream_t stream) {
+    constexpr int coefficient_stride = kGridCoeff * kChannels;
+    constexpr int grid_stride = kGridSize * kChannels;
+    for (int degree = 0; degree < 4; ++degree) {
+        const int row = degree * degree;
+        const int width = 2 * degree + 1;
+        const float* weights = block.message_frame_expand + degree * 64 * 192;
+        const std::int64_t input_offset = node_begin * 1024 + row * 64;
+        const int output_offset = row * 192;
+        launch_row_major_gemm(
+            aggregate + input_offset, weights, scratch0 + output_offset,
+            tile_nodes, 192, 64, 1024, 192, coefficient_stride,
+            64, 0, 192, width, stream,
+            "DPA4 message query expansion launch failed");
+        launch_row_major_gemm(
+            context + input_offset, weights, scratch1 + output_offset,
+            tile_nodes, 192, 64, 1024, 192, coefficient_stride,
+            64, 0, 192, width, stream,
+            "DPA4 message context expansion launch failed");
+    }
+    // Reuse the same three tile buffers throughout the contractions.
+    launch_row_major_gemm(
+        grid_to, scratch0, scratch2,
+        kGridSize, 64, kGridCoeff, kGridCoeff, 64, 64,
+        0, coefficient_stride, grid_stride, tile_nodes, stream,
+        "DPA4 message query grid launch failed");
+    launch_row_major_gemm(
+        grid_to, scratch1, scratch0,
+        kGridSize, 64, kGridCoeff, kGridCoeff, 64, 64,
+        0, coefficient_stride, grid_stride, tile_nodes, stream,
+        "DPA4 message context grid launch failed");
+    const std::size_t count = static_cast<std::size_t>(tile_nodes) * grid_stride;
+    grid_product_kernel<<<static_cast<unsigned int>((count + 255) / 256), 256, 0, stream>>>(
+        scratch2, scratch0, count, scratch1);
+    launch_check(cudaGetLastError(), "DPA4 message grid product launch failed");
+    launch_row_major_gemm(
+        grid_from, scratch1, scratch0,
+        kGridCoeff, 64, kGridSize, kGridSize, 64, 64,
+        0, grid_stride, coefficient_stride, tile_nodes, stream,
+        "DPA4 message coefficient projection launch failed");
+    // Keep the original gate/contraction accumulation order, including the
+    // separate scalar residual, so this optimization does not reassociate it.
+    message_grid_post_kernel<<<static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
+        aggregate, context, node_begin, tile_nodes, block, scratch0, output);
+    launch_check(cudaGetLastError(), "DPA4 message grid contraction launch failed");
+}
+
 void output_grid(
     const float* hidden,
     std::int64_t node_begin,
@@ -2700,8 +2526,6 @@ void radial_so2(
     const float* radial,
     const DeviceBlock& block,
     float* radial_compact,
-    float* radial_input,
-    float* radial_sign,
     float* radial_projection,
     float* radial_m1_output,
     float* local,
@@ -2723,22 +2547,19 @@ void radial_so2(
     launch_check(cudaGetLastError(), "DPA4 initial radial mix launch failed");
 
     for (int layer = 0; layer < 4; ++layer) {
-        pack_radial_values_kernel<<<
-            static_cast<unsigned int>(edges), 256, 0, stream>>>(
-            edges, local, radial_input);
-        launch_check(cudaGetLastError(), "DPA4 radial m0 pack launch failed");
+        // The m=0 sector occupies the first 256 values of each 640-value edge.
+        // Read it directly using the GEMM row stride.
         launch_row_major_gemm(
-            radial_input, block.so2_m0[layer], radial_projection,
-            edges, 256, 256, 256, 256, 256, 0, 0, 0, 1, stream,
+            local, block.so2_m0[layer], radial_projection,
+            edges, 256, 256, kReducedDim * kChannels, 256, 256, 0, 0, 0, 1, stream,
             "DPA4 radial m0 projection launch failed");
 
-        pack_radial_m1_inputs_kernel<<<
-            static_cast<unsigned int>(edges), 256, 0, stream>>>(
-            edges, local, radial_sign);
-        launch_check(cudaGetLastError(), "DPA4 radial m1 pack launch failed");
+        // The two signed sectors share weights. Batch them directly from
+        // their interleaved edge storage into the two contiguous output slabs.
         launch_row_major_gemm(
-            radial_sign, block.so2_m1[layer], radial_m1_output,
-            2 * edges, 384, 192, 192, 384, 384, 0, 0, 0, 1, stream,
+            local + 4 * kChannels, block.so2_m1[layer], radial_m1_output,
+            edges, 384, 192, kReducedDim * kChannels, 384, 384,
+            3 * kChannels, 0, edges * 384, 2, stream,
             "DPA4 radial m1 projection launch failed");
         radial_apply_kernel<<<
             static_cast<unsigned int>(edges), 256, 0, stream>>>(
@@ -3113,7 +2934,6 @@ std::vector<double> DeviceDpa4Model::compute(
     float* radial = workspace_data<float>(workspace, layout.radial);
     float* radial_compact = workspace_data<float>(workspace, layout.radial_compact);
     float* radial_input = workspace_data<float>(workspace, layout.radial_input);
-    float* radial_sign = workspace_data<float>(workspace, layout.radial_sign);
     float* radial_projection = workspace_data<float>(workspace, layout.radial_projection);
     float* radial_m1_output = workspace_data<float>(workspace, layout.radial_m1_output);
     float* envelopes = workspace_data<float>(workspace, layout.envelope);
@@ -3208,14 +3028,14 @@ std::vector<double> DeviceDpa4Model::compute(
     prepare_finalize_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
         graph.offsets(), graph.atoms(), graph.shifts(), device_type_indices,
         batch.atoms(), state1, state1 + 640, gie, model_->device,
-        static_cast<const std::int32_t*>(model_->active_nodes_device->pointer),
         radial, state0);
     launch_check(cudaGetLastError(), "DPA4 prepare finalize launch failed");
+    broadcast_frame_activity_kernel<<<
+        static_cast<unsigned int>(batch.structures()), 128, 0, context.stream()>>>(
+        batch.offsets(), static_cast<std::int32_t*>(model_->active_nodes_device->pointer));
+    launch_check(cudaGetLastError(), "DPA4 frame activity launch failed");
     for (int block_index = 0; block_index < 3 && has_real_edges; ++block_index) {
         const DeviceBlock block = model_->block_views[block_index];
-        copy_state_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
-            state0, batch.atoms(), message);
-        launch_check(cudaGetLastError(), "DPA4 block snapshot launch failed");
         equivariant_copy_or_norm_kernel<<<node_blocks, 128, 0, context.stream()>>>(
             state0, batch.atoms(), block.pre_norm_enabled,
             block.pre_norm_scale, block.pre_norm_bias, block.pre_norm_balance,
@@ -3232,7 +3052,7 @@ std::vector<double> DeviceDpa4Model::compute(
             launch_check(cudaGetLastError(), "DPA4 local rotation launch failed");
             radial_so2(
                 static_cast<std::int64_t>(edges), radial, block,
-                radial_compact, radial_input, radial_sign, radial_projection,
+                radial_compact, radial_projection,
                 radial_m1_output, local, edge_message, context.stream());
             rotate_edge_kernel<<<static_cast<unsigned int>(edges), edge_block_size, 0, context.stream()>>>(
                 graph.offsets(), batch.atoms(), rotation, local, edge_message);
@@ -3258,14 +3078,14 @@ std::vector<double> DeviceDpa4Model::compute(
             query, key,
             block, aggregate);
         launch_check(cudaGetLastError(), "DPA4 attention kernel launch failed");
-        for (std::size_t start = 0; start < atoms; start += kGridTileNodes) {
+        for (std::size_t start = 0; start < atoms; start += kMessageGridTileNodes) {
             const std::size_t tile = std::min(
-                static_cast<std::size_t>(kGridTileNodes), atoms - start);
-            message_grid_kernel<<<static_cast<unsigned int>(tile), 128, 0, context.stream()>>>(
+                static_cast<std::size_t>(kMessageGridTileNodes), atoms - start);
+            message_grid(
                 aggregate, pre_focus, static_cast<std::int64_t>(start),
                 static_cast<std::int64_t>(tile), block, model_->device.grid_to,
-                model_->device.grid_from, scratch0, scratch1, scratch2, message);
-            launch_check(cudaGetLastError(), "DPA4 message grid launch failed");
+                model_->device.grid_from, scratch0, scratch1, scratch2, message,
+                context.stream());
         }
         post_state_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
             state0, aggregate, message, batch.atoms(), block, state1);
@@ -3291,11 +3111,8 @@ std::vector<double> DeviceDpa4Model::compute(
                 scratch2, activation, context.stream());
         }
         linear2_residual_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
-            state1, activation, batch.atoms(), block, state0);
+            state1, activation, batch.atoms(), block, device_active_nodes, state0);
         launch_check(cudaGetLastError(), "DPA4 FFN output launch failed");
-        restore_inactive_state_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
-            message, device_active_nodes, batch.atoms(), state0);
-        launch_check(cudaGetLastError(), "DPA4 inactive-state restore failed");
     }
     so3_linear(
         state0, static_cast<std::int64_t>(atoms), 64, 1152,

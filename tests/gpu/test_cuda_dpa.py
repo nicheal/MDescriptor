@@ -52,6 +52,73 @@ def _periodic_batch() -> StructureBatch:
 
 @pytest.mark.gpu
 @pytest.mark.model
+@pytest.mark.parametrize("pairs", [1, 384])
+@pytest.mark.parametrize("isolated_frames", [False, True])
+def test_cuda_dpa4_connected_and_isolated_atoms_match_cpu(
+    pairs: int, isolated_frames: bool
+) -> None:
+    load_cuda_for_tests()
+    positions = np.zeros((2 * pairs + 1, 3))
+    positions[:, 0] = (np.arange(2 * pairs + 1) // 2) * 10.0
+    positions[1::2, 0] += 0.9
+    structures = [Atoms(numbers=np.ones(len(positions), dtype=int), positions=positions)]
+    if isolated_frames:
+        structures = [Atoms("H"), *structures, Atoms("H2", positions=[[0, 0, 0], [10, 0, 0]])]
+    batch = StructureBatch.from_ase(structures)
+    cpu = DPA4(execution=ExecutionOptions(device="cpu", num_threads=4))
+    gpu = DPA4(execution=ExecutionOptions(device="cuda"))
+    try:
+        expected = cpu.compute(batch).values
+        if pairs == 1:
+            from mdescriptor.descriptors.model_backed.dpa import (
+                compute_batch,
+                load_dpa_checkpoint,
+                new_runtime,
+            )
+
+            _, checkpoint = load_dpa_checkpoint(DPA4_MODEL, expected_descriptor="DPA4")
+            reference = compute_batch(new_runtime(DPA4_MODEL, checkpoint), batch)
+            np.testing.assert_allclose(expected, reference, atol=4e-5, rtol=2e-5)
+        actual = gpu.compute(batch).values
+        np.testing.assert_allclose(actual, expected, atol=1e-5, rtol=2e-5)
+        if pairs == 1 and isolated_frames:
+            begin = 0
+            for structure in structures:
+                end = begin + len(structure)
+                single = gpu.compute(StructureBatch.from_ase(structure)).values
+                np.testing.assert_allclose(single, expected[begin:end], atol=1e-5, rtol=2e-5)
+                begin = end
+            np.testing.assert_array_equal(gpu.compute(batch).values, actual)
+    finally:
+        cpu.close()
+        gpu.close()
+
+
+@pytest.mark.gpu
+@pytest.mark.model
+def test_cuda_dpa4_message_grid_tile_tail_matches_cpu() -> None:
+    load_cuda_for_tests()
+    # Fill one 768-node message tile and leave a one-node tail. Widely spaced
+    # pairs bound edge work while exercising scratch reuse across grid stages.
+    positions = np.zeros((769, 3))
+    positions[:, 0] = (np.arange(769) // 2) * 10.0
+    positions[1::2, 0] += 0.9
+    # Make the tail part of a trimer, so it exercises a nonzero message.
+    positions[-1, 0] = positions[-2, 0] + 0.9
+    batch = StructureBatch.from_ase(Atoms(numbers=np.ones(769, dtype=int), positions=positions))
+    cpu = DPA4(execution=ExecutionOptions(device="cpu", num_threads=4))
+    gpu = DPA4(execution=ExecutionOptions(device="cuda"))
+    try:
+        expected = cpu.compute(batch).values
+        actual = gpu.compute(batch).values
+        np.testing.assert_allclose(actual, expected, atol=1e-5, rtol=2e-5)
+    finally:
+        cpu.close()
+        gpu.close()
+
+
+@pytest.mark.gpu
+@pytest.mark.model
 @pytest.mark.parametrize(
     ("descriptor_type", "model", "feature_count"),
     [

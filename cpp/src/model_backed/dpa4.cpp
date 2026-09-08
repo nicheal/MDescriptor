@@ -670,6 +670,57 @@ void apply_channel_matrix(
     row_matmul(input, input_width, weight, output_width, output);
 }
 
+// Evaluate shared edge MLP weights in BLAS tiles rather than one matvec
+// per edge. The node aggregation below retains its original summation order.
+void environment_edge_features(
+    const EdgeData& edges,
+    const Dpa4Options& options,
+    const std::int32_t* types,
+    std::vector<float>& output) {
+    const std::size_t count = edges.src.size();
+    output.resize(count * 64U);
+    constexpr std::size_t kTileRows = 1024U;
+    const std::size_t tiles = (count + kTileRows - 1U) / kTileRows;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#endif
+    for (std::ptrdiff_t tile = 0; tile < static_cast<std::ptrdiff_t>(tiles); ++tile) {
+        const std::size_t begin = static_cast<std::size_t>(tile) * kTileRows;
+        const std::size_t rows = std::min(kTileRows, count - begin);
+        std::vector<float> rbf_hidden(rows * 32U);
+        std::vector<float> g_input(rows * 64U);
+        std::vector<float> hidden(rows * 128U);
+        detail::sgemm(
+            rows, 32U, 16U, edges.radial_basis.data() + begin * 16U, 16U,
+            options.env_rbf_layer1.data(), 32U, rbf_hidden.data(), 32U);
+        for (float& value : rbf_hidden) {
+            value = silu(value);
+        }
+        // Leave room for the two 16-channel type embeddings in each row.
+        detail::sgemm(
+            rows, 32U, 32U, rbf_hidden.data(), 32U,
+            options.env_rbf_layer2.data(), 32U, g_input.data(), 64U);
+        for (std::size_t row = 0; row < rows; ++row) {
+            const std::size_t edge = begin + row;
+            std::copy_n(options.env_type_embedding.data()
+                            + static_cast<std::size_t>(types[edges.src[edge]]) * 16U,
+                        16, g_input.data() + row * 64U + 32U);
+            std::copy_n(options.env_type_embedding.data()
+                            + static_cast<std::size_t>(types[edges.dst[edge]]) * 16U,
+                        16, g_input.data() + row * 64U + 48U);
+        }
+        detail::sgemm(
+            rows, 128U, 64U, g_input.data(), 64U,
+            options.env_g_layer1.data(), 128U, hidden.data(), 128U);
+        for (float& value : hidden) {
+            value = silu(value);
+        }
+        detail::sgemm(
+            rows, 64U, 128U, hidden.data(), 128U,
+            options.env_g_layer2.data(), 64U, output.data() + begin * 64U, 64U);
+    }
+}
+
 void compute_environment(
     const EdgeData& edges,
     const Dpa4Options& options,
@@ -700,52 +751,17 @@ void compute_environment(
             1.0 / std::sqrt(degree[static_cast<std::size_t>(node)] + 0.25);
     }
     film.assign(static_cast<std::size_t>(nodes) * 128U, 0.0F);
+    std::vector<float> edge_features;
+    environment_edge_features(edges, options, types, edge_features);
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
     for (std::int64_t node = 0; node < nodes; ++node) {
         std::array<double, 4U * 64U> env_agg{};
-        std::array<float, 32> rbf_hidden{};
-        std::array<float, 32> rbf_projected{};
-        std::array<float, 128> hidden{};
-        std::array<float, 64> g{};
-        std::array<float, 64> type_src{};
-        std::array<float, 64> type_dst{};
-        std::array<float, 16> rbf{};
         for (std::int64_t edge = edges.offsets[static_cast<std::size_t>(node)];
              edge < edges.offsets[static_cast<std::size_t>(node + 1)]; ++edge) {
             const std::size_t e = static_cast<std::size_t>(edge);
-            const int source_type = types[edges.src[e]];
-            const int destination_type = types[edges.dst[e]];
-            std::copy(
-                options.env_type_embedding.begin() + static_cast<std::size_t>(source_type) * 16U,
-                options.env_type_embedding.begin() + static_cast<std::size_t>(source_type + 1) * 16U,
-                type_src.begin());
-            std::copy(
-                options.env_type_embedding.begin() + static_cast<std::size_t>(destination_type) * 16U,
-                options.env_type_embedding.begin() + static_cast<std::size_t>(destination_type + 1) * 16U,
-                type_dst.begin());
-            for (int radial = 0; radial < 16; ++radial) {
-                rbf[static_cast<std::size_t>(radial)] = edges.radial_basis[e * 16U + static_cast<std::size_t>(radial)];
-            }
-            row_matmul(rbf.data(), 16, options.env_rbf_layer1, 32, rbf_hidden.data());
-            for (float& value : rbf_hidden) {
-                value = silu(value);
-            }
-            row_matmul(rbf_hidden.data(), 32, options.env_rbf_layer2, 32, rbf_projected.data());
-            std::array<float, 64> g_input{};
-            for (int i = 0; i < 32; ++i) {
-                g_input[static_cast<std::size_t>(i)] = rbf_projected[static_cast<std::size_t>(i)];
-            }
-            // The environment type embedding has width 16 per endpoint.
-            std::copy(type_src.begin(), type_src.begin() + 16, g_input.begin() + 32);
-            std::copy(type_dst.begin(), type_dst.begin() + 16, g_input.begin() + 48);
-            row_matmul(g_input.data(), 64, options.env_g_layer1, 128, hidden.data());
-            for (float& value : hidden) {
-                value = silu(value);
-            }
-            row_matmul(hidden.data(), 128, options.env_g_layer2, 64, g.data());
             const float dx = edges.vector[e * 3U + 0U];
             const float dy = edges.vector[e * 3U + 1U];
             const float dz = edges.vector[e * 3U + 2U];
@@ -756,7 +772,7 @@ void compute_environment(
                 for (int channel = 0; channel < 64; ++channel) {
                     env_agg[static_cast<std::size_t>(coordinate * 64 + channel)] +=
                         static_cast<double>(rtilde[coordinate])
-                        * static_cast<double>(g[static_cast<std::size_t>(channel)]);
+                        * static_cast<double>(edge_features[e * 64U + static_cast<std::size_t>(channel)]);
                 }
             }
         }
@@ -820,33 +836,38 @@ void radial_features(
     std::vector<float>& output) {
     const std::size_t count = edges.src.size();
     output.resize(count * 256U);
+    constexpr std::size_t kTileRows = 1024U;
+    const std::size_t tiles = (count + kTileRows - 1U) / kTileRows;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
-    for (std::ptrdiff_t edge = 0; edge < static_cast<std::ptrdiff_t>(count); ++edge) {
-        const std::size_t e = static_cast<std::size_t>(edge);
-        std::array<float, 64> hidden{};
-        row_matmul(
-            edges.radial_basis.data() + e * 16U,
-            16,
-            options.radial_layer1,
-            64,
-            hidden.data());
-        float variance = 0.0F;
-        for (float value : hidden) {
-            variance += value * value;
-        }
-        const float inv_rms = 1.0F / std::sqrt(variance / 64.0F + kEpsilon);
-        for (int channel = 0; channel < 64; ++channel) {
-            hidden[static_cast<std::size_t>(channel)] = silu(
-                hidden[static_cast<std::size_t>(channel)] * inv_rms
+    for (std::ptrdiff_t tile = 0; tile < static_cast<std::ptrdiff_t>(tiles); ++tile) {
+        const std::size_t begin = static_cast<std::size_t>(tile) * kTileRows;
+        const std::size_t rows = std::min(kTileRows, count - begin);
+        std::vector<float> hidden(rows * 64U);
+        detail::sgemm(
+            rows, 64U, 16U, edges.radial_basis.data() + begin * 16U, 16U,
+            options.radial_layer1.data(), 64U, hidden.data(), 64U);
+        for (std::size_t row = 0; row < rows; ++row) {
+            float* values = hidden.data() + row * 64U;
+            float variance = 0.0F;
+            for (int channel = 0; channel < 64; ++channel) {
+                variance += values[channel] * values[channel];
+            }
+            const float inv_rms = 1.0F / std::sqrt(variance / 64.0F + kEpsilon);
+            for (int channel = 0; channel < 64; ++channel) {
+                values[channel] = silu(values[channel] * inv_rms
                     * options.radial_norm_scale[static_cast<std::size_t>(channel)]);
+            }
         }
-        row_matmul(
-            hidden.data(), 64, options.radial_layer2, 256,
-            output.data() + e * 256U);
-        for (int value = 0; value < 256; ++value) {
-            output[e * 256U + static_cast<std::size_t>(value)] *= edges.envelope[e];
+        detail::sgemm(
+            rows, 256U, 64U, hidden.data(), 64U,
+            options.radial_layer2.data(), 256U, output.data() + begin * 256U, 256U);
+        for (std::size_t row = 0; row < rows; ++row) {
+            const std::size_t edge = begin + row;
+            for (int value = 0; value < 256; ++value) {
+                output[edge * 256U + static_cast<std::size_t>(value)] *= edges.envelope[edge];
+            }
         }
     }
 }
@@ -977,22 +998,8 @@ void apply_so2_linear(
     const auto& weight_m0 = block.so2_weight_m0[static_cast<std::size_t>(layer)];
     const auto& weight_m1 = block.so2_weight_m1[static_cast<std::size_t>(layer)];
 
-    // The m=0 sector is a dense 256x256 transform.  The signed m=1 sectors
-    // use the same complex 192x192 transform.  Keep packing per fixed edge
-    // tile so a large graph never needs several gigabytes of temporary rows.
-    std::vector<float> weight_u(192U * 192U);
-    std::vector<float> weight_v(192U * 192U);
-    for (int row = 0; row < 192; ++row) {
-        std::copy_n(
-            weight_m1.begin() + static_cast<std::ptrdiff_t>(row * 384),
-            192,
-            weight_u.begin() + static_cast<std::ptrdiff_t>(row * 192));
-        std::copy_n(
-            weight_m1.begin() + static_cast<std::ptrdiff_t>(row * 384 + 192),
-            192,
-            weight_v.begin() + static_cast<std::ptrdiff_t>(row * 192));
-    }
-
+    // Read all three sectors with the edge stride. The checkpoint already
+    // stores the real and imaginary weights side by side as [192, 384].
     constexpr std::size_t kTileRows = 1024U;
     const std::size_t tile_count = (edge_count + kTileRows - 1U) / kTileRows;
 #ifdef _OPENMP
@@ -1004,62 +1011,35 @@ void apply_so2_linear(
         const std::size_t tile = static_cast<std::size_t>(tile_index);
         const std::size_t edge_begin = tile * kTileRows;
         const std::size_t rows = std::min(kTileRows, edge_count - edge_begin);
-        std::vector<float> m0_input(rows * 4U * kChannels);
-        std::vector<float> complex_input(2U * rows * 3U * kChannels);
-        for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
-            const std::size_t edge = edge_begin + local_edge;
-            const std::size_t input_offset = edge * kReducedDim * kChannels;
-            std::copy_n(
-                input.begin() + static_cast<std::ptrdiff_t>(input_offset),
-                4U * kChannels,
-                m0_input.begin() + static_cast<std::ptrdiff_t>(local_edge * 4U * kChannels));
-            const std::size_t neg_offset = local_edge * 3U * kChannels;
-            const std::size_t pos_offset = (rows + local_edge) * 3U * kChannels;
-            for (int degree = 0; degree < 3; ++degree) {
-                std::copy_n(
-                    input.begin() + static_cast<std::ptrdiff_t>(input_offset
-                        + (4U + static_cast<std::size_t>(degree)) * kChannels),
-                    kChannels,
-                    complex_input.begin() + static_cast<std::ptrdiff_t>(
-                        neg_offset + static_cast<std::size_t>(degree) * kChannels));
-                std::copy_n(
-                    input.begin() + static_cast<std::ptrdiff_t>(input_offset
-                        + (7U + static_cast<std::size_t>(degree)) * kChannels),
-                    kChannels,
-                    complex_input.begin() + static_cast<std::ptrdiff_t>(
-                        pos_offset + static_cast<std::size_t>(degree) * kChannels));
-            }
-        }
         detail::sgemm(
             rows, 4U * kChannels, 4U * kChannels,
-            m0_input.data(), 4U * kChannels,
+            input.data() + edge_begin * kReducedDim * kChannels,
+            kReducedDim * kChannels,
             weight_m0.data(), 4U * kChannels,
             output.data() + edge_begin * kReducedDim * kChannels,
             kReducedDim * kChannels);
-        std::vector<float> complex_u(2U * rows * 192U);
-        std::vector<float> complex_v(2U * rows * 192U);
-        detail::sgemm(
-            2U * rows, 192U, 192U,
-            complex_input.data(), 192U,
-            weight_u.data(), 192U,
-            complex_u.data(), 192U);
-        detail::sgemm(
-            2U * rows, 192U, 192U,
-            complex_input.data(), 192U,
-            weight_v.data(), 192U,
-            complex_v.data(), 192U);
+        std::vector<float> complex_output(2U * rows * 384U);
+        for (std::size_t sign = 0; sign < 2; ++sign) {
+            detail::sgemm(
+                rows, 384U, 192U,
+                input.data() + edge_begin * kReducedDim * kChannels
+                    + (4U + sign * 3U) * kChannels,
+                kReducedDim * kChannels,
+                weight_m1.data(), 384U,
+                complex_output.data() + sign * rows * 384U, 384U);
+        }
         for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
             const std::size_t edge = edge_begin + local_edge;
             const std::size_t output_offset = edge * kReducedDim * kChannels;
-            const std::size_t neg_offset = local_edge * 192U;
-            const std::size_t pos_offset = (rows + local_edge) * 192U;
+            const std::size_t neg_offset = local_edge * 384U;
+            const std::size_t pos_offset = (rows + local_edge) * 384U;
             for (int degree = 0; degree < 3; ++degree) {
                 for (int channel = 0; channel < kChannels; ++channel) {
                     const std::size_t index = static_cast<std::size_t>(degree * kChannels + channel);
                     output[output_offset + static_cast<std::size_t>((4 + degree) * kChannels + channel)] =
-                        complex_u[neg_offset + index] - complex_v[pos_offset + index];
+                        complex_output[neg_offset + index] - complex_output[pos_offset + 192U + index];
                     output[output_offset + static_cast<std::size_t>((7 + degree) * kChannels + channel)] =
-                        complex_v[neg_offset + index] + complex_u[pos_offset + index];
+                        complex_output[neg_offset + 192U + index] + complex_output[pos_offset + index];
                 }
             }
         }
@@ -1087,20 +1067,17 @@ void apply_so2_gate(
         const std::size_t tile = static_cast<std::size_t>(tile_index);
         const std::size_t edge_begin = tile * kTileRows;
         const std::size_t rows = std::min(kTileRows, edge_count - edge_begin);
-        std::vector<float> gate_input(rows * kChannels);
-        for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
-            const std::size_t edge = edge_begin + local_edge;
-            std::copy_n(
-                input.begin() + static_cast<std::ptrdiff_t>(edge * kReducedDim * kChannels),
-                kChannels,
-                gate_input.begin() + static_cast<std::ptrdiff_t>(local_edge * kChannels));
-        }
         std::vector<float> gate_logits(rows * 192U);
         detail::sgemm(
             rows, 192U, kChannels,
-            gate_input.data(), kChannels,
+            input.data() + edge_begin * kReducedDim * kChannels,
+            kReducedDim * kChannels,
             gate_weight.data(), 192U,
             gate_logits.data(), 192U);
+        // Each degree gate is shared by its m=0 and signed m=1 rows.
+        for (float& value : gate_logits) {
+            value = sigmoid(value);
+        }
         for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
             const std::size_t edge = edge_begin + local_edge;
             const std::size_t edge_offset = edge * kReducedDim * kChannels;
@@ -1114,8 +1091,8 @@ void apply_so2_gate(
                 for (int channel = 0; channel < kChannels; ++channel) {
                     output[edge_offset + static_cast<std::size_t>(row * kChannels + channel)] =
                         input[edge_offset + static_cast<std::size_t>(row * kChannels + channel)]
-                        * sigmoid(gate_logits[local_edge * 192U
-                            + static_cast<std::size_t>(gate_offset + channel)]);
+                        * gate_logits[local_edge * 192U
+                            + static_cast<std::size_t>(gate_offset + channel)];
                 }
             }
         }
@@ -1147,18 +1124,11 @@ void dynamic_radial_mix(
         const std::size_t tile = static_cast<std::size_t>(tile_index);
         const std::size_t edge_begin = tile * kTileRows;
         const std::size_t rows = std::min(kTileRows, edge_count - edge_begin);
-        std::vector<float> radial_input(rows * 4U * kChannels);
-        for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
-            const std::size_t edge = edge_begin + local_edge;
-            std::copy_n(
-                radial.begin() + static_cast<std::ptrdiff_t>(edge * kReducedDim * kChannels),
-                4U * kChannels,
-                radial_input.begin() + static_cast<std::ptrdiff_t>(local_edge * 4U * kChannels));
-        }
         std::vector<float> compact_values(rows * 25U);
         detail::sgemm(
             rows, 25U, 4U * kChannels,
-            radial_input.data(), 4U * kChannels,
+            radial.data() + edge_begin * 4U * kChannels,
+            4U * kChannels,
             block.radial_mixer_weight.data(), 25U,
             compact_values.data(), 25U);
         for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
@@ -1628,8 +1598,6 @@ struct Dpa4BatchWorkspace {
     std::vector<float> packed_output;
     std::vector<float> query_frame;
     std::vector<float> context_frame;
-    std::vector<float> query_grid;
-    std::vector<float> context_grid;
     std::vector<float> product_grid;
     std::vector<float> product_coeff;
     std::vector<float> left;
@@ -1640,7 +1608,6 @@ struct Dpa4BatchWorkspace {
     std::vector<float> projected;
     std::vector<float> contract_input;
     std::vector<float> contract_output;
-    std::vector<float> output;
     std::vector<float> tile_input;
     std::vector<float> tile_context;
     std::vector<float> tile_output;
@@ -1771,8 +1738,6 @@ void grid_product_batch(
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t columns = node_count * static_cast<std::size_t>(channels);
     const std::size_t coefficient_size = static_cast<std::size_t>(kGridCoeff) * columns;
-    workspace.query_grid.resize(coefficient_size);
-    workspace.context_grid.resize(coefficient_size);
     // Matrix B is laid out as [coefficient, node * channel].  This makes the
     // node batch the GEMM N dimension while retaining contiguous channel rows
     // in the unpacked feature tensors.
@@ -1939,18 +1904,19 @@ void message_grid_batch_tile(
     const Dpa4Options& options,
     std::int64_t nodes,
     Dpa4BatchWorkspace& workspace,
-    std::vector<float>& output) {
+    std::vector<float>& output,
+    int num_threads) {
     expand_frames_pair_batch(
         query, context, nodes, block.message_frame_expand,
-        workspace.query_frame, workspace.context_frame, workspace, options.num_threads);
+        workspace.query_frame, workspace.context_frame, workspace, num_threads);
     grid_product_batch(
         workspace.query_frame, workspace.context_frame, nodes, kChannels,
         options.grid_to, options.grid_from, workspace.product_coeff, workspace,
-        options.num_threads);
+        num_threads);
 
     const std::size_t node_count = static_cast<std::size_t>(nodes);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
     for (std::ptrdiff_t node_index_value = 0;
          node_index_value < static_cast<std::ptrdiff_t>(node_count);
@@ -1992,7 +1958,7 @@ void message_grid_batch_tile(
     }
     contract_frames_batch(
         workspace.product_coeff, nodes, block.message_frame_contract,
-        output, workspace, options.num_threads);
+        output, workspace, num_threads);
     for (std::int64_t node = 0; node < nodes; ++node) {
         const std::size_t offset = static_cast<std::size_t>(node) * kFullDim * kChannels;
         for (int row = 0; row < kFullDim; ++row) {
@@ -2010,14 +1976,15 @@ void block_grid_branch_batch_tile(
     const Dpa4Options& options,
     std::int64_t nodes,
     Dpa4BatchWorkspace& workspace,
-    std::vector<float>& output) {
+    std::vector<float>& output,
+    int num_threads) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t input_stride = static_cast<std::size_t>(kFullDim * 1152);
     const std::size_t coeff_stride = static_cast<std::size_t>(kGridCoeff * 192);
     workspace.left.resize(node_count * coeff_stride);
     workspace.right.resize(node_count * coeff_stride);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
     for (std::ptrdiff_t node_index_value = 0;
          node_index_value < static_cast<std::ptrdiff_t>(node_count);
@@ -2051,12 +2018,12 @@ void block_grid_branch_batch_tile(
     grid_product_batch(
         workspace.left_projected, workspace.right_projected, nodes, 192,
         options.grid_to, options.grid_from, workspace.product_coeff, workspace,
-        options.num_threads);
+        num_threads);
     apply_channel_projection_batch(
         workspace.product_coeff, nodes, 192, 192, block.ffn_grid_out, output);
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
     for (std::ptrdiff_t node_index_value = 0;
          node_index_value < static_cast<std::ptrdiff_t>(node_count);
@@ -2105,13 +2072,14 @@ void output_grid_mlp_batch_tile(
     const Dpa4Options& options,
     std::int64_t nodes,
     Dpa4BatchWorkspace& workspace,
-    std::vector<float>& output) {
+    std::vector<float>& output,
+    int num_threads) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t input_stride = static_cast<std::size_t>(kFullDim * 1152);
     const std::size_t coeff_stride = static_cast<std::size_t>(kGridCoeff * 384);
     workspace.fused.resize(node_count * coeff_stride);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
     for (std::ptrdiff_t node_index_value = 0;
          node_index_value < static_cast<std::ptrdiff_t>(node_count);
@@ -2143,12 +2111,12 @@ void output_grid_mlp_batch_tile(
     grid_product_batch(
         workspace.left, workspace.right, nodes, 384,
         options.grid_to, options.grid_from, workspace.product_coeff, workspace,
-        options.num_threads);
+        num_threads);
     apply_channel_projection_batch(
         workspace.product_coeff, nodes, 384, 192, options.output_grid_out, output);
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
     for (std::ptrdiff_t node_index_value = 0;
          node_index_value < static_cast<std::ptrdiff_t>(node_count);
@@ -2192,37 +2160,73 @@ void output_grid_mlp_batch_tile(
     }
 }
 
+// One scratch workspace per active tile worker, retained across grid branches.
+struct Dpa4GridWorkspace {
+    std::vector<Dpa4BatchWorkspace> workers;
+    std::vector<float> output;
+};
+
+template <typename Function>
+void for_grid_tiles(
+    std::size_t nodes,
+    int num_threads,
+    Dpa4GridWorkspace& workspace,
+    Function&& function) {
+    const std::size_t tiles = (nodes + kGridBatchTileNodes - 1) / kGridBatchTileNodes;
+    if (tiles == 0) {
+        return;
+    }
+    int workers = 1;
+#ifdef _OPENMP
+    workers = static_cast<int>(std::min(tiles, static_cast<std::size_t>(num_threads)));
+#endif
+    workspace.workers.resize(static_cast<std::size_t>(workers));
+    const int tile_threads = workers == 1 ? num_threads : 1;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(workers) if(workers > 1)
+#endif
+    for (int worker = 0; worker < workers; ++worker) {
+        for (std::size_t tile = static_cast<std::size_t>(worker); tile < tiles;
+             tile += static_cast<std::size_t>(workers)) {
+            const std::size_t start = tile * kGridBatchTileNodes;
+            function(start, std::min(kGridBatchTileNodes, nodes - start),
+                     workspace.workers[static_cast<std::size_t>(worker)], tile_threads);
+        }
+    }
+}
+
 void message_grid_batch(
     const std::vector<float>& query,
     const std::vector<float>& context,
     const Dpa4BlockOptions& block,
     const Dpa4Options& options,
     std::int64_t nodes,
-    Dpa4BatchWorkspace& workspace,
+    Dpa4GridWorkspace& grid_workspace,
     std::vector<float>& output) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t stride = static_cast<std::size_t>(kFullDim * kChannels);
     output.resize(node_count * stride);
-    for (std::size_t start = 0; start < node_count; start += kGridBatchTileNodes) {
-        const std::size_t tile_nodes = std::min(kGridBatchTileNodes, node_count - start);
-        workspace.tile_input.resize(tile_nodes * stride);
-        workspace.tile_context.resize(tile_nodes * stride);
-        std::copy_n(
-            query.begin() + static_cast<std::ptrdiff_t>(start * stride),
-            tile_nodes * stride,
-            workspace.tile_input.begin());
-        std::copy_n(
-            context.begin() + static_cast<std::ptrdiff_t>(start * stride),
-            tile_nodes * stride,
-            workspace.tile_context.begin());
-        message_grid_batch_tile(
-            workspace.tile_input, workspace.tile_context, block, options,
-            static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output);
-        std::copy_n(
-            workspace.tile_output.begin(),
-            tile_nodes * stride,
-            output.begin() + static_cast<std::ptrdiff_t>(start * stride));
-    }
+    for_grid_tiles(node_count, options.num_threads, grid_workspace,
+        [&](std::size_t start, std::size_t tile_nodes,
+            Dpa4BatchWorkspace& workspace, int tile_threads) {
+            workspace.tile_input.resize(tile_nodes * stride);
+            workspace.tile_context.resize(tile_nodes * stride);
+            std::copy_n(
+                query.begin() + static_cast<std::ptrdiff_t>(start * stride),
+                tile_nodes * stride,
+                workspace.tile_input.begin());
+            std::copy_n(
+                context.begin() + static_cast<std::ptrdiff_t>(start * stride),
+                tile_nodes * stride,
+                workspace.tile_context.begin());
+            message_grid_batch_tile(
+                workspace.tile_input, workspace.tile_context, block, options,
+                static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output, tile_threads);
+            std::copy_n(
+                workspace.tile_output.begin(),
+                tile_nodes * stride,
+                output.begin() + static_cast<std::ptrdiff_t>(start * stride));
+        });
 }
 
 void block_grid_branch_batch(
@@ -2230,55 +2234,58 @@ void block_grid_branch_batch(
     const Dpa4BlockOptions& block,
     const Dpa4Options& options,
     std::int64_t nodes,
-    Dpa4BatchWorkspace& workspace,
+    Dpa4GridWorkspace& grid_workspace,
     std::vector<float>& output) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t input_stride = static_cast<std::size_t>(kFullDim * 1152);
     const std::size_t output_stride = static_cast<std::size_t>(kGridCoeff * 192);
     output.resize(node_count * output_stride);
-    for (std::size_t start = 0; start < node_count; start += kGridBatchTileNodes) {
-        const std::size_t tile_nodes = std::min(kGridBatchTileNodes, node_count - start);
-        workspace.tile_input.resize(tile_nodes * input_stride);
-        std::copy_n(
-            input.begin() + static_cast<std::ptrdiff_t>(start * input_stride),
-            tile_nodes * input_stride,
-            workspace.tile_input.begin());
-        block_grid_branch_batch_tile(
-            workspace.tile_input, block, options,
-            static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output);
-        std::copy_n(
-            workspace.tile_output.begin(),
-            tile_nodes * output_stride,
-            output.begin() + static_cast<std::ptrdiff_t>(start * output_stride));
-    }
+    for_grid_tiles(node_count, options.num_threads, grid_workspace,
+        [&](std::size_t start, std::size_t tile_nodes,
+            Dpa4BatchWorkspace& workspace, int tile_threads) {
+            workspace.tile_input.resize(tile_nodes * input_stride);
+            std::copy_n(
+                input.begin() + static_cast<std::ptrdiff_t>(start * input_stride),
+                tile_nodes * input_stride,
+                workspace.tile_input.begin());
+            block_grid_branch_batch_tile(
+                workspace.tile_input, block, options,
+                static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output, tile_threads);
+            std::copy_n(
+                workspace.tile_output.begin(),
+                tile_nodes * output_stride,
+                output.begin() + static_cast<std::ptrdiff_t>(start * output_stride));
+        });
 }
 
 void output_grid_mlp_batch(
     const std::vector<float>& input,
     const Dpa4Options& options,
     std::int64_t nodes,
-    Dpa4BatchWorkspace& workspace,
+    Dpa4GridWorkspace& grid_workspace,
     std::vector<float>& output) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t input_stride = static_cast<std::size_t>(kFullDim * 1152);
     const std::size_t output_stride = static_cast<std::size_t>(kGridCoeff * 192);
     output.resize(node_count * output_stride);
-    for (std::size_t start = 0; start < node_count; start += kGridBatchTileNodes) {
-        const std::size_t tile_nodes = std::min(kGridBatchTileNodes, node_count - start);
-        workspace.tile_input.resize(tile_nodes * input_stride);
-        std::copy_n(
-            input.begin() + static_cast<std::ptrdiff_t>(start * input_stride),
-            tile_nodes * input_stride,
-            workspace.tile_input.begin());
-        output_grid_mlp_batch_tile(
-            workspace.tile_input, options,
-            static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output);
-        std::copy_n(
-            workspace.tile_output.begin(),
-            tile_nodes * output_stride,
-            output.begin() + static_cast<std::ptrdiff_t>(start * output_stride));
-    }
+    for_grid_tiles(node_count, options.num_threads, grid_workspace,
+        [&](std::size_t start, std::size_t tile_nodes,
+            Dpa4BatchWorkspace& workspace, int tile_threads) {
+            workspace.tile_input.resize(tile_nodes * input_stride);
+            std::copy_n(
+                input.begin() + static_cast<std::ptrdiff_t>(start * input_stride),
+                tile_nodes * input_stride,
+                workspace.tile_input.begin());
+            output_grid_mlp_batch_tile(
+                workspace.tile_input, options,
+                static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output, tile_threads);
+            std::copy_n(
+                workspace.tile_output.begin(),
+                tile_nodes * output_stride,
+                output.begin() + static_cast<std::ptrdiff_t>(start * output_stride));
+        });
 }
+
 
 void scalar_rms_norm(
     const float* input,
@@ -2302,7 +2309,7 @@ void run_block(
     const Dpa4BlockOptions& block,
     const Dpa4Options& options,
     std::int64_t nodes,
-    Dpa4BatchWorkspace& workspace,
+    Dpa4GridWorkspace& workspace,
     std::vector<float>& output) {
     Dpa4ProfileClock profile("block");
     std::vector<float> so2_input;
@@ -2328,10 +2335,6 @@ void run_block(
     const std::size_t edge_count = edges.src.size();
     profile.counter("edges", edge_count);
     std::vector<float> local(edge_count * kReducedDim * kChannels, 0.0F);
-    std::vector<float> radial_reduced(edge_count * kReducedDim * kChannels, 0.0F);
-    static constexpr std::array<int, 10> kReducedDegree = {
-        0, 1, 2, 3, 1, 2, 3, 1, 2, 3,
-    };
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
@@ -2350,16 +2353,12 @@ void run_block(
                 local[e * kReducedDim * kChannels
                     + static_cast<std::size_t>(reduced * kChannels + channel)] =
                     static_cast<float>(value);
-                const int degree = kReducedDegree[static_cast<std::size_t>(reduced)];
-                radial_reduced[e * kReducedDim * kChannels
-                    + static_cast<std::size_t>(reduced * kChannels + channel)] =
-                    radial_full[e * 4U * kChannels + static_cast<std::size_t>(degree * kChannels + channel)];
             }
         }
     }
     std::vector<float> mixed_local;
     dynamic_radial_mix(
-        local, radial_reduced, block, edge_count, mixed_local, options.num_threads);
+        local, radial_full, block, edge_count, mixed_local, options.num_threads);
     local.swap(mixed_local);
     for (int layer = 0; layer < 4; ++layer) {
         std::vector<float> linear;
@@ -2438,8 +2437,8 @@ void run_block(
             }
             double radial_bias = 0.0;
             for (int channel = 0; channel < kChannels; ++channel) {
-                radial_bias += static_cast<double>(radial_reduced[
-                    e * kReducedDim * kChannels + static_cast<std::size_t>(channel)]
+                radial_bias += static_cast<double>(radial_full[
+                    e * 4U * kChannels + static_cast<std::size_t>(channel)]
                     * static_cast<double>(block.attn_logit_weight[static_cast<std::size_t>(channel)]));
             }
             const double logit = dot * (1.0 / 8.0) + radial_bias
@@ -2704,10 +2703,9 @@ void Dpa4Calculator::compute(
             }
         }
     }
-    // Grid/FFN branches reuse one batch workspace across all interaction
-    // blocks and the output head.  Its packed matrices keep the node batch in
-    // the GEMM dimension and avoid per-node allocation churn.
-    Dpa4BatchWorkspace workspace;
+    // Reuse independent tile workspaces across all blocks and the output
+    // head. BLAS stays single-threaded inside each parallel tile.
+    Dpa4GridWorkspace workspace;
     if (!edges.src.empty()) {
         for (const Dpa4BlockOptions& block : options_.blocks) {
             std::vector<float> block_output;
