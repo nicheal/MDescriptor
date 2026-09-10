@@ -69,6 +69,7 @@ constexpr int kFullDim = 16;
 constexpr int kReducedDim = 10;
 constexpr int kChannels = 64;
 constexpr int kFrames = 3;
+constexpr std::array<int, kReducedDim> kReducedDegrees = {0, 1, 2, 3, 1, 2, 3, 1, 2, 3};
 constexpr int kGridSize = 152;
 constexpr int kGridCoeff = kFullDim * kFrames;
 constexpr float kEpsilon = 1.0e-7F;
@@ -77,11 +78,6 @@ constexpr float kEquivariantNormEpsilon = 1.0e-5F;
 inline std::size_t node_index(std::int64_t node, int degree, int channel) {
     return (static_cast<std::size_t>(node) * kFullDim + static_cast<std::size_t>(degree))
         * kChannels + static_cast<std::size_t>(channel);
-}
-
-inline std::size_t edge_index(std::size_t edge, int degree, int channel) {
-    return (edge * kFullDim + static_cast<std::size_t>(degree)) * kChannels
-        + static_cast<std::size_t>(channel);
 }
 
 inline std::size_t reduced_index(std::size_t edge, int degree, int channel) {
@@ -594,7 +590,8 @@ void apply_so3_linear(
     int num_threads) {
     output.resize(static_cast<std::size_t>(nodes) * kFullDim
                   * static_cast<std::size_t>(output_channels));
-    constexpr std::size_t kNodeTile = 64U;
+    // Small fixed tiles expose node parallelism even for a single structure.
+    constexpr std::size_t kNodeTile = 4U;
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t tile_count = (node_count + kNodeTile - 1U) / kNodeTile;
 #ifdef _OPENMP
@@ -992,55 +989,41 @@ void apply_so2_linear(
     const Dpa4BlockOptions& block,
     int layer,
     std::size_t edge_count,
-    std::vector<float>& output,
-    int num_threads) {
+    std::vector<float>& output) {
     output.resize(edge_count * kReducedDim * kChannels);
     const auto& weight_m0 = block.so2_weight_m0[static_cast<std::size_t>(layer)];
     const auto& weight_m1 = block.so2_weight_m1[static_cast<std::size_t>(layer)];
 
     // Read all three sectors with the edge stride. The checkpoint already
     // stores the real and imaginary weights side by side as [192, 384].
-    constexpr std::size_t kTileRows = 1024U;
-    const std::size_t tile_count = (edge_count + kTileRows - 1U) / kTileRows;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads)
-#endif
-    for (std::ptrdiff_t tile_index = 0;
-         tile_index < static_cast<std::ptrdiff_t>(tile_count);
-         ++tile_index) {
-        const std::size_t tile = static_cast<std::size_t>(tile_index);
-        const std::size_t edge_begin = tile * kTileRows;
-        const std::size_t rows = std::min(kTileRows, edge_count - edge_begin);
+    detail::sgemm(
+        edge_count, 4U * kChannels, 4U * kChannels,
+        input.data(),
+        kReducedDim * kChannels,
+        weight_m0.data(), 4U * kChannels,
+        output.data(),
+        kReducedDim * kChannels);
+    std::vector<float> complex_output(2U * edge_count * 384U);
+    for (std::size_t sign = 0; sign < 2; ++sign) {
         detail::sgemm(
-            rows, 4U * kChannels, 4U * kChannels,
-            input.data() + edge_begin * kReducedDim * kChannels,
+            edge_count, 384U, 192U,
+            input.data()
+                + (4U + sign * 3U) * kChannels,
             kReducedDim * kChannels,
-            weight_m0.data(), 4U * kChannels,
-            output.data() + edge_begin * kReducedDim * kChannels,
-            kReducedDim * kChannels);
-        std::vector<float> complex_output(2U * rows * 384U);
-        for (std::size_t sign = 0; sign < 2; ++sign) {
-            detail::sgemm(
-                rows, 384U, 192U,
-                input.data() + edge_begin * kReducedDim * kChannels
-                    + (4U + sign * 3U) * kChannels,
-                kReducedDim * kChannels,
-                weight_m1.data(), 384U,
-                complex_output.data() + sign * rows * 384U, 384U);
-        }
-        for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
-            const std::size_t edge = edge_begin + local_edge;
-            const std::size_t output_offset = edge * kReducedDim * kChannels;
-            const std::size_t neg_offset = local_edge * 384U;
-            const std::size_t pos_offset = (rows + local_edge) * 384U;
-            for (int degree = 0; degree < 3; ++degree) {
-                for (int channel = 0; channel < kChannels; ++channel) {
-                    const std::size_t index = static_cast<std::size_t>(degree * kChannels + channel);
-                    output[output_offset + static_cast<std::size_t>((4 + degree) * kChannels + channel)] =
-                        complex_output[neg_offset + index] - complex_output[pos_offset + 192U + index];
-                    output[output_offset + static_cast<std::size_t>((7 + degree) * kChannels + channel)] =
-                        complex_output[neg_offset + 192U + index] + complex_output[pos_offset + index];
-                }
+            weight_m1.data(), 384U,
+            complex_output.data() + sign * edge_count * 384U, 384U);
+    }
+    for (std::size_t edge = 0; edge < edge_count; ++edge) {
+        const std::size_t output_offset = edge * kReducedDim * kChannels;
+        const std::size_t neg_offset = edge * 384U;
+        const std::size_t pos_offset = (edge_count + edge) * 384U;
+        for (int degree = 0; degree < 3; ++degree) {
+            for (int channel = 0; channel < kChannels; ++channel) {
+                const std::size_t index = static_cast<std::size_t>(degree * kChannels + channel);
+                output[output_offset + static_cast<std::size_t>((4 + degree) * kChannels + channel)] =
+                    complex_output[neg_offset + index] - complex_output[pos_offset + 192U + index];
+                output[output_offset + static_cast<std::size_t>((7 + degree) * kChannels + channel)] =
+                    complex_output[neg_offset + 192U + index] + complex_output[pos_offset + index];
             }
         }
     }
@@ -1050,114 +1033,80 @@ void apply_so2_gate(
     const std::vector<float>& input,
     const std::vector<float>& gate_weight,
     std::size_t edge_count,
-    std::vector<float>& output,
-    int num_threads) {
+    std::vector<float>& output) {
     output.resize(input.size());
-    static constexpr std::array<int, 9> kReducedDegree = {
-        1, 2, 3, 1, 2, 3, 1, 2, 3,
-    };
-    constexpr std::size_t kTileRows = 1024U;
-    const std::size_t tile_count = (edge_count + kTileRows - 1U) / kTileRows;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads)
-#endif
-    for (std::ptrdiff_t tile_index = 0;
-         tile_index < static_cast<std::ptrdiff_t>(tile_count);
-         ++tile_index) {
-        const std::size_t tile = static_cast<std::size_t>(tile_index);
-        const std::size_t edge_begin = tile * kTileRows;
-        const std::size_t rows = std::min(kTileRows, edge_count - edge_begin);
-        std::vector<float> gate_logits(rows * 192U);
-        detail::sgemm(
-            rows, 192U, kChannels,
-            input.data() + edge_begin * kReducedDim * kChannels,
-            kReducedDim * kChannels,
-            gate_weight.data(), 192U,
-            gate_logits.data(), 192U);
-        // Each degree gate is shared by its m=0 and signed m=1 rows.
-        for (float& value : gate_logits) {
-            value = sigmoid(value);
+    std::vector<float> gate_logits(edge_count * 192U);
+    detail::sgemm(
+        edge_count, 192U, kChannels,
+        input.data(),
+        kReducedDim * kChannels,
+        gate_weight.data(), 192U,
+        gate_logits.data(), 192U);
+    // Each degree gate is shared by its m=0 and signed m=1 rows.
+    for (float& value : gate_logits) {
+        value = sigmoid(value);
+    }
+    for (std::size_t edge = 0; edge < edge_count; ++edge) {
+        const std::size_t edge_offset = edge * kReducedDim * kChannels;
+        for (int channel = 0; channel < kChannels; ++channel) {
+            output[edge_offset + static_cast<std::size_t>(channel)] = silu(
+                input[edge_offset + static_cast<std::size_t>(channel)]);
         }
-        for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
-            const std::size_t edge = edge_begin + local_edge;
-            const std::size_t edge_offset = edge * kReducedDim * kChannels;
+        for (int row = 1; row < kReducedDim; ++row) {
+            const int degree = kReducedDegrees[static_cast<std::size_t>(row)];
+            const int gate_offset = (degree - 1) * kChannels;
             for (int channel = 0; channel < kChannels; ++channel) {
-                output[edge_offset + static_cast<std::size_t>(channel)] = silu(
-                    input[edge_offset + static_cast<std::size_t>(channel)]);
-            }
-            for (int row = 1; row < kReducedDim; ++row) {
-                const int degree = kReducedDegree[static_cast<std::size_t>(row - 1)];
-                const int gate_offset = (degree - 1) * kChannels;
-                for (int channel = 0; channel < kChannels; ++channel) {
-                    output[edge_offset + static_cast<std::size_t>(row * kChannels + channel)] =
-                        input[edge_offset + static_cast<std::size_t>(row * kChannels + channel)]
-                        * gate_logits[local_edge * 192U
-                            + static_cast<std::size_t>(gate_offset + channel)];
-                }
+                output[edge_offset + static_cast<std::size_t>(row * kChannels + channel)] =
+                    input[edge_offset + static_cast<std::size_t>(row * kChannels + channel)]
+                    * gate_logits[edge * 192U
+                        + static_cast<std::size_t>(gate_offset + channel)];
             }
         }
     }
 }
 
 void dynamic_radial_mix(
-    const std::vector<float>& local,
-    const std::vector<float>& radial,
+    const float* local,
+    const float* radial,
     const Dpa4BlockOptions& block,
     std::size_t edge_count,
-    std::vector<float>& output,
-    int num_threads) {
-    output.resize(local.size());
-    static constexpr std::array<int, 10> kRadialDegree = {
-        0, 1, 2, 3, 1, 2, 3, 1, 2, 3,
-    };
+    std::vector<float>& output) {
+    output.resize(edge_count * kReducedDim * kChannels);
     static constexpr std::array<int, 10> kRadialGroup = {
         0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
     };
-    constexpr std::size_t kTileRows = 1024U;
-    const std::size_t tile_count = (edge_count + kTileRows - 1U) / kTileRows;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads)
-#endif
-    for (std::ptrdiff_t tile_index = 0;
-         tile_index < static_cast<std::ptrdiff_t>(tile_count);
-         ++tile_index) {
-        const std::size_t tile = static_cast<std::size_t>(tile_index);
-        const std::size_t edge_begin = tile * kTileRows;
-        const std::size_t rows = std::min(kTileRows, edge_count - edge_begin);
-        std::vector<float> compact_values(rows * 25U);
-        detail::sgemm(
-            rows, 25U, 4U * kChannels,
-            radial.data() + edge_begin * 4U * kChannels,
-            4U * kChannels,
-            block.radial_mixer_weight.data(), 25U,
-            compact_values.data(), 25U);
-        for (std::size_t local_edge = 0; local_edge < rows; ++local_edge) {
-            const std::size_t edge = edge_begin + local_edge;
-            const float* compact = compact_values.data() + local_edge * 25U;
-            const std::size_t edge_offset = edge * kReducedDim * kChannels;
-            for (int row = 0; row < kReducedDim; ++row) {
-                const int group = kRadialGroup[static_cast<std::size_t>(row)];
-                const int output_degree = kRadialDegree[static_cast<std::size_t>(row)];
-                const int group_size = group == 0 ? 4 : 3;
-                // The +/-m=1 blocks share one radial kernel in the rank-1
-                // checkpoint.  Its compact layout is [m=0:16, |m|=1:9], so
-                // both signed sectors read the same 9 coefficients.
-                const int compact_offset = group == 0 ? 0 : 16;
-                const int output_local = group == 0 ? output_degree : output_degree - 1;
-                for (int channel = 0; channel < kChannels; ++channel) {
-                    double value = 0.0;
-                    for (int input_local = 0; input_local < group_size; ++input_local) {
-                        const int input_row = group == 0
-                            ? input_local
-                            : (row < 7 ? 4 + input_local : 7 + input_local);
-                        const int coefficient = compact_offset + input_local * group_size + output_local;
-                        value += static_cast<double>(compact[static_cast<std::size_t>(coefficient)])
-                            * static_cast<double>(local[
-                                edge_offset + static_cast<std::size_t>(input_row * kChannels + channel)]);
-                    }
-                    output[edge_offset + static_cast<std::size_t>(row * kChannels + channel)] =
-                        value * block.radial_channel_basis[static_cast<std::size_t>(channel)];
+    std::vector<float> compact_values(edge_count * 25U);
+    detail::sgemm(
+        edge_count, 25U, 4U * kChannels,
+        radial,
+        4U * kChannels,
+        block.radial_mixer_weight.data(), 25U,
+        compact_values.data(), 25U);
+    for (std::size_t edge = 0; edge < edge_count; ++edge) {
+        const float* compact = compact_values.data() + edge * 25U;
+        const std::size_t edge_offset = edge * kReducedDim * kChannels;
+        for (int row = 0; row < kReducedDim; ++row) {
+            const int group = kRadialGroup[static_cast<std::size_t>(row)];
+            const int output_degree = kReducedDegrees[static_cast<std::size_t>(row)];
+            const int group_size = group == 0 ? 4 : 3;
+            // The +/-m=1 blocks share one radial kernel in the rank-1
+            // checkpoint.  Its compact layout is [m=0:16, |m|=1:9], so
+            // both signed sectors read the same 9 coefficients.
+            const int compact_offset = group == 0 ? 0 : 16;
+            const int output_local = group == 0 ? output_degree : output_degree - 1;
+            for (int channel = 0; channel < kChannels; ++channel) {
+                double value = 0.0;
+                for (int input_local = 0; input_local < group_size; ++input_local) {
+                    const int input_row = group == 0
+                        ? input_local
+                        : (row < 7 ? 4 + input_local : 7 + input_local);
+                    const int coefficient = compact_offset + input_local * group_size + output_local;
+                    value += static_cast<double>(compact[static_cast<std::size_t>(coefficient)])
+                        * static_cast<double>(local[
+                            edge_offset + static_cast<std::size_t>(input_row * kChannels + channel)]);
                 }
+                output[edge_offset + static_cast<std::size_t>(row * kChannels + channel)] =
+                    value * block.radial_channel_basis[static_cast<std::size_t>(channel)];
             }
         }
     }
@@ -1166,12 +1115,9 @@ void dynamic_radial_mix(
 void rotate_reduced_to_global(
     const std::vector<float>& local,
     const EdgeData& edges,
-    const Dpa4BlockOptions& block,
-    const Dpa4Options& options,
-    std::vector<float>& output,
-    int num_threads) {
-    const std::size_t edge_count = edges.src.size();
-    output.assign(edge_count * kFullDim * kChannels, 0.0F);
+    std::size_t edge_begin,
+    std::size_t edge_count,
+    float* output) {
     static constexpr std::array<float, 16> kRescale = {
         1.0F, 1.0F, 1.0F, 1.0F,
         1.2909944487358056F, 1.2909944487358056F, 1.2909944487358056F,
@@ -1180,26 +1126,30 @@ void rotate_reduced_to_global(
         1.5275252316519468F, 1.5275252316519468F, 1.5275252316519468F,
         1.5275252316519468F,
     };
-    (void)block;
-    (void)options;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads)
-#endif
-    for (std::ptrdiff_t edge_index = 0; edge_index < static_cast<std::ptrdiff_t>(edge_count); ++edge_index) {
-        const std::size_t edge = static_cast<std::size_t>(edge_index);
-        const std::size_t edge_offset = edge * kReducedDim * kChannels;
-        for (int global_row = 0; global_row < kFullDim; ++global_row) {
-            for (int channel = 0; channel < kChannels; ++channel) {
-                float value = 0.0F;
-                for (int reduced = 0; reduced < kReducedDim; ++reduced) {
-                    value += edges.rotation_to_m[
+    for (std::size_t local_edge = 0; local_edge < edge_count; ++local_edge) {
+        const std::size_t edge = edge_begin + local_edge;
+        const std::size_t edge_offset = local_edge * kReducedDim * kChannels;
+        // Wigner rotations are block-diagonal in l. Each non-scalar row
+        // only receives m=0,-1,+1 of its own degree, in their original order.
+        for (int degree = 0; degree < kDegrees; ++degree) {
+            for (int global_row = degree * degree;
+                 global_row < (degree + 1) * (degree + 1); ++global_row) {
+                std::array<float, kChannels> values{};
+                const int reduced_end = degree == 0 ? 1 : kReducedDim;
+                for (int reduced = degree; reduced < reduced_end; reduced += 3) {
+                    const float rotation = edges.rotation_to_m[
                         (edge * kReducedDim + static_cast<std::size_t>(reduced)) * kFullDim
-                            + static_cast<std::size_t>(global_row)]
-                        * local[edge_offset + static_cast<std::size_t>(reduced * kChannels + channel)];
+                            + static_cast<std::size_t>(global_row)];
+                    const float* features = local.data() + edge_offset + reduced * kChannels;
+                    for (int channel = 0; channel < kChannels; ++channel) {
+                        values[channel] += rotation * features[channel];
+                    }
                 }
-                output[edge * kFullDim * kChannels
-                    + static_cast<std::size_t>(global_row * kChannels + channel)] =
-                    value * kRescale[static_cast<std::size_t>(global_row)];
+                for (int channel = 0; channel < kChannels; ++channel) {
+                    output[local_edge * kFullDim * kChannels
+                        + static_cast<std::size_t>(global_row * kChannels + channel)] =
+                        values[channel] * kRescale[static_cast<std::size_t>(global_row)];
+                }
             }
         }
     }
@@ -1613,7 +1563,9 @@ struct Dpa4BatchWorkspace {
     std::vector<float> tile_output;
 };
 
-constexpr std::size_t kGridBatchTileNodes = 64U;
+// Bound grid scratch to a few MiB per worker and expose enough tiles for
+// ordinary 32/64-atom frames. Keep the layout independent of thread count.
+constexpr std::size_t kGridBatchTileNodes = 4U;
 
 void expand_frames_pair_batch(
     const std::vector<float>& query,
@@ -1707,8 +1659,9 @@ void apply_channel_projection_batch(
     int input_channels,
     int output_channels,
     const std::vector<float>& weight,
-    std::vector<float>& output) {
-    const std::size_t rows = static_cast<std::size_t>(nodes) * kGridCoeff;
+    std::vector<float>& output,
+    int coefficients = kGridCoeff) {
+    const std::size_t rows = static_cast<std::size_t>(nodes) * static_cast<std::size_t>(coefficients);
     output.resize(rows * static_cast<std::size_t>(output_channels));
     if (rows == 0) {
         return;
@@ -1734,7 +1687,8 @@ void grid_product_batch(
     const std::vector<float>& grid_from,
     std::vector<float>& product_coeff,
     Dpa4BatchWorkspace& workspace,
-    int num_threads) {
+    int num_threads,
+    int output_coefficients = kGridCoeff) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     const std::size_t columns = node_count * static_cast<std::size_t>(channels);
     const std::size_t coefficient_size = static_cast<std::size_t>(kGridCoeff) * columns;
@@ -1791,9 +1745,9 @@ void grid_product_batch(
                 * workspace.packed_output[offset + columns + column];
         }
     }
-    workspace.packed_output.resize(static_cast<std::size_t>(kGridCoeff) * columns);
+    workspace.packed_output.resize(static_cast<std::size_t>(output_coefficients) * columns);
     detail::sgemm(
-        kGridCoeff,
+        output_coefficients,
         columns,
         kGridSize,
         grid_from.data(),
@@ -1802,7 +1756,7 @@ void grid_product_batch(
         columns,
         workspace.packed_output.data(),
         columns);
-    product_coeff.resize(node_count * static_cast<std::size_t>(kGridCoeff * channels));
+    product_coeff.resize(node_count * static_cast<std::size_t>(output_coefficients * channels));
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
@@ -1810,11 +1764,11 @@ void grid_product_batch(
          node_index_value < static_cast<std::ptrdiff_t>(node_count);
          ++node_index_value) {
         const std::size_t node = static_cast<std::size_t>(node_index_value);
-        for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
+        for (int coefficient = 0; coefficient < output_coefficients; ++coefficient) {
             const std::size_t source = static_cast<std::size_t>(coefficient) * columns
                 + node * static_cast<std::size_t>(channels);
             const std::size_t destination =
-                node * static_cast<std::size_t>(kGridCoeff * channels)
+                node * static_cast<std::size_t>(output_coefficients * channels)
                 + static_cast<std::size_t>(coefficient * channels);
             std::copy_n(
                 workspace.packed_output.begin() + static_cast<std::ptrdiff_t>(source),
@@ -2042,14 +1996,16 @@ void block_grid_branch_batch_tile(
             const float value = scalar_pair[static_cast<std::size_t>(192 + channel)];
             scalar_out[static_cast<std::size_t>(channel)] = gate * sigmoid(gate) * value;
         }
-        for (int output_channel = 0; output_channel < 192; ++output_channel) {
-            double value = 0.0;
-            for (int input_channel = 0; input_channel < 384; ++input_channel) {
-                value += static_cast<double>(scalar_pair[static_cast<std::size_t>(input_channel)])
-                    * static_cast<double>(block.ffn_scalar_gate[
-                        static_cast<std::size_t>(input_channel * 192 + output_channel)]);
+        std::array<double, 192> gate_values{};
+        for (int input_channel = 0; input_channel < 384; ++input_channel) {
+            const double value = scalar_pair[static_cast<std::size_t>(input_channel)];
+            const float* weights = block.ffn_scalar_gate.data() + input_channel * 192;
+            for (int output_channel = 0; output_channel < 192; ++output_channel) {
+                gate_values[output_channel] += value * static_cast<double>(weights[output_channel]);
             }
-            scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(static_cast<float>(value));
+        }
+        for (int output_channel = 0; output_channel < 192; ++output_channel) {
+            scalar_gate[output_channel] = sigmoid(static_cast<float>(gate_values[output_channel]));
         }
         for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
             for (int channel = 0; channel < 192; ++channel) {
@@ -2108,12 +2064,14 @@ void output_grid_mlp_batch_tile(
         workspace.fused, nodes, 384, 384, options.output_grid_left, workspace.left);
     apply_channel_projection_batch(
         workspace.fused, nodes, 384, 384, options.output_grid_right, workspace.right);
+    // The final scalar projection only reads the three l=0 frame rows.
+    // Preserve the full forward grid, but back-project only those rows.
     grid_product_batch(
         workspace.left, workspace.right, nodes, 384,
         options.grid_to, options.grid_from, workspace.product_coeff, workspace,
-        num_threads);
+        num_threads, kFrames);
     apply_channel_projection_batch(
-        workspace.product_coeff, nodes, 384, 192, options.output_grid_out, output);
+        workspace.product_coeff, nodes, 384, 192, options.output_grid_out, output, kFrames);
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(num_threads)
@@ -2135,24 +2093,26 @@ void output_grid_mlp_batch_tile(
             const float value = scalar_pair[static_cast<std::size_t>(192 + channel)];
             scalar_out[static_cast<std::size_t>(channel)] = gate * sigmoid(gate) * value;
         }
-        for (int output_channel = 0; output_channel < 192; ++output_channel) {
-            double value = 0.0;
-            for (int input_channel = 0; input_channel < 384; ++input_channel) {
-                value += static_cast<double>(scalar_pair[static_cast<std::size_t>(input_channel)])
-                    * static_cast<double>(options.output_scalar_gate[
-                        static_cast<std::size_t>(input_channel * 192 + output_channel)]);
+        std::array<double, 192> gate_values{};
+        for (int input_channel = 0; input_channel < 384; ++input_channel) {
+            const double value = scalar_pair[static_cast<std::size_t>(input_channel)];
+            const float* weights = options.output_scalar_gate.data() + input_channel * 192;
+            for (int output_channel = 0; output_channel < 192; ++output_channel) {
+                gate_values[output_channel] += value * static_cast<double>(weights[output_channel]);
             }
-            scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(static_cast<float>(value));
         }
-        for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
+        for (int output_channel = 0; output_channel < 192; ++output_channel) {
+            scalar_gate[output_channel] = sigmoid(static_cast<float>(gate_values[output_channel]));
+        }
+        for (int coefficient = 0; coefficient < kFrames; ++coefficient) {
             for (int channel = 0; channel < 192; ++channel) {
-                output[node * static_cast<std::size_t>(kGridCoeff * 192)
+                output[node * static_cast<std::size_t>(kFrames * 192)
                     + static_cast<std::size_t>(coefficient * 192 + channel)] *=
                     scalar_gate[static_cast<std::size_t>(channel)];
             }
         }
         const std::size_t output_offset =
-            node * static_cast<std::size_t>(kGridCoeff * 192);
+            node * static_cast<std::size_t>(kFrames * 192);
         for (int channel = 0; channel < 192; ++channel) {
             output[output_offset + static_cast<std::size_t>(channel)] +=
                 scalar_out[static_cast<std::size_t>(channel)];
@@ -2181,7 +2141,6 @@ void for_grid_tiles(
     workers = static_cast<int>(std::min(tiles, static_cast<std::size_t>(num_threads)));
 #endif
     workspace.workers.resize(static_cast<std::size_t>(workers));
-    const int tile_threads = workers == 1 ? num_threads : 1;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(workers) if(workers > 1)
 #endif
@@ -2190,7 +2149,7 @@ void for_grid_tiles(
              tile += static_cast<std::size_t>(workers)) {
             const std::size_t start = tile * kGridBatchTileNodes;
             function(start, std::min(kGridBatchTileNodes, nodes - start),
-                     workspace.workers[static_cast<std::size_t>(worker)], tile_threads);
+                     workspace.workers[static_cast<std::size_t>(worker)], 1);
         }
     }
 }
@@ -2229,7 +2188,8 @@ void message_grid_batch(
         });
 }
 
-void block_grid_branch_batch(
+// Keep the expanded hidden features inside each tile through both projections.
+void block_ffn_batch(
     const std::vector<float>& input,
     const Dpa4BlockOptions& block,
     const Dpa4Options& options,
@@ -2237,8 +2197,8 @@ void block_grid_branch_batch(
     Dpa4GridWorkspace& grid_workspace,
     std::vector<float>& output) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
-    const std::size_t input_stride = static_cast<std::size_t>(kFullDim * 1152);
-    const std::size_t output_stride = static_cast<std::size_t>(kGridCoeff * 192);
+    const std::size_t input_stride = static_cast<std::size_t>(kFullDim * kChannels);
+    const std::size_t output_stride = static_cast<std::size_t>(kFullDim * kChannels);
     output.resize(node_count * output_stride);
     for_grid_tiles(node_count, options.num_threads, grid_workspace,
         [&](std::size_t start, std::size_t tile_nodes,
@@ -2248,25 +2208,31 @@ void block_grid_branch_batch(
                 input.begin() + static_cast<std::ptrdiff_t>(start * input_stride),
                 tile_nodes * input_stride,
                 workspace.tile_input.begin());
+            apply_so3_linear(
+                workspace.tile_input, static_cast<std::int64_t>(tile_nodes), kChannels, 1152,
+                block.ffn_linear1, workspace.tile_context, 1);
             block_grid_branch_batch_tile(
-                workspace.tile_input, block, options,
+                workspace.tile_context, block, options,
                 static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output, tile_threads);
+            apply_so3_linear(
+                workspace.tile_output, static_cast<std::int64_t>(tile_nodes), 576, kChannels,
+                block.ffn_linear2, workspace.tile_context, 1);
             std::copy_n(
-                workspace.tile_output.begin(),
+                workspace.tile_context.begin(),
                 tile_nodes * output_stride,
                 output.begin() + static_cast<std::ptrdiff_t>(start * output_stride));
         });
 }
 
-void output_grid_mlp_batch(
+void output_head_batch(
     const std::vector<float>& input,
     const Dpa4Options& options,
     std::int64_t nodes,
     Dpa4GridWorkspace& grid_workspace,
     std::vector<float>& output) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
-    const std::size_t input_stride = static_cast<std::size_t>(kFullDim * 1152);
-    const std::size_t output_stride = static_cast<std::size_t>(kGridCoeff * 192);
+    const std::size_t input_stride = static_cast<std::size_t>(kFullDim * kChannels);
+    const std::size_t output_stride = kChannels;
     output.resize(node_count * output_stride);
     for_grid_tiles(node_count, options.num_threads, grid_workspace,
         [&](std::size_t start, std::size_t tile_nodes,
@@ -2276,13 +2242,18 @@ void output_grid_mlp_batch(
                 input.begin() + static_cast<std::ptrdiff_t>(start * input_stride),
                 tile_nodes * input_stride,
                 workspace.tile_input.begin());
+            apply_so3_linear(
+                workspace.tile_input, static_cast<std::int64_t>(tile_nodes), kChannels, 1152,
+                options.output_linear1, workspace.tile_context, 1);
             output_grid_mlp_batch_tile(
-                workspace.tile_input, options,
+                workspace.tile_context, options,
                 static_cast<std::int64_t>(tile_nodes), workspace, workspace.tile_output, tile_threads);
-            std::copy_n(
-                workspace.tile_output.begin(),
-                tile_nodes * output_stride,
-                output.begin() + static_cast<std::ptrdiff_t>(start * output_stride));
+            // The head grid returns only l=0, packed as three 192-channel frames.
+            detail::sgemm(
+                tile_nodes, kChannels, 576,
+                workspace.tile_output.data(), 576,
+                options.output_linear2.data(), kChannels,
+                output.data() + start * output_stride, output_stride);
         });
 }
 
@@ -2332,74 +2303,26 @@ void run_block(
         block.pre_focus_weight, pre_focus, options.num_threads);
     profile.mark("pre_focus");
 
-    const std::size_t edge_count = edges.src.size();
-    profile.counter("edges", edge_count);
-    std::vector<float> local(edge_count * kReducedDim * kChannels, 0.0F);
+    profile.counter("edges", edges.src.size());
+    const std::size_t scalar_size = static_cast<std::size_t>(nodes) * kChannels;
+    std::vector<float> normalized_qk(scalar_size), q(scalar_size), key(scalar_size);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
-    for (std::ptrdiff_t edge = 0; edge < static_cast<std::ptrdiff_t>(edge_count); ++edge) {
-        const std::size_t e = static_cast<std::size_t>(edge);
-        const std::int32_t source = edges.src[e];
-        for (int reduced = 0; reduced < kReducedDim; ++reduced) {
-            for (int channel = 0; channel < kChannels; ++channel) {
-                double value = 0.0;
-                for (int global = 0; global < kFullDim; ++global) {
-                    value += static_cast<double>(edges.rotation_to_m[
-                        (e * kReducedDim + static_cast<std::size_t>(reduced)) * kFullDim
-                            + static_cast<std::size_t>(global)])
-                        * static_cast<double>(pre_focus[node_index(source, global, channel)]);
-                }
-                local[e * kReducedDim * kChannels
-                    + static_cast<std::size_t>(reduced * kChannels + channel)] =
-                    static_cast<float>(value);
-            }
-        }
-    }
-    std::vector<float> mixed_local;
-    dynamic_radial_mix(
-        local, radial_full, block, edge_count, mixed_local, options.num_threads);
-    local.swap(mixed_local);
-    for (int layer = 0; layer < 4; ++layer) {
-        std::vector<float> linear;
-        apply_so2_linear(local, block, layer, edge_count, linear, options.num_threads);
-        if (layer < 3) {
-            std::vector<float> activated;
-            apply_so2_gate(
-                linear,
-                block.so2_gate_weight[static_cast<std::size_t>(layer)],
-                edge_count,
-                activated,
-                options.num_threads);
-            for (std::size_t index = 0; index < local.size(); ++index) {
-                local[index] += activated[index];
-            }
-        } else {
-            for (std::size_t index = 0; index < local.size(); ++index) {
-                local[index] += linear[index];
-            }
-        }
-    }
-    std::vector<float> edge_message;
-    rotate_reduced_to_global(
-        local, edges, block, options, edge_message, options.num_threads);
-    profile.mark("edge_message");
-
-    std::vector<float> q(static_cast<std::size_t>(nodes) * kChannels, 0.0F);
-    std::vector<float> key(static_cast<std::size_t>(nodes) * kChannels, 0.0F);
     for (std::int64_t node = 0; node < nodes; ++node) {
-        std::array<float, kChannels> normalized{};
         scalar_rms_norm(
             pre_focus.data() + node_index(node, 0, 0),
             block.attn_qk_scale,
-            normalized.data());
-        row_matmul(
-            normalized.data(), kChannels, block.attn_q_weight, kChannels,
-            q.data() + static_cast<std::size_t>(node) * kChannels);
-        row_matmul(
-            normalized.data(), kChannels, block.attn_k_weight, kChannels,
-            key.data() + static_cast<std::size_t>(node) * kChannels);
+            normalized_qk.data() + static_cast<std::size_t>(node) * kChannels);
     }
+    // Shared Q/K weights form two small GEMMs instead of serial per-node
+    // scalar FMA projections. The attention reductions below stay unchanged.
+    detail::sgemm(static_cast<std::size_t>(nodes), kChannels, kChannels,
+                  normalized_qk.data(), kChannels, block.attn_q_weight.data(), kChannels,
+                  q.data(), kChannels);
+    detail::sgemm(static_cast<std::size_t>(nodes), kChannels, kChannels,
+                  normalized_qk.data(), kChannels, block.attn_k_weight.data(), kChannels,
+                  key.data(), kChannels);
 
     // Attention has a positive learned null mass.  Compute every destination
     // segment independently, which is both race-free and preserves the edge
@@ -2413,7 +2336,7 @@ void run_block(
     // single edge-sized cache removes two full dot products and two logarithm
     // evaluations per edge while preserving the original fp64 values and
     // destination edge order.
-    std::vector<double> attention_logits(edges.src.size(), null_logit);
+    std::vector<double> attention_weights(edges.src.size(), null_logit);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads)
 #endif
@@ -2443,7 +2366,7 @@ void run_block(
             }
             const double logit = dot * (1.0 / 8.0) + radial_bias
                 + 2.0 * std::log(static_cast<double>(env));
-            attention_logits[e] = logit;
+            attention_weights[e] = logit;
             max_logit = std::max(max_logit, logit);
         }
         double denominator = std::exp(null_logit - max_logit);
@@ -2453,7 +2376,7 @@ void run_block(
             if (env <= 0.0F) {
                 continue;
             }
-            denominator += std::exp(attention_logits[e] - max_logit);
+            denominator += std::exp(attention_weights[e] - max_logit);
         }
         const double inverse_denominator = 1.0 / denominator;
         for (std::int64_t edge = begin; edge < end; ++edge) {
@@ -2462,16 +2385,96 @@ void run_block(
             if (env <= 0.0F) {
                 continue;
             }
-            const double alpha = std::exp(attention_logits[e] - max_logit)
+            attention_weights[e] = std::exp(attention_weights[e] - max_logit)
                 * inverse_denominator;
-            for (int row = 0; row < kFullDim; ++row) {
-                for (int channel = 0; channel < kChannels; ++channel) {
-                    attention_accum[node_index(node, row, channel)] +=
-                        alpha * edge_message[edge_index(e, row, channel)];
+        }
+    }
+    profile.mark("attention_weights");
+
+    // A tile owns complete destination segments, so it can consume each
+    // message immediately while preserving edge order and avoiding atomics.
+    // Small frames expose one task per atom; larger frames amortize GEMM
+    // packing over four atoms. Neither layout depends on the worker count.
+    constexpr std::size_t kMessageTileEdges = 128U;
+    const std::size_t node_count = static_cast<std::size_t>(nodes);
+    const std::size_t tile_nodes = node_count < 128U ? 1U : 4U;
+    const std::size_t message_tiles = (node_count + tile_nodes - 1U) / tile_nodes;
+#ifdef _OPENMP
+#pragma omp parallel num_threads(options.num_threads)
+#endif
+    {
+        std::vector<float> rotated, tile_local, linear, activated, messages;
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (std::ptrdiff_t tile = 0; tile < static_cast<std::ptrdiff_t>(message_tiles); ++tile) {
+            const std::size_t first_node = static_cast<std::size_t>(tile) * tile_nodes;
+            const std::size_t last_node = std::min(node_count, first_node + tile_nodes);
+            const std::size_t edge_end = static_cast<std::size_t>(edges.offsets[last_node]);
+            for (std::size_t begin = static_cast<std::size_t>(edges.offsets[first_node]);
+                 begin < edge_end; begin += kMessageTileEdges) {
+                const std::size_t count = std::min(kMessageTileEdges, edge_end - begin);
+                const std::size_t size = count * kReducedDim * kChannels;
+                rotated.resize(size);
+                for (std::size_t local_edge = 0; local_edge < count; ++local_edge) {
+                    const std::size_t e = begin + local_edge;
+                    const std::int32_t source = edges.src[e];
+                    for (int reduced = 0; reduced < kReducedDim; ++reduced) {
+                        std::array<double, kChannels> values{};
+                        const int degree = kReducedDegrees[static_cast<std::size_t>(reduced)];
+                        for (int global = degree * degree;
+                             global < (degree + 1) * (degree + 1); ++global) {
+                            const double rotation = edges.rotation_to_m[
+                                (e * kReducedDim + static_cast<std::size_t>(reduced)) * kFullDim
+                                    + static_cast<std::size_t>(global)];
+                            const float* features = pre_focus.data() + node_index(source, global, 0);
+                            for (int channel = 0; channel < kChannels; ++channel) {
+                                values[channel] += rotation * static_cast<double>(features[channel]);
+                            }
+                        }
+                        for (int channel = 0; channel < kChannels; ++channel) {
+                            rotated[local_edge * kReducedDim * kChannels
+                                + static_cast<std::size_t>(reduced * kChannels + channel)] =
+                                static_cast<float>(values[channel]);
+                        }
+                    }
+                }
+                dynamic_radial_mix(rotated.data(), radial_full.data() + begin * 4U * kChannels,
+                                   block, count, tile_local);
+                for (int layer = 0; layer < 4; ++layer) {
+                    apply_so2_linear(tile_local, block, layer, count, linear);
+                    if (layer < 3) {
+                        apply_so2_gate(linear, block.so2_gate_weight[static_cast<std::size_t>(layer)],
+                                       count, activated);
+                    }
+                    const auto& update = layer < 3 ? activated : linear;
+                    for (std::size_t index = 0; index < size; ++index) {
+                        tile_local[index] += update[index];
+                    }
+                }
+                messages.resize(count * kFullDim * kChannels);
+                rotate_reduced_to_global(tile_local, edges, begin, count, messages.data());
+                for (std::size_t local_edge = 0; local_edge < count; ++local_edge) {
+                    const std::size_t edge = begin + local_edge;
+                    if (edges.envelope[edge] <= 0.0F) {
+                        continue;
+                    }
+                    const double alpha = attention_weights[edge];
+                    const float* message = messages.data() + local_edge * kFullDim * kChannels;
+                    double* accumulated = attention_accum.data() + node_index(edges.dst[edge], 0, 0);
+                    for (int index = 0; index < kFullDim * kChannels; ++index) {
+                        accumulated[index] += alpha * message[index];
+                    }
                 }
             }
         }
+    }
+    profile.mark("edge_message");
 
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(options.num_threads)
+#endif
+    for (std::int64_t node = 0; node < nodes; ++node) {
         std::array<float, kChannels> normalized_gate{};
         scalar_rms_norm(
             pre_focus.data() + node_index(node, 0, 0),
@@ -2544,18 +2547,10 @@ void run_block(
     } else {
         ffn_input = state;
     }
-    std::vector<float> ffn_hidden;
-    apply_so3_linear(
-        ffn_input, nodes, kChannels, 1152,
-        block.ffn_linear1, ffn_hidden, options.num_threads);
-    std::vector<float> ffn_act;
-    block_grid_branch_batch(
-        ffn_hidden, block, options, nodes, workspace, ffn_act);
-    profile.mark("ffn_grid");
     std::vector<float> ffn_output;
-    apply_so3_linear(
-        ffn_act, nodes, 576, kChannels,
-        block.ffn_linear2, ffn_output, options.num_threads);
+    block_ffn_batch(
+        ffn_input, block, options, nodes, workspace, ffn_output);
+    profile.mark("ffn_grid");
     output.resize(input.size());
     for (std::size_t index = 0; index < output.size(); ++index) {
         output[index] = state[index] + ffn_output[index];
@@ -2732,23 +2727,15 @@ void Dpa4Calculator::compute(
     }
     profile.mark("blocks");
 
-    std::vector<float> output_hidden;
-    apply_so3_linear(
-        x, batch.atoms, kChannels, 1152,
-        options_.output_linear1, output_hidden, options_.num_threads);
-    std::vector<float> output_act;
-    output_grid_mlp_batch(
-        output_hidden, options_, batch.atoms, workspace, output_act);
-    profile.mark("output_grid");
     std::vector<float> output_update;
-    apply_so3_linear(
-        output_act, batch.atoms, 576, kChannels,
-        options_.output_linear2, output_update, options_.num_threads);
+    output_head_batch(x, options_, batch.atoms, workspace, output_update);
+    profile.mark("output_grid");
     for (std::int64_t node = 0; node < batch.atoms; ++node) {
         for (int channel = 0; channel < kChannels; ++channel) {
             const std::size_t index = node_index(node, 0, channel);
             output[static_cast<std::size_t>(node) * kChannels + static_cast<std::size_t>(channel)] =
-                static_cast<double>(x[index] + output_update[index]);
+                static_cast<double>(x[index] + output_update[
+                    static_cast<std::size_t>(node) * kChannels + static_cast<std::size_t>(channel)]);
         }
     }
     if (control) {

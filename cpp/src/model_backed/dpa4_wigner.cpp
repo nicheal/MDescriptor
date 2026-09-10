@@ -221,23 +221,21 @@ void compute_l2_tensor_from_normalized(
         }
     }
 
+    std::array<float, 256> q4{};
+    for (int first = 0; first < 16; ++first) {
+        for (int second = 0; second < 16; ++second) {
+            q4[static_cast<std::size_t>(first * 16 + second)] =
+                q2[static_cast<std::size_t>(first)] * q2[static_cast<std::size_t>(second)];
+        }
+    }
+
     for (int row = 0; row < kDpa4WignerL2Dimension; ++row) {
         for (int column = 0; column < kDpa4WignerL2Dimension; ++column) {
             float value = kZero;
             const std::size_t coefficient_offset = static_cast<std::size_t>(
                 (row * kDpa4WignerL2Dimension + column) * 256);
-            for (int a = 0; a < 4; ++a) {
-                for (int b = 0; b < 4; ++b) {
-                    for (int c = 0; c < 4; ++c) {
-                        for (int d = 0; d < 4; ++d) {
-                            const float q4 = q2[static_cast<std::size_t>(a * 4 + b)]
-                                * q2[static_cast<std::size_t>(c * 4 + d)];
-                            const std::size_t q4_index = static_cast<std::size_t>(
-                                ((a * 4 + b) * 4 + c) * 4 + d);
-                            value += payload.coefficients[coefficient_offset + q4_index] * q4;
-                        }
-                    }
-                }
+            for (std::size_t index = 0; index < q4.size(); ++index) {
+                value += payload.coefficients[coefficient_offset + index] * q4[index];
             }
             output[row * kDpa4WignerL2Dimension + column] = value;
         }
@@ -265,18 +263,24 @@ void compute_monomial_block_from_normalized(
         }
     }
 
+    // Each monomial depends only on the quaternion, not the matrix entry.
+    // Evaluate it once and preserve the original per-entry summation order.
+    std::array<float, kDpa4WignerL3MonomialCount> terms{};
+    for (std::size_t monomial = 0; monomial < payload.monomial_count; ++monomial) {
+        float term = powers[0][static_cast<std::size_t>(payload.exponents[monomial * 4 + 0])]
+            * powers[1][static_cast<std::size_t>(payload.exponents[monomial * 4 + 1])];
+        term *= powers[2][static_cast<std::size_t>(payload.exponents[monomial * 4 + 2])]
+            * powers[3][static_cast<std::size_t>(payload.exponents[monomial * 4 + 3])];
+        terms[monomial] = term;
+    }
+
     for (int row = 0; row < dimension; ++row) {
         for (int column = 0; column < dimension; ++column) {
             float value = kZero;
             const std::size_t coefficient_offset = static_cast<std::size_t>(
                 (row * dimension + column) * payload.monomial_count);
             for (std::size_t monomial = 0; monomial < payload.monomial_count; ++monomial) {
-                float term = powers[0][static_cast<std::size_t>(
-                    payload.exponents[monomial * 4 + 0])]
-                    * powers[1][static_cast<std::size_t>(payload.exponents[monomial * 4 + 1])];
-                term *= powers[2][static_cast<std::size_t>(payload.exponents[monomial * 4 + 2])]
-                    * powers[3][static_cast<std::size_t>(payload.exponents[monomial * 4 + 3])];
-                value += payload.coefficients[coefficient_offset + monomial] * term;
+                value += payload.coefficients[coefficient_offset + monomial] * terms[monomial];
             }
             output[row * dimension + column] = value;
         }

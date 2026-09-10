@@ -46,8 +46,8 @@ def test_official_checkpoint_and_batch_output():
 
 
 def test_grid_tiles_preserve_values_across_thread_counts():
-    # Three 64-node tiles, including a one-node tail. Separate H2 pairs keep
-    # the edge work small while exercising every grid branch and its scratch.
+    # More tiles than workers, including a one-node tail. Separate H2 pairs
+    # keep edge work small while exercising every grid branch and its scratch.
     positions = np.zeros((129, 3))
     positions[:, 0] = (np.arange(129) // 2) * 10.0
     positions[1::2, 0] += 0.9
@@ -60,7 +60,7 @@ def test_grid_tiles_preserve_values_across_thread_counts():
         ("grid-tiles",),
     )
     expected = None
-    for threads in (1, 2, 4):
+    for threads in (1, 2, 4, 16, 32):
         calculator = DPA4(execution=ExecutionOptions(num_threads=threads))
         try:
             actual = calculator.compute(batch).values
@@ -108,11 +108,13 @@ def test_geometry_rotation_and_atom_permutation_are_invariant():
 
 
 @pytest.mark.parametrize("dense", [False, True], ids=["small", "edge-tile-tail"])
-def test_native_backend_matches_bundled_numpy_reference(dense: bool):
+@pytest.mark.parametrize("threads", [1, 4, 16])
+def test_native_backend_matches_bundled_numpy_reference(dense: bool, threads: int):
     batch = _batch()
     if dense:
         # 33 mutually neighboring atoms yield 1056 directed edges, crossing
-        # the 1024-edge MLP tile. Include both endpoint types and an isolated atom.
+        # several fused message tiles with a tail. Include both endpoint types
+        # and an isolated atom.
         positions = np.indices((3, 3, 4)).reshape(3, -1).T[:33] * 1.2
         batch = StructureBatch(
             np.resize(np.array([1, 8], dtype=np.int32), 34),
@@ -122,7 +124,7 @@ def test_native_backend_matches_bundled_numpy_reference(dense: bool):
             np.array([0, 34], dtype=np.int64),
             ("dense-with-isolated",),
         )
-    calculator = DPA4(model=MODEL)
+    calculator = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=threads))
     _info, checkpoint = load_dpa_checkpoint(MODEL, expected_descriptor="DPA4")
     reference_runtime = new_runtime(MODEL, checkpoint)
     try:
@@ -149,6 +151,32 @@ def test_dpa4_empty_frame_is_independent_of_other_batch_frames():
         np.testing.assert_array_equal(batched, calculator.compute(isolated).values[0])
     finally:
         calculator.close()
+
+
+def test_dense_periodic_atom_preserves_attention_across_edge_tiles():
+    info, checkpoint = load_dpa_checkpoint(MODEL, expected_descriptor="DPA4")
+    # 178 periodic images within the cutoff: one destination spans multiple
+    # message tiles, so its attention sum must continue across tile boundaries.
+    batch = StructureBatch(
+        np.array([6], dtype=np.int32),
+        np.zeros((1, 3)),
+        np.array([np.eye(3) * (info.cutoff / 3.5)]),
+        np.ones((1, 3), dtype=np.int32),
+        np.array([0, 1], dtype=np.int64),
+        ("dense-periodic-atom",),
+    )
+    expected = compute_batch(new_runtime(MODEL, checkpoint), batch)
+    previous = None
+    for threads in (1, 4, 16):
+        calculator = DPA4(model=MODEL, execution=ExecutionOptions(num_threads=threads))
+        try:
+            actual = calculator.compute(batch).values
+        finally:
+            calculator.close()
+        np.testing.assert_allclose(actual, expected, rtol=2e-5, atol=4e-5)
+        if previous is not None:
+            np.testing.assert_array_equal(actual, previous)
+        previous = actual
 
 
 def test_dpa4_structure_chunking_matches_individual_computes():
