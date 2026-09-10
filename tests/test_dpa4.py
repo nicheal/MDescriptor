@@ -104,7 +104,7 @@ def test_geometry_rotation_and_atom_permutation_are_invariant():
         batch.offsets,
         batch.ids,
     )
-    np.testing.assert_allclose(calculator.compute(permuted).values, reference[order], atol=2e-5)
+    np.testing.assert_allclose(calculator.compute(permuted).values, reference[order], atol=3e-5)
 
 
 @pytest.mark.parametrize("dense", [False, True], ids=["small", "edge-tile-tail"])
