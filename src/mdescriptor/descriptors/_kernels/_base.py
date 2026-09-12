@@ -7,7 +7,7 @@ individual kernel modules stay focused on their native option mapping.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...core.input import StructureBatch, coerce_batch
 from ...core.result import DescriptorResult, format_values
@@ -61,6 +61,11 @@ class _Kernel:
     _native: Any = None
     _metadata_template: Any = None
 
+    if TYPE_CHECKING:
+        def _labels(self) -> tuple[str, ...]: ...
+
+        def _metadata(self) -> dict[str, Any]: ...
+
     @property
     def feature_count(self) -> int:
         return int(getattr(self, "_feature_count", 0))
@@ -90,12 +95,6 @@ class _Kernel:
         )
 
     def _ensure_native(self, batch: StructureBatch) -> None:
-        raise NotImplementedError
-
-    def _labels(self) -> tuple[str, ...]:
-        raise NotImplementedError
-
-    def _metadata(self) -> dict[str, Any]:
         raise NotImplementedError
 
     def _result_metadata(self) -> Any:
