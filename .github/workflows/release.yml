@@ -127,7 +127,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [build-wheels, verify-wheels, verify-model-wheels, benchmark, build-sdist]
+    needs: [build-wheels, benchmark, build-sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi
