@@ -10,14 +10,14 @@ from typing import Any
 
 import numpy as np
 import pytest
-
-from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor
 from scripts.external_reference import (
     _batch_from_npz,
     _restore_paths,
     _single_structure,
     assert_result_matches,
 )
+
+from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor
 
 ROOT = Path(__file__).parents[1]
 GOLDEN_ROOT = ROOT / "tests" / "golden"

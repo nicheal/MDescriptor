@@ -63,7 +63,7 @@
     "evaluator": "scripts/generate_external_c00ps_reference.py",
     "evaluator_sha256": "f938408e9a6ff27415a343d3740dd39bcb6094ffd2dc08eb5fb9115c42e1f2d5",
     "column_mapper": "scripts/external_reference.py",
-    "column_mapper_sha256": "e5e1e903e16e09f188b99b4d0128c1bc625007a3497c25a27637b3941ce8edfe",
+    "column_mapper_sha256": "201c476b9bad02edc0c5ba9720d77985ea27d0218dd9d4c4487c2292832a41de",
     "raw_output": {
       "mode": "direct_library_evaluation"
     },
