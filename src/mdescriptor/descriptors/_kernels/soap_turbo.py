@@ -149,7 +149,7 @@ class SoapTurboKernel(_Kernel):
         options.compression = self.compression
         options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
         self._native = _cpp.SoapTurboCalculator(options)
-        self._labels_cache = self._build_labels()
+        self._labels_cache = self._labels()
         self._metadata_template = normalize_metadata(
             self._metadata(), DescriptorLevel.ATOM, self.feature_count
         )
@@ -202,9 +202,6 @@ class SoapTurboKernel(_Kernel):
     def _labels(self) -> tuple[str, ...]:
         if self._labels_cache is not None:
             return self._labels_cache
-        return self._build_labels()
-
-    def _build_labels(self) -> tuple[str, ...]:
         if self._alpha_max is None or self.species is None:
             return ()
         if self.compression:

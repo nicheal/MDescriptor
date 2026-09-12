@@ -280,6 +280,48 @@ def _single_structure(batch: StructureBatch, index: int) -> StructureBatch:
     )
 
 
+def assert_result_matches(
+    result: Any,
+    expected: dict[str, Any],
+    arrays: Any,
+    tolerance: dict[str, float],
+    *,
+    context: str = "",
+) -> None:
+    """Check one computed result against the golden manifest and output NPZ.
+
+    This is the single check list (values/samples/level/feature_count/labels/
+    structure_ids/row_offsets) shared by the pytest suite (``tests/_golden.py``)
+    and the pytest-free wheel verifier (``scripts/verify_wheel.py``); it must
+    therefore stay importable with only NumPy.  ``context`` names the failing
+    fixture in error messages.
+    """
+
+    prefix = f"{context}: " if context else ""
+    np.testing.assert_allclose(
+        np.asarray(result.values),
+        arrays["values"],
+        rtol=tolerance["rtol"],
+        atol=tolerance["atol"],
+        err_msg=prefix or None,
+    )
+    np.testing.assert_array_equal(result.samples, arrays["samples"], err_msg=prefix or None)
+    if result.level.value != expected["level"]:
+        raise AssertionError(f"{prefix}level changed")
+    if result.feature_count != expected["feature_count"]:
+        raise AssertionError(f"{prefix}feature count changed")
+    if result.labels != tuple(expected["labels"]):
+        raise AssertionError(f"{prefix}labels changed")
+    if result.structure_ids != tuple(expected["structure_ids"]):
+        raise AssertionError(f"{prefix}structure ids changed")
+    expected_offsets = expected["row_offsets"]
+    if expected_offsets is None:
+        if result.row_offsets is not None:
+            raise AssertionError(f"{prefix}row offsets changed")
+    else:
+        np.testing.assert_array_equal(result.row_offsets, expected_offsets, err_msg=prefix or None)
+
+
 def external_c00ps_project_columns(
     *,
     species_count: int,

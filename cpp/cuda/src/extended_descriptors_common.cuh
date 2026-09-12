@@ -252,6 +252,23 @@ py::array i64_array(const std::vector<I64>& values) {
     return result;
 }
 
+// Zero a double output buffer on the context stream; the error string is
+// per descriptor.
+inline void zeroed_output(
+    CudaExecutionContext& context,
+    double* output,
+    std::size_t size,
+    const char* operation) {
+    check_cuda(
+        cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
+        operation);
+}
+
+inline std::vector<I64> host_row_offsets(const detail::StructureBatchView& host_batch) {
+    return std::vector<I64>(
+        host_batch.offsets, host_batch.offsets + host_batch.structures + 1);
+}
+
 py::dict atom_result(
     const std::vector<double>& values,
     I64 rows,
@@ -954,8 +971,7 @@ py::dict compute_soap_descriptor(
     double* structure_coefficients = inner
         ? coefficients + coefficient_size + power_size : nullptr;
     if (output_size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, output_size * sizeof(double), context.stream()),
-            "could not clear CUDA SOAP output");
+        zeroed_output(context, output, output_size, "could not clear CUDA SOAP output");
     }
     if (batch.atoms() > 0) {
         constexpr unsigned block_size = 64;
@@ -1008,7 +1024,7 @@ py::dict compute_soap_descriptor(
     result["values"] = values_array(values, rows, features);
     result["level"] = inner || outer ? "structure" : "atom";
     if (!inner && !outer) result["row_offsets"] = i64_array(
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
     result["labels"] = labels_option(options, "SOAP", features);
     result["metadata"] = metadata(options, "SOAP");
     return result;

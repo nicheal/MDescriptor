@@ -8,10 +8,8 @@ namespace mdescriptor {
 // These constants mirror the low-order paths in the vendored
 // dpmodel/descriptor/dpa4_nn/wignerd.py implementation.
 constexpr float kDpa4WignerDefaultEpsilon = 1.0e-7F;
-constexpr int kDpa4WignerMaxDegree = 3;
 constexpr int kDpa4WignerL1Dimension = 3;
 constexpr int kDpa4WignerL2Dimension = 5;
-constexpr int kDpa4WignerL3Dimension = 7;
 constexpr int kDpa4WignerFullDimension = 16;
 constexpr std::size_t kDpa4WignerL2TensorValues = 25U * 256U;
 constexpr std::size_t kDpa4WignerL2MonomialCount = 35U;
@@ -69,11 +67,6 @@ struct Dpa4WignerPayload {
     Dpa4WignerMonomialPayload l3;
 };
 
-Dpa4Quaternion normalize_dpa4_quaternion(
-    const Dpa4Quaternion& quaternion,
-    float eps = kDpa4WignerDefaultEpsilon
-);
-
 // Build the global->local edge rotation used by DPA4. Its rotation matrix
 // sends the normalized edge direction to local +Z. The implementation follows
 // build_edge_quaternion() in the vendored wignerd.py, including the two charts,
@@ -92,61 +85,13 @@ Dpa4Quaternion build_dpa4_edge_quaternion_with_length(
     float eps = kDpa4WignerDefaultEpsilon
 );
 
-void build_dpa4_edge_quaternions(
-    const Dpa4EdgeVector* edges,
-    std::size_t edge_count,
-    Dpa4Quaternion* output,
-    float eps = kDpa4WignerDefaultEpsilon,
-    int num_threads = 0
-);
-
-// Row-major active 3x3 Cartesian rotation matrix for the normalized
-// quaternion. This is the matrix called quaternion_to_rotation_matrix() in the
-// vendored implementation.
-void dpa4_quaternion_to_rotation_matrix(
-    const Dpa4Quaternion& quaternion,
-    float* output,
-    float eps = kDpa4WignerDefaultEpsilon
-);
-
-// Row-major packed SeZM l=1 Wigner block. It applies the vendored permutation
-// [1, 2, 0] and sign outer-product of [-1, -1, +1] to the Cartesian matrix.
-void compute_dpa4_l1_block(
-    const Dpa4Quaternion& quaternion,
-    float* output,
-    float eps = kDpa4WignerDefaultEpsilon
-);
-
 void validate_dpa4_wigner_payload(const Dpa4WignerPayload& payload);
-
-// Consume one monomial payload and produce its row-major (2l+1)x(2l+1)
-// Wigner block. This is the shared l=2/l=3 evaluator behind the class below.
-void compute_dpa4_monomial_block(
-    const Dpa4Quaternion& quaternion,
-    const Dpa4WignerMonomialPayload& payload,
-    float* output,
-    float eps = kDpa4WignerDefaultEpsilon
-);
 
 class Dpa4WignerLowOrder {
 public:
     // The coefficient buffers are borrowed, not copied. Construction validates
     // the shapes and exponent ABI, but does not take ownership of the buffers.
     explicit Dpa4WignerLowOrder(Dpa4WignerPayload payload);
-
-    const Dpa4WignerPayload& payload() const noexcept { return payload_; }
-
-    void compute_l2_block(
-        const Dpa4Quaternion& quaternion,
-        float* output,
-        float eps = kDpa4WignerDefaultEpsilon
-    ) const;
-
-    void compute_l3_block(
-        const Dpa4Quaternion& quaternion,
-        float* output,
-        float eps = kDpa4WignerDefaultEpsilon
-    ) const;
 
     // Produce the l<=3 packed block-diagonal matrix with shape [16, 16].
     // Degree l starts at row/column offset l*l, matching D_full in wignerd.py;
@@ -155,14 +100,6 @@ public:
         const Dpa4Quaternion& quaternion,
         float* output,
         float eps = kDpa4WignerDefaultEpsilon
-    ) const;
-
-    void compute_blocks_batch(
-        const Dpa4Quaternion* quaternions,
-        std::size_t edge_count,
-        float* output,
-        float eps = kDpa4WignerDefaultEpsilon,
-        int num_threads = 0
     ) const;
 
 private:

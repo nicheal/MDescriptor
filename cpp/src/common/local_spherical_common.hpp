@@ -2,14 +2,15 @@
 
 #include "local_common.hpp"
 #include "local_layout.hpp"
+#include "descriptor_common.hpp"
 #include "mdescriptor/detail/math3.hpp"
+#include "rotational_math.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
-#include <numeric>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -162,76 +163,16 @@ struct SymmetricMatrix {
     double at(int row, int column) const { return values[static_cast<std::size_t>(row * size + column)]; }
 };
 
-// Small Jacobi eigensolver used only to build the orthonormal GTO radial basis.
-// ponytail: this O(n^3) setup is amortized across all atoms; replace with a
-// cached eigensolver only if calculators are constructed at high frequency.
+// Inverse square root of the GTO radial overlap matrix, delegated to the
+// shared Jacobi eigensolver in rotational_math.hpp so both stay numerically
+// aligned. ponytail: this O(n^3) setup is amortized across all atoms; replace
+// with a cached eigensolver only if calculators are constructed at high
+// frequency.
 inline SymmetricMatrix inverse_sqrt(const SymmetricMatrix& input) {
-    const int n = input.size;
-    SymmetricMatrix matrix{n, input.values};
-    SymmetricMatrix eigenvectors{n, std::vector<double>(static_cast<std::size_t>(n * n), 0.0)};
-    for (int i = 0; i < n; ++i) {
-        eigenvectors.at(i, i) = 1.0;
-    }
-    for (int iteration = 0; iteration < 50 * n * n; ++iteration) {
-        int p = 0;
-        int q = 1;
-        double maximum = 0.0;
-        for (int i = 0; i < n; ++i) {
-            for (int j = i + 1; j < n; ++j) {
-                if (std::abs(matrix.at(i, j)) > maximum) {
-                    maximum = std::abs(matrix.at(i, j));
-                    p = i;
-                    q = j;
-                }
-            }
-        }
-        if (maximum <= 1e-14) {
-            break;
-        }
-        const double phi = 0.5 * std::atan2(2.0 * matrix.at(p, q), matrix.at(q, q) - matrix.at(p, p));
-        const double cosine = std::cos(phi);
-        const double sine = std::sin(phi);
-        const double app = matrix.at(p, p);
-        const double aqq = matrix.at(q, q);
-        const double apq = matrix.at(p, q);
-        matrix.at(p, p) = cosine * cosine * app - 2.0 * sine * cosine * apq + sine * sine * aqq;
-        matrix.at(q, q) = sine * sine * app + 2.0 * sine * cosine * apq + cosine * cosine * aqq;
-        matrix.at(p, q) = matrix.at(q, p) = 0.0;
-        for (int k = 0; k < n; ++k) {
-            if (k == p || k == q) {
-                continue;
-            }
-            const double akp = matrix.at(k, p);
-            const double akq = matrix.at(k, q);
-            matrix.at(k, p) = matrix.at(p, k) = cosine * akp - sine * akq;
-            matrix.at(k, q) = matrix.at(q, k) = sine * akp + cosine * akq;
-        }
-        for (int k = 0; k < n; ++k) {
-            const double vkp = eigenvectors.at(k, p);
-            const double vkq = eigenvectors.at(k, q);
-            eigenvectors.at(k, p) = cosine * vkp - sine * vkq;
-            eigenvectors.at(k, q) = sine * vkp + cosine * vkq;
-        }
-    }
-
-    std::vector<int> order(static_cast<std::size_t>(n));
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](int left, int right) {
-        return matrix.at(left, left) < matrix.at(right, right);
-    });
-    SymmetricMatrix result{n, std::vector<double>(static_cast<std::size_t>(n * n), 0.0)};
-    for (int row = 0; row < n; ++row) {
-        for (int column = 0; column < n; ++column) {
-            double value = 0.0;
-            for (int eigen = 0; eigen < n; ++eigen) {
-                const double eigenvalue = matrix.at(order[static_cast<std::size_t>(eigen)], order[static_cast<std::size_t>(eigen)]);
-                if (eigenvalue <= std::numeric_limits<double>::epsilon()) {
-                    throw std::invalid_argument("radial overlap matrix is singular, lower max_radial");
-                }
-                value += eigenvectors.at(row, order[static_cast<std::size_t>(eigen)])
-                    * eigenvectors.at(column, order[static_cast<std::size_t>(eigen)]) / std::sqrt(eigenvalue);
-            }
-            result.at(row, column) = value;
+    SymmetricMatrix result{input.size, inverse_symmetric_sqrt(input.values, input.size)};
+    for (const double value : result.values) {
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument("radial overlap matrix is singular, lower max_radial");
         }
     }
     return result;
@@ -768,7 +709,7 @@ inline void compute_lode_values(
     }
     const auto& radial_bases = cached_radial_bases;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads))
 #endif
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         if (control && control->cancelled()) {

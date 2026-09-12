@@ -5,7 +5,6 @@
 #include "mdescriptor/detail/control.hpp"
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -61,7 +60,6 @@ struct Dpa4BlockOptions {
     std::vector<float> ffn_scalar_gate;        // [384, 192]
     std::vector<float> ffn_grid_left;          // [192, 192]
     std::vector<float> ffn_grid_right;         // [192, 192]
-    std::vector<float> ffn_grid_router;        // [384, 1]
     std::vector<float> ffn_grid_out;           // [192, 192]
 };
 
@@ -95,7 +93,6 @@ struct Dpa4Options {
     std::vector<std::int64_t> wigner_l3_exponents; // owns [84, 4]
 
     std::vector<std::int64_t> gie_row_index;   // [15]
-    std::vector<std::int64_t> gie_m0_index;    // [15]
     std::vector<std::int64_t> gie_radial_index; // [15]
 
     // All default l=3,k=1 SO(3) grids use the same deterministic projector.
@@ -114,13 +111,11 @@ struct Dpa4Options {
     std::vector<float> output_grid_out;         // [384, 192]
 };
 
-class Dpa4Calculator {
+class Dpa4Calculator : public detail::CalculatorBase {
 public:
     explicit Dpa4Calculator(Dpa4Options options);
 
     std::int64_t feature_count() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -131,9 +126,7 @@ public:
 
 private:
     Dpa4Options options_;
-    Dpa4WignerLowOrder wigner_;
     std::int64_t feature_count_ = 64;
-    std::atomic<bool> closed_{false};
 };
 
 } // namespace mdescriptor

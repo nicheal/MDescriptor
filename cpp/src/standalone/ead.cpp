@@ -47,7 +47,7 @@ void compute_ead(
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads)) if(!omp_in_parallel())
 #endif
         for (std::int64_t center = begin; center < end; ++center) {
             if (cancelled(control)) {

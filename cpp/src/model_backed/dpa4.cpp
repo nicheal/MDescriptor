@@ -81,11 +81,6 @@ inline std::size_t node_index(std::int64_t node, int degree, int channel) {
         * kChannels + static_cast<std::size_t>(channel);
 }
 
-inline std::size_t reduced_index(std::size_t edge, int degree, int channel) {
-    return (edge * kReducedDim + static_cast<std::size_t>(degree)) * kChannels
-        + static_cast<std::size_t>(channel);
-}
-
 inline float sigmoid(float value) {
     return 1.0F / (1.0F + std::exp(-value));
 }
@@ -131,7 +126,6 @@ void validate_options(const Dpa4Options& options) {
     require_size(options.radial_norm_scale, 64U, "radial norm scale");
     require_size(options.radial_layer2, 64U * 256U, "radial layer 2");
     require_size(options.gie_row_index, 15U, "GIE row index");
-    require_size(options.gie_m0_index, 15U, "GIE m0 index");
     require_size(options.gie_radial_index, 15U, "GIE radial index");
     require_size(options.grid_to, static_cast<std::size_t>(kGridSize) * kGridCoeff,
                  "SO(3) grid to matrix");
@@ -185,7 +179,6 @@ void validate_options(const Dpa4Options& options) {
         require_size(block.ffn_scalar_gate, 384U * 192U, "FFN scalar gate");
         require_size(block.ffn_grid_left, 192U * 192U, "FFN grid left");
         require_size(block.ffn_grid_right, 192U * 192U, "FFN grid right");
-        require_size(block.ffn_grid_router, 384U, "FFN grid router");
         require_size(block.ffn_grid_out, 192U * 192U, "FFN grid output");
     }
     require_size(options.output_linear1, 4U * 64U * 1152U, "output linear 1");
@@ -1550,7 +1543,6 @@ void block_grid_branch_batch_tile(
                 scalar_out[static_cast<std::size_t>(channel)];
         }
     }
-    (void)block.ffn_grid_router;
 }
 
 void output_grid_mlp_batch_tile(
@@ -2090,8 +2082,9 @@ void run_block(
 } // namespace
 
 Dpa4Calculator::Dpa4Calculator(Dpa4Options options)
-    : options_(std::move(options)),
-      wigner_(make_wigner_payload(options_)) {
+    : options_(std::move(options)) {
+    // Wire the borrowed Wigner coefficient buffers before validation reads them.
+    make_wigner_payload(options_);
     validate_options(options_);
     detail::set_blas_single_thread();
 }
@@ -2100,23 +2093,13 @@ std::int64_t Dpa4Calculator::feature_count() const noexcept {
     return feature_count_;
 }
 
-void Dpa4Calculator::close() noexcept {
-    closed_.store(true, std::memory_order_release);
-}
-
-bool Dpa4Calculator::closed() const noexcept {
-    return closed_.load(std::memory_order_acquire);
-}
-
 void Dpa4Calculator::compute(
     const StructureBatchView& batch,
     const std::int32_t* type_indices,
     double* output,
     const std::shared_ptr<ComputeControl>& control) const {
     Dpa4ProfileClock profile("compute");
-    if (closed()) {
-        throw std::runtime_error("DPA4 descriptor is closed");
-    }
+    assert_open("DPA4 descriptor");
     detail::validate_batch(batch);
     if (type_indices == nullptr && batch.atoms > 0) {
         throw std::invalid_argument("DPA4 type indices cannot be null");

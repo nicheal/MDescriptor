@@ -396,8 +396,7 @@ void compute_rotational_descriptors(
     std::vector<BispectrumWorkspace> bispectrum_workspaces;
     if (!so3) {
 #ifdef _OPENMP
-        const int worker_count = options.num_threads > 0
-            ? options.num_threads : omp_get_max_threads();
+        const int worker_count = resolved_thread_count(options.num_threads);
 #else
         constexpr int worker_count = 1;
 #endif
@@ -440,7 +439,7 @@ void compute_rotational_descriptors(
             };
 #ifdef _OPENMP
             if (!omp_in_parallel()) {
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads))
                 for (std::int64_t center = begin; center < end; ++center) {
                     compute_center(center, omp_get_thread_num());
                 }
@@ -458,7 +457,7 @@ void compute_rotational_descriptors(
             return;
         }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(!omp_in_parallel())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads)) if(!omp_in_parallel())
 #endif
         for (std::int64_t center = begin; center < end; ++center) {
             if (cancelled(control)) {

@@ -14,18 +14,6 @@ from ..core.errors import ClosedDescriptorError, ModelLoadError
 from .resolver import ResolvedModel
 
 
-class _TensorSnapshot:
-    """Private CPU tensor storage whose public reads are independent clones."""
-
-    __slots__ = ("__value",)
-
-    def __init__(self, value: Any) -> None:
-        self.__value = value.detach().cpu().clone()
-
-    def materialize(self) -> Any:
-        return self.__value.clone()
-
-
 class _ArraySnapshot:
     """Private NumPy storage whose public reads are independent copies."""
 
@@ -57,15 +45,6 @@ class _FrozenMapping(Mapping[Any, Any]):
         return len(self.__values)
 
 
-def _is_torch_tensor(value: Any) -> bool:
-    """Detect Torch tensors without importing the optional dependency."""
-
-    module = type(value).__module__.split(".", 1)[0]
-    return module == "torch" and all(
-        hasattr(value, attribute) for attribute in ("detach", "cpu", "clone")
-    )
-
-
 def _is_numpy_array(value: Any) -> bool:
     """Detect NumPy arrays without making the model extra mandatory."""
 
@@ -83,8 +62,6 @@ def _freeze(value: Any) -> Any:
         return value
     if isinstance(value, Mapping):
         return _FrozenMapping({key: _freeze(item) for key, item in value.items()})
-    if _is_torch_tensor(value):
-        return _TensorSnapshot(value)
     if _is_numpy_array(value):
         return _ArraySnapshot(value)
     if is_dataclass(value) and not isinstance(value, type):
@@ -119,35 +96,31 @@ def _freeze(value: Any) -> Any:
     )
 
 
-def _materialize(value: Any) -> Any:
-    """Return a safe per-read value without exposing shared mutable storage."""
+def _materialize(value: Any, *, mutable: bool = False) -> Any:
+    """Return a safe value without exposing shared mutable storage.
 
-    if isinstance(value, (_TensorSnapshot, _ArraySnapshot)):
+    Immutable reads keep the frozen containers; the mutable walk rebuilds
+    plain containers for checkpoint readers that require writable payloads.
+    """
+
+    if isinstance(value, _ArraySnapshot):
         return value.materialize()
     if isinstance(value, _FrozenMapping):
+        if mutable:
+            return {
+                key: _materialize(item, mutable=True)
+                for key, item in value.items()
+            }
         return value
     if isinstance(value, tuple):
+        if mutable:
+            # Checkpoint readers may require list-valued configuration fields.
+            return [_materialize(item, mutable=True) for item in value]
         return tuple(_materialize(item) for item in value)
     if isinstance(value, frozenset):
+        if mutable:
+            return {_materialize(item, mutable=True) for item in value}
         return frozenset(_materialize(item) for item in value)
-    return value
-
-
-def _materialize_mutable(value: Any) -> Any:
-    """Build an isolated loader payload from the immutable shared snapshot."""
-
-    if isinstance(value, (_TensorSnapshot, _ArraySnapshot)):
-        return value.materialize()
-    if isinstance(value, _FrozenMapping):
-        return {
-            key: _materialize_mutable(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, tuple):
-        # Checkpoint readers may require list-valued configuration fields.
-        return [_materialize_mutable(item) for item in value]
-    if isinstance(value, frozenset):
-        return {_materialize_mutable(item) for item in value}
     return value
 
 
@@ -170,7 +143,7 @@ class LoadedModel:
     def materialize_weights(self) -> Any:
         """Return an isolated mutable payload for one runtime loader."""
 
-        return _materialize_mutable(self.weights)
+        return _materialize(self.weights, mutable=True)
 
 
 def identity_model_artifact(resolved: ResolvedModel) -> tuple[Mapping[str, str], None]:

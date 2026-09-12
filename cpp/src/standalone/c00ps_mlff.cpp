@@ -240,7 +240,7 @@ void validate_options(const C00PSMlffOptions& options) {
             throw std::invalid_argument("C00PS-MLFF species must be positive");
         }
     }
-    (void)detail::species_map(options.species);
+    (void)detail::make_type_map(options.species);
     if (!options.include_radial && !options.include_angular) {
         throw std::invalid_argument("at least one C00PS-MLFF descriptor block must be enabled");
     }
@@ -382,26 +382,6 @@ double radial_value(
 
 } // namespace
 
-std::int64_t c00ps_mlff_feature_count(const C00PSMlffOptions& options) {
-    validate_options(options);
-    std::vector<std::vector<double>> zeros;
-    std::vector<std::vector<double>> norms;
-    std::vector<std::vector<double>> radial_values;
-    std::vector<std::int32_t> radial_counts;
-    prepare_basis(options, zeros, norms, radial_values, radial_counts);
-    const std::int64_t radial = options.include_radial
-        ? static_cast<std::int64_t>(options.species.size()) * radial_counts[0]
-        : 0;
-    std::int64_t angular = 0;
-    if (options.include_angular) {
-        for (const std::int32_t count : radial_counts) {
-            const std::int64_t channels = static_cast<std::int64_t>(options.species.size()) * count;
-            angular += channels * (channels + 1) / 2;
-        }
-    }
-    return radial + angular;
-}
-
  C00PSMlffCalculator::C00PSMlffCalculator(C00PSMlffOptions options)
     : options_(std::move(options)) {
     validate_options(options_);
@@ -443,23 +423,13 @@ const std::vector<std::vector<double>>& C00PSMlffCalculator::basis_values() cons
     return radial_values_;
 }
 
-void C00PSMlffCalculator::close() noexcept {
-    closed_.store(true, std::memory_order_release);
-}
-
-bool C00PSMlffCalculator::closed() const noexcept {
-    return closed_.load(std::memory_order_acquire);
-}
-
 void C00PSMlffCalculator::compute(
     const StructureBatchView& batch,
     double* output,
     const std::shared_ptr<ComputeControl>& control
 ) const {
     std::lock_guard<std::mutex> lock(compute_mutex_);
-    if (closed()) {
-        throw std::runtime_error("C00PS-MLFF calculator is closed");
-    }
+    assert_open("C00PS-MLFF calculator");
     if (output == nullptr) {
         throw std::invalid_argument("C00PS-MLFF output must not be null");
     }
@@ -475,7 +445,7 @@ void C00PSMlffCalculator::compute(
 
     const std::int64_t features = feature_count();
     std::fill(output, output + batch.atoms * features, 0.0);
-    const auto mapping = detail::species_map(options_.species);
+    const auto mapping = detail::make_type_map(options_.species);
     const std::int64_t radial_channels = static_cast<std::int64_t>(options_.species.size()) * radial_counts_[0];
     std::int64_t angular_features = 0;
     if (options_.include_angular) {

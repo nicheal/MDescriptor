@@ -142,8 +142,7 @@ py::dict compute_rotational_descriptor(
             "could not upload CUDA SO3 radial basis");
     }
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear CUDA rotational output");
+        zeroed_output(context, output, size, "could not clear CUDA rotational output");
         constexpr unsigned block_size = 64;
         if (kind == 0) {
             so3_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
@@ -186,7 +185,7 @@ py::dict compute_rotational_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, name, options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_rotational(
@@ -196,9 +195,7 @@ py::dict compute_extended_rotational(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
-    (void)control;
     return compute_rotational_descriptor(
         context, batch, graph, host_batch, name, options, rotational_plan);
 }

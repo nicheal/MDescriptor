@@ -80,7 +80,7 @@ py::dict compute_extended_descriptor(
         throw std::invalid_argument("CUDA backend does not support this extended descriptor");
     }
     return kExtendedDescriptorRegistry[index].handler(
-        context, batch, graph, host_batch, name, options, control, rotational_plan_cache);
+        context, batch, graph, host_batch, name, options, rotational_plan_cache);
 }
 
 } // namespace mdescriptor::cuda

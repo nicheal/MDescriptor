@@ -2,9 +2,7 @@
 
 #include "descriptor.hpp"
 
-#include <atomic>
 #include <cstdint>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -97,7 +95,7 @@ void compute_mtp(
     double* output,
     const std::shared_ptr<ComputeControl>& control);
 
-class MtpCalculator {
+class MtpCalculator : public detail::CalculatorBase {
 public:
     MtpCalculator(MtpOptions options);
 
@@ -137,8 +135,6 @@ public:
     const std::vector<std::int32_t>& official_eval_product_right() const noexcept;
     const std::vector<double>& official_eval_product_coefficients() const noexcept;
     const std::vector<std::int32_t>& official_scalar_output_ids() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -149,8 +145,6 @@ public:
 private:
     MtpOptions options_;
     std::shared_ptr<OfficialMtpModel> official_model_;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
 };
 
 enum class RotationalDescriptorKind : std::int32_t {

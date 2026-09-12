@@ -31,34 +31,9 @@ from .options import (
 )
 from .result import DescriptorResult, _json_safe, _metadata_v1, format_values
 
-# The registry is the canonical declaration of constructor options.  The
-# aliases below are only a Python compatibility layer; they are not exposed
-# as GUI schema fields or emitted in canonical configurations.  Kernels remain
-# private implementation details, so their signatures are never used as the
-# public option source for built-ins.
-_IMPLEMENTATION_ONLY_OPTIONS = frozenset(
-    {
-        "config",
-        "dtype",
-        "sparse",
-        "device",
-        "num_threads",
-        "model_path",
-        "model_file",
-        "model_digest",
-        "_checkpoint",
-    }
-)
-
-
-def adapt_result(result: Any) -> DescriptorResult:
-    """Convert a kernel result into the one public result schema."""
-
-    if not isinstance(result, DescriptorResult):
-        raise TypeError(
-            f"kernel compute must return DescriptorResult, got {type(result).__name__}"
-        )
-    return result
+# The registry is the canonical declaration of constructor options; kernels
+# remain private implementation details, so their signatures are never used as
+# the public option source for built-ins.
 
 
 def _coerce_options(value: Any, option_type: type[Any], name: str) -> Any:
@@ -112,7 +87,6 @@ def _unsupported_input(
     descriptor: str,
     field: str,
     value: Any,
-    supported: Any,
 ) -> DescriptorInputError:
     return _input_capability_error(
         descriptor,
@@ -120,7 +94,6 @@ def _unsupported_input(
         message=f"{descriptor} does not support input field {field!r}",
         code="unsupported_input",
         value=value,
-        supported=supported,
     )
 
 
@@ -252,14 +225,6 @@ def _accepts_keyword(parameters: Mapping[str, inspect.Parameter], name: str) -> 
     return parameter is not None or any(
         item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values()
     )
-
-
-def _has_explicit_keyword(parameters: Mapping[str, inspect.Parameter], name: str) -> bool:
-    parameter = parameters.get(name)
-    return parameter is not None and parameter.kind in {
-        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        inspect.Parameter.KEYWORD_ONLY,
-    }
 
 
 def _apply_output(result: DescriptorResult, options: OutputOptions) -> DescriptorResult:
@@ -627,15 +592,14 @@ class DescriptorAdapter(Descriptor):
                 raise _unsupported_periodicity(self.name, kind, periodicity)
 
         if batch.spins is not None and not bool(capabilities.get("spin", False)):
-            raise _unsupported_input(self.name, "spins", True, None)
+            raise _unsupported_input(self.name, "spins", True)
         if batch.charge_spin is not None and not bool(
             capabilities.get("charge_spin", False)
         ):
-            raise _unsupported_input(self.name, "charge_spin", True, None)
+            raise _unsupported_input(self.name, "charge_spin", True)
 
-    def _adapt_result(self, result: Any) -> DescriptorResult:
-        adapted = adapt_result(result)
-        adapted = self._apply_execution_metadata(adapted)
+    def _adapt_result(self, result: DescriptorResult) -> DescriptorResult:
+        adapted = self._apply_execution_metadata(result)
         adapted = self._add_model_identity(adapted)
         adapted = _apply_output(adapted, self._output_options)
         # Some CUDA layouts (notably batch-derived matrix padding) resolve
@@ -844,25 +808,16 @@ def adapter_class(
     *,
     base: type[DescriptorAdapter] = DescriptorAdapter,
     default_model: Any = None,
-    allowed_options: frozenset[str] | None = None,
     requires_species: bool | None = None,
     supported_devices: tuple[str, ...] | None = None,
     input_capabilities: Mapping[str, Any] | None = None,
 ) -> type[DescriptorAdapter]:
     """Create a named public adapter without repeating lifecycle boilerplate."""
 
-    resolved_allowed = allowed_options
+    resolved_allowed = _builtin_parameter_names(name)
     if resolved_allowed is None:
-        resolved_allowed = _builtin_parameter_names(name)
-    if resolved_allowed is None:
-        resolved_allowed = frozenset(
-            parameter.name
-            for parameter in _constructor_parameters(kernel_type).values()
-            if parameter.kind
-                not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
-            and parameter.name not in _IMPLEMENTATION_ONLY_OPTIONS
-        )
-    resolved_allowed = frozenset(resolved_allowed) | _legacy_parameter_names(name)
+        raise ValueError(f"descriptor {name!r} is not declared in the builtin registry")
+    resolved_allowed = resolved_allowed | _legacy_parameter_names(name)
     if hasattr(base, "model_keyword"):
         # Model-backed adapters expose one stable ``model=`` entry even if a
         # custom registry entry predates the model schema field.

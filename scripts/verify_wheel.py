@@ -13,9 +13,19 @@ CUDA_RUNTIME_LIBRARY_NAMES = ("libcudart",)
 CUDA_FORBIDDEN_LIBRARY_NAMES = ("libcublas", "libcublasLt")
 
 try:  # ``python scripts/verify_wheel.py`` has ``scripts`` on sys.path.
-    from external_reference import _batch_from_npz, _restore_paths, _single_structure
+    from external_reference import (
+        _batch_from_npz,
+        _restore_paths,
+        _single_structure,
+        assert_result_matches,
+    )
 except ImportError:  # imported as ``scripts.verify_wheel`` by the repository test suite
-    from scripts.external_reference import _batch_from_npz, _restore_paths, _single_structure
+    from scripts.external_reference import (
+        _batch_from_npz,
+        _restore_paths,
+        _single_structure,
+        assert_result_matches,
+    )
 
 
 def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
@@ -38,32 +48,13 @@ def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
             )
             result = descriptor.compute(compute_batch)
             with np.load(fixture_dir / case["expected_output"]) as arrays:
-                expected_values = arrays["values"]
-                expected_samples = arrays["samples"]
-            tolerance = case["tolerance"]
-            np.testing.assert_allclose(
-                np.asarray(result.values),
-                expected_values,
-                rtol=tolerance["rtol"],
-                atol=tolerance["atol"],
-                err_msg=case["descriptor"],
-            )
-            np.testing.assert_array_equal(result.samples, expected_samples)
-            expected = case["result"]
-            if result.level.value != expected["level"]:
-                raise AssertionError(f"{case['descriptor']} level changed")
-            if result.feature_count != expected["feature_count"]:
-                raise AssertionError(f"{case['descriptor']} feature count changed")
-            if result.labels != tuple(expected["labels"]):
-                raise AssertionError(f"{case['descriptor']} labels changed")
-            if result.structure_ids != tuple(expected["structure_ids"]):
-                raise AssertionError(f"{case['descriptor']} structure ids changed")
-            expected_offsets = expected["row_offsets"]
-            if expected_offsets is None:
-                if result.row_offsets is not None:
-                    raise AssertionError(f"{case['descriptor']} row offsets changed")
-            else:
-                np.testing.assert_array_equal(result.row_offsets, expected_offsets)
+                assert_result_matches(
+                    result,
+                    case["result"],
+                    arrays,
+                    case["tolerance"],
+                    context=case["descriptor"],
+                )
         finally:
             descriptor.close()
 

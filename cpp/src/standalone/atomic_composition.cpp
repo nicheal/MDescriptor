@@ -1,5 +1,6 @@
 #include "mdescriptor/local_descriptors.hpp"
 #include "local_common.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -30,7 +31,7 @@ void compute_atomic_composition(
     const std::int64_t rows = per_system ? batch.structures : batch.atoms;
     std::fill(output, output + rows * static_cast<std::int64_t>(species.size()), 0.0);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(num_threads))
 #endif
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         if (control && control->cancelled()) {

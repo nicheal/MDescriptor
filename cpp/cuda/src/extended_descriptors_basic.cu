@@ -54,8 +54,7 @@ py::dict compute_atomic_composition(
     const I64 columns = static_cast<I64>(species.size());
     const std::size_t size = static_cast<std::size_t>(rows) * static_cast<std::size_t>(columns);
     double* output = context.output_buffer(size);
-    check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-        "could not clear CUDA atomic composition output");
+    zeroed_output(context, output, size, "could not clear CUDA atomic composition output");
     DeviceBuffer<I32> device_species;
     device_species.upload(species.data(), species.size(), context.stream(),
         "could not upload CUDA composition species");
@@ -95,8 +94,7 @@ py::dict compute_sorted_distances(
     const std::size_t size = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(columns);
     double* output = context.output_buffer(size);
-    check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-        "could not clear CUDA sorted distance output");
+    zeroed_output(context, output, size, "could not clear CUDA sorted distance output");
     DeviceBuffer<I32> device_species;
     device_species.upload(species.data(), species.size(), context.stream(),
         "could not upload CUDA sorted distance species");
@@ -109,8 +107,7 @@ py::dict compute_sorted_distances(
     check_cuda(cudaGetLastError(), "CUDA sorted distance kernel launch failed");
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), columns, name, options, false,
-        std::vector<I64>(host_batch.offsets,
-            host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_spherical_pair(
@@ -222,9 +219,7 @@ py::dict compute_extended_basic(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
-    (void)control;
     (void)rotational_plan;
     if (name == "AtomicComposition") {
         return compute_atomic_composition(

@@ -3,6 +3,7 @@
 #include "mdescriptor/detail/math3.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "dpa_common.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -417,22 +418,12 @@ std::int64_t Dpa4cCalculator::feature_count() const noexcept {
     return feature_count_;
 }
 
-void Dpa4cCalculator::close() noexcept {
-    closed_.store(true, std::memory_order_release);
-}
-
-bool Dpa4cCalculator::closed() const noexcept {
-    return closed_.load(std::memory_order_acquire);
-}
-
 void Dpa4cCalculator::compute(
     const StructureBatchView& batch,
     const std::int32_t* type_indices,
     double* output,
     const std::shared_ptr<ComputeControl>& control) const {
-    if (closed()) {
-        throw std::runtime_error("DPA4C descriptor is closed");
-    }
+    assert_open("DPA4C descriptor");
     detail::validate_batch(batch);
     if (type_indices == nullptr && batch.atoms > 0) {
         throw std::invalid_argument("DPA4C type indices cannot be null");
@@ -505,7 +496,7 @@ void Dpa4cCalculator::compute(
         }
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options_.num_threads > 0 ? options_.num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(options_.num_threads))
 #endif
     for (std::int64_t center_atom = 0; center_atom < batch.atoms; ++center_atom) {
         if (control && control->cancelled()) {

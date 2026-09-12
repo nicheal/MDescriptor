@@ -26,7 +26,7 @@ from ._vendor.dpa4desc.dpmodel.utils.neighbor_graph import (
     graph_from_dense_quartet,
 )
 from ._vendor.dpa4desc.weights import load_torch_checkpoint
-from .graph import _ATOMIC_SYMBOLS
+from .graph import _symbols_to_atype
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,20 +282,7 @@ def compute_batch(
             raise CancelledError("descriptor computation was cancelled")
         begin = int(batch.offsets[frame])
         end = int(batch.offsets[frame + 1])
-        symbols: list[str] = []
-        for number in batch.numbers[begin:end].tolist():
-            try:
-                symbols.append(_ATOMIC_SYMBOLS[int(number)])
-            except KeyError as exc:
-                raise ValueError(
-                    f"atomic number {number} is absent from the checkpoint type_map"
-                ) from exc
-        try:
-            atype = evaluator.symbols_to_atype(symbols)
-        except KeyError as exc:
-            raise ValueError(
-                f"element {exc.args[0]!r} is absent from the checkpoint type_map"
-            ) from exc
+        atype = _symbols_to_atype(evaluator, batch.numbers[begin:end])
         spin = None if batch.spins is None else batch.spins[begin:end]
         charge_spin = None if batch.charge_spin is None else batch.charge_spin[frame : frame + 1]
         rows.append(

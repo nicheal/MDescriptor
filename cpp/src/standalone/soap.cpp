@@ -1,6 +1,7 @@
 #include "mdescriptor/descriptor.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "descriptor_common.hpp"
+#include "extra_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -491,7 +492,7 @@ const double* polynomial_flir(
 }
 
 struct SoapPlan {
-    SpeciesMap mapping;
+    TypeMap mapping;
     std::vector<double> power_prefactors;
     std::vector<double> harmonic_normalization;
     std::vector<double> radial_prefactors;
@@ -507,7 +508,7 @@ SoapPlan prepare_soap(const SoapOptions& options) {
     const int width = options.l_max + 1;
     const double eta = 1.0 / (2.0 * options.sigma * options.sigma);
     SoapPlan plan;
-    plan.mapping = species_map(options.species);
+    plan.mapping = make_type_map(options.species);
     plan.soap_scale = kPi * std::sqrt(kPi);
     plan.power_prefactors.resize(static_cast<std::size_t>(width));
     for (int l = 0; l <= options.l_max; ++l) {
@@ -622,7 +623,7 @@ void compute_soap_structure(
     }
 #ifdef _OPENMP
     const int workspace_count = parallel_centers
-        ? (options.num_threads > 0 ? options.num_threads : omp_get_max_threads())
+        ? resolved_thread_count(options.num_threads)
         : 1;
 #else
     const int workspace_count = 1;
@@ -1019,7 +1020,7 @@ void compute_soap_structure(
         std::fill(averaged_coefficients.begin(), averaged_coefficients.end(), 0.0);
         if (atom_count > 0) {
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(parallel_centers)
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads)) if(parallel_centers)
 #endif
             for (std::int64_t center = begin; center < end; ++center) {
                 if (cancelled(control)) {
@@ -1068,7 +1069,7 @@ void compute_soap_structure(
         std::vector<double> averaged_power(static_cast<std::size_t>(features), 0.0);
         if (atom_count > 0) {
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(parallel_centers)
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads)) if(parallel_centers)
 #endif
             for (std::int64_t center = begin; center < end; ++center) {
                 if (cancelled(control)) {
@@ -1119,7 +1120,7 @@ void compute_soap_structure(
         }
     } else {
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(parallel_centers)
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads)) if(parallel_centers)
 #endif
         for (std::int64_t center = begin; center < end; ++center) {
             if (cancelled(control)) {
@@ -1232,18 +1233,8 @@ void compute_soap(const StructureBatchView& batch, const SoapOptions& options, d
     // Build and consume each structure's graph in the same worker instead.
     const double structure_cutoff = options.r_cut + padding;
     run_parallel_structures(batch.structures, options.num_threads, control, [&](std::int64_t s) {
-        const std::int64_t begin = batch.offsets[s];
-        const std::int64_t end = batch.offsets[s + 1];
-        const std::int64_t offsets[2] = {0, end - begin};
-        const StructureBatchView structure_batch{
-            batch.numbers + begin,
-            batch.positions + begin * 3,
-            batch.cells + s * 9,
-            batch.pbc + s * 3,
-            offsets,
-            1,
-            end - begin,
-        };
+        std::int64_t offsets[2];
+        const StructureBatchView structure_batch = structure_view(batch, s, offsets);
         const NeighborGraph structure_graph = build_neighbor_graph(
             structure_batch, structure_cutoff, control, 1);
         const std::int64_t out_row = structure_average ? s : batch.offsets[s];
@@ -1257,13 +1248,9 @@ void compute_soap(const StructureBatchView& batch, const SoapOptions& options, d
 SoapCalculator::SoapCalculator(SoapOptions options) : options_(std::move(options)) {}
 std::int64_t SoapCalculator::feature_count() const noexcept { return soap_features(options_); }
 const std::vector<std::int32_t>& SoapCalculator::species() const noexcept { return options_.species; }
-void SoapCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
-bool SoapCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
 void SoapCalculator::compute(const StructureBatchView& batch, double* output, const std::shared_ptr<ComputeControl>& control) const {
     std::lock_guard<std::mutex> lock(compute_mutex_);
-    if (closed()) {
-        throw std::runtime_error("SOAP calculator is closed");
-    }
+    assert_open("SOAP calculator");
     compute_soap(batch, options_, output, control);
 }
 } // namespace mdescriptor

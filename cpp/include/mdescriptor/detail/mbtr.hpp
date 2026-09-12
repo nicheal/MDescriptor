@@ -98,25 +98,6 @@ MDESCRIPTOR_MBTR_HD inline double floor_value(double value) {
 #endif
 }
 
-MDESCRIPTOR_MBTR_HD inline double gaussian_bin(
-    double value,
-    double weight,
-    double grid_min,
-    double grid_max,
-    double grid_sigma,
-    int grid_n,
-    bool normalize,
-    int bin) {
-    const double dx = (grid_max - grid_min) / (grid_n - 1);
-    const double lower = grid_min - 0.5 * dx + bin * dx;
-    const double upper = lower + dx;
-    const double sigma_root = grid_sigma * sqrt_value(2.0);
-    double result = 0.5 * (erf_value((upper - value) / sigma_root)
-        - erf_value((lower - value) / sigma_root)) / dx;
-    if (!normalize) result *= grid_sigma * sqrt_value(2.0 * kPi);
-    return weight * result;
-}
-
 MDESCRIPTOR_MBTR_HD inline double gaussian_bin_precomputed(
     double value,
     double weight,

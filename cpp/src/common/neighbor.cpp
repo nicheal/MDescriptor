@@ -1,6 +1,7 @@
 #include "mdescriptor/neighbor.hpp"
 #include "mdescriptor/detail/math3.hpp"
 #include "extra_common.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -303,7 +304,7 @@ LocalGraph build_compact_periodic_graph(
         return count;
     };
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(num_threads))
 #endif
     for (std::int64_t local = 0; local < atom_count; ++local) {
         if (control && control->cancelled()) continue;
@@ -335,7 +336,7 @@ LocalGraph build_compact_periodic_graph(
         });
     };
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(num_threads))
 #endif
     for (std::int64_t local = 0; local < atom_count; ++local) {
         if (control && control->cancelled()) continue;
@@ -529,7 +530,7 @@ LocalGraph build_structure_graph(
     };
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(num_threads))
 #endif
     for (std::int64_t local = 0; local < atom_count; ++local) {
         if (control && control->cancelled()) {
@@ -573,7 +574,7 @@ LocalGraph build_structure_graph(
     };
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(num_threads))
 #endif
     for (std::int64_t local = 0; local < atom_count; ++local) {
         if (control && control->cancelled()) {
@@ -622,7 +623,6 @@ NeighborGraph build_neighbor_graph(
         throw std::invalid_argument("neighbor cutoff must be finite and positive");
     }
     NeighborGraph graph;
-    graph.cutoff_ = cutoff;
     graph.offsets_.resize(static_cast<std::size_t>(batch.atoms) + 1, 0);
     if (batch.structures == 0) {
         return graph;
@@ -640,7 +640,7 @@ NeighborGraph build_neighbor_graph(
     }
     std::vector<LocalGraph> local(static_cast<std::size_t>(batch.structures));
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(num_threads))
 #endif
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         if (control && control->cancelled()) {

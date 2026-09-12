@@ -86,6 +86,49 @@ class So3Kernel(_AtomKernel):
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), _cpp_metadata(self.name))
 
 
+def _per_atom_values(
+    batch: StructureBatch,
+    values: dict[Any, float],
+    label: str,
+    *,
+    default: float | None = None,
+) -> list[float]:
+    """Expand a per-element mapping into batch-ordered per-atom values.
+
+    With ``default``, missing elements are filled with it and values must be
+    finite (neighbor-weight semantics); otherwise missing elements raise
+    (element-profile semantics).
+    """
+
+    if not values:
+        return []
+    numeric: dict[int, float] = {}
+    symbol_numbers = None
+    for key, value in values.items():
+        if isinstance(key, (int, np.integer)):
+            number = int(key)
+        elif isinstance(key, str):
+            if symbol_numbers is None:
+                from ase.data import atomic_numbers
+                symbol_numbers = atomic_numbers
+            try:
+                number = int(symbol_numbers[key])
+            except KeyError as exc:
+                raise ValueError(f"unknown chemical symbol in {label}: {key!r}") from exc
+        else:
+            raise TypeError(f"{label} keys must be atomic numbers or chemical symbols")
+        weight = float(value)
+        if default is not None and not np.isfinite(weight):
+            raise ValueError(f"{label} must be finite")
+        numeric[number] = weight
+    if default is None:
+        missing = sorted(set(map(int, batch.numbers)) - set(numeric))
+        if missing:
+            raise ValueError(f"{label} is missing atomic numbers: {missing}")
+        return [numeric[int(number)] for number in batch.numbers]
+    return [numeric.get(int(number), default) for number in batch.numbers]
+
+
 class _BispectrumKernel(_AtomKernel):
     """Shared Python seam for SO4, SNAP, and L-Bispectrum configuration."""
 
@@ -106,53 +149,7 @@ class _BispectrumKernel(_AtomKernel):
             raise ValueError(f"invalid {self.name} parameters")
 
     def _neighbor_weights(self, batch: StructureBatch) -> list[float]:
-        if not self.weights:
-            return []
-        numeric = {}
-        symbol_numbers = None
-        for key, value in self.weights.items():
-            if isinstance(key, (int, np.integer)):
-                number = int(key)
-            elif isinstance(key, str):
-                if symbol_numbers is None:
-                    from ase.data import atomic_numbers
-                    symbol_numbers = atomic_numbers
-                try:
-                    number = int(symbol_numbers[key])
-                except KeyError as exc:
-                    raise ValueError(f"unknown chemical symbol in weights: {key!r}") from exc
-            else:
-                raise TypeError("weights keys must be atomic numbers or chemical symbols")
-            weight = float(value)
-            if not np.isfinite(weight):
-                raise ValueError("weights must be finite")
-            numeric[number] = weight
-        return [numeric.get(int(number), 1.0) for number in batch.numbers]
-
-    @staticmethod
-    def _element_values(batch: StructureBatch, values: dict[Any, float], label: str) -> list[float]:
-        if not values:
-            return []
-        numeric: dict[int, float] = {}
-        symbol_numbers = None
-        for key, value in values.items():
-            if isinstance(key, (int, np.integer)):
-                number = int(key)
-            elif isinstance(key, str):
-                if symbol_numbers is None:
-                    from ase.data import atomic_numbers
-                    symbol_numbers = atomic_numbers
-                try:
-                    number = int(symbol_numbers[key])
-                except KeyError as exc:
-                    raise ValueError(f"unknown chemical symbol in {label}: {key!r}") from exc
-            else:
-                raise TypeError(f"{label} keys must be atomic numbers or chemical symbols")
-            numeric[number] = float(value)
-        missing = sorted(set(map(int, batch.numbers)) - set(numeric))
-        if missing:
-            raise ValueError(f"{label} is missing atomic numbers: {missing}")
-        return [numeric[int(number)] for number in batch.numbers]
+        return _per_atom_values(batch, self.weights, "weights", default=1.0)
 
     def _compute_bispectrum(
         self,
@@ -184,7 +181,6 @@ class _BispectrumKernel(_AtomKernel):
 
 class So4Kernel(_BispectrumKernel):
     name = "SO4"
-    _kind = 1
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         return self._compute_bispectrum(value, control, rfac0=1.0)
@@ -193,16 +189,6 @@ class So4Kernel(_BispectrumKernel):
 class SnapKernel(_BispectrumKernel):
     name = "SNAP"
     _kind = 2
-
-    def __init__(
-        self,
-        weights: dict[Any, float] | None = None,
-        lmax: int = 3,
-        rcut: float = 3.5,
-        normalize_U: bool = False,
-        num_threads: int | None = None,
-    ):
-        super().__init__(lmax, rcut, normalize_U, weights=weights, num_threads=num_threads)
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
@@ -256,7 +242,7 @@ class LbispectrumKernel(_BispectrumKernel):
             twojmax=self.twojmax, diagonal=self.diagonal,
             neighbor_weights=self._neighbor_weights(batch),
             rmin0=self.rmin0, rcutfac=self.rcutfac,
-            neighbor_radii=self._element_values(
+            neighbor_radii=_per_atom_values(
                 batch, self.element_radii, "element_radii"),
         )
 

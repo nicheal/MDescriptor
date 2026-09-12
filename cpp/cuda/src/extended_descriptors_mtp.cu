@@ -212,8 +212,7 @@ py::dict compute_mtp4_descriptor(
     auto* workspace = static_cast<double*>(context.workspace_buffer(
         static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(eval_count) * sizeof(double)));
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear MLIP-4 MTP output");
+        zeroed_output(context, output, size, "could not clear MLIP-4 MTP output");
         constexpr unsigned block_size = 64;
         mtp4_cuda_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -230,7 +229,7 @@ py::dict compute_mtp4_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, "MTP", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 __device__ void mtp2_radial_basis_device(
@@ -391,8 +390,7 @@ py::dict compute_mtp2_descriptor(
         static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(alpha_moments_count)
         * sizeof(double)));
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear MLIP-2 MTP output");
+        zeroed_output(context, output, size, "could not clear MLIP-2 MTP output");
         constexpr unsigned block_size = 64;
         mtp2_cuda_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -406,7 +404,7 @@ py::dict compute_mtp2_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, "MTP", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_mtp(
@@ -416,9 +414,7 @@ py::dict compute_extended_mtp(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
-    (void)control;
     (void)rotational_plan;
     const py::str payload_key("_cuda_payload");
     if (options.contains(payload_key) && !options[payload_key].is_none()) {
@@ -431,7 +427,7 @@ py::dict compute_extended_mtp(
         }
     }
     return compute_extended_generic(
-        context, batch, graph, host_batch, name, options, control, rotational_plan);
+        context, batch, graph, host_batch, name, options, rotational_plan);
 }
 
 } // namespace mdescriptor::cuda

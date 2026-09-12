@@ -24,7 +24,7 @@ namespace py = pybind11;
 
 namespace mdescriptor::cuda {
 
-struct DeviceDpa4Model::DeviceArray : dpa4_common::DeviceArray {};
+struct DeviceDpa4Model::DeviceArray : mdescriptor::cuda::DeviceArray {};
 
 namespace {
 
@@ -142,7 +142,6 @@ enum BlockWeight : int {
     kFfnScalarGate,
     kFfnGridLeft,
     kFfnGridRight,
-    kFfnGridRouter,
     kFfnGridOut,
     kBlockWeightCount,
 };
@@ -244,7 +243,6 @@ struct DeviceBlock {
     const float* ffn_scalar_gate = nullptr;
     const float* ffn_grid_left = nullptr;
     const float* ffn_grid_right = nullptr;
-    const float* ffn_grid_router = nullptr;
     const float* ffn_grid_out = nullptr;
 };
 
@@ -2292,7 +2290,10 @@ void message_grid(
     launch_check(cudaGetLastError(), "DPA4 message grid contraction launch failed");
 }
 
-void output_grid(
+// The output-head and block FFN grid orchestrators share the same launch
+// structure; only the tile width and the pack/post kernels differ.
+template <int Width>
+void grid_ffn(
     const float* hidden,
     std::int64_t node_begin,
     std::int64_t tile_nodes,
@@ -2308,16 +2309,24 @@ void output_grid(
     float* scratch2,
     float* activation,
     cudaStream_t stream) {
+    constexpr bool kOutputGrid = Width == 384;
     if (tile_nodes <= 0) {
         return;
     }
-    pack_output_grid_input_kernel<<<
-        static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
-        hidden, node_begin, tile_nodes, packed);
-    launch_check(cudaGetLastError(), "DPA4 output grid pack launch failed");
+    if constexpr (kOutputGrid) {
+        pack_output_grid_input_kernel<<<
+            static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
+            hidden, node_begin, tile_nodes, packed);
+    } else {
+        pack_block_grid_input_kernel<<<
+            static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
+            hidden, node_begin, tile_nodes, packed);
+    }
+    launch_check(cudaGetLastError(), kOutputGrid ? "DPA4 output grid pack launch failed"
+        : "DPA4 block grid pack launch failed");
 
-    const long long grid_stride = 152LL * 384LL;
-    const long long coefficient_stride = 48LL * 384LL;
+    const long long grid_stride = 152LL * Width;
+    const long long coefficient_stride = 48LL * Width;
 
     // The node batches are contiguous in memory.  Flatten the three
     // (input-batched) projections into one GEMM so a weight tile is reused
@@ -2325,121 +2334,66 @@ void output_grid(
     const std::int64_t flattened_rows = tile_nodes * 48;
     launch_row_major_gemm(
         packed, left_weight, scratch0,
-        flattened_rows, 384, 384, 384, 384, 384,
+        flattened_rows, Width, Width, Width, Width, Width,
         0, 0, 0, 1, stream,
-        "DPA4 output grid left projection launch failed");
+        kOutputGrid ? "DPA4 output grid left projection launch failed"
+        : "DPA4 block grid left projection launch failed");
+    // The output packing interleaves both projections per node, while the
+    // block packing stores the right half after all left halves.
+    const float* right_input = kOutputGrid
+        ? packed
+        : packed + tile_nodes * (48LL * Width);
     launch_row_major_gemm(
-        packed, right_weight, scratch1,
-        flattened_rows, 384, 384, 384, 384, 384,
+        right_input, right_weight, scratch1,
+        flattened_rows, Width, Width, Width, Width, Width,
         0, 0, 0, 1, stream,
-        "DPA4 output grid right projection launch failed");
+        kOutputGrid ? "DPA4 output grid right projection launch failed"
+        : "DPA4 block grid right projection launch failed");
     launch_row_major_gemm(
         grid_to, scratch0, scratch2,
-        152, 384, 48, 48, 384, 384,
+        152, Width, 48, 48, Width, Width,
         0, coefficient_stride, grid_stride, tile_nodes, stream,
-        "DPA4 output grid left-to-grid projection launch failed");
+        kOutputGrid ? "DPA4 output grid left-to-grid projection launch failed"
+        : "DPA4 block grid left-to-grid projection launch failed");
     launch_row_major_gemm(
         grid_to, scratch1, scratch0,
-        152, 384, 48, 48, 384, 384,
+        152, Width, 48, 48, Width, Width,
         0, coefficient_stride, grid_stride, tile_nodes, stream,
-        "DPA4 output grid right-to-grid projection launch failed");
+        kOutputGrid ? "DPA4 output grid right-to-grid projection launch failed"
+        : "DPA4 block grid right-to-grid projection launch failed");
 
     const std::size_t product_count = static_cast<std::size_t>(tile_nodes)
-        * kGridSize * 384U;
+        * kGridSize * Width;
     grid_product_kernel<<<
         static_cast<unsigned int>((product_count + 255U) / 256U), 256, 0, stream>>>(
         scratch2, scratch0, product_count, scratch1);
-    launch_check(cudaGetLastError(), "DPA4 output grid product launch failed");
+    launch_check(cudaGetLastError(), kOutputGrid ? "DPA4 output grid product launch failed"
+        : "DPA4 block grid product launch failed");
 
     launch_row_major_gemm(
         grid_from, scratch1, scratch2,
-        48, 384, 152, 152, 384, 384,
+        48, Width, 152, 152, Width, Width,
         0, grid_stride, coefficient_stride, tile_nodes, stream,
-        "DPA4 output grid grid-to-coefficient projection launch failed");
+        kOutputGrid ? "DPA4 output grid grid-to-coefficient projection launch failed"
+        : "DPA4 block grid grid-to-coefficient projection launch failed");
     launch_row_major_gemm(
         scratch2, output_weight,
         activation + static_cast<std::size_t>(node_begin) * 48U * 192U,
-        flattened_rows, 192, 384, 384, 192, 192,
+        flattened_rows, 192, Width, Width, 192, 192,
         0, 0, 0, 1, stream,
-        "DPA4 output grid output projection launch failed");
-    output_grid_post_kernel<<<
-        static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
-        packed, node_begin, tile_nodes, scalar_weight, activation);
-    launch_check(cudaGetLastError(), "DPA4 output grid gate launch failed");
-}
-
-void block_grid(
-    const float* hidden,
-    std::int64_t node_begin,
-    std::int64_t tile_nodes,
-    const float* grid_to,
-    const float* grid_from,
-    const float* left_weight,
-    const float* right_weight,
-    const float* output_weight,
-    const float* scalar_weight,
-    float* packed,
-    float* scratch0,
-    float* scratch1,
-    float* scratch2,
-    float* activation,
-    cudaStream_t stream) {
-    if (tile_nodes <= 0) {
-        return;
+        kOutputGrid ? "DPA4 output grid output projection launch failed"
+        : "DPA4 block grid output projection launch failed");
+    if constexpr (kOutputGrid) {
+        output_grid_post_kernel<<<
+            static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
+            packed, node_begin, tile_nodes, scalar_weight, activation);
+    } else {
+        block_grid_post_kernel<<<
+            static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
+            packed, node_begin, tile_nodes, scalar_weight, activation);
     }
-    pack_block_grid_input_kernel<<<
-        static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
-        hidden, node_begin, tile_nodes, packed);
-    launch_check(cudaGetLastError(), "DPA4 block grid pack launch failed");
-
-    const long long half_stride = 48LL * 192LL;
-    const long long grid_stride = 152LL * 192LL;
-    const long long coefficient_stride = 48LL * 192LL;
-    const std::int64_t flattened_rows = tile_nodes * 48;
-
-    launch_row_major_gemm(
-        packed, left_weight, scratch0,
-        flattened_rows, 192, 192, 192, 192, 192,
-        0, 0, 0, 1, stream,
-        "DPA4 block grid left projection launch failed");
-    launch_row_major_gemm(
-        packed + tile_nodes * half_stride, right_weight, scratch1,
-        flattened_rows, 192, 192, 192, 192, 192,
-        0, 0, 0, 1, stream,
-        "DPA4 block grid right projection launch failed");
-    launch_row_major_gemm(
-        grid_to, scratch0, scratch2,
-        152, 192, 48, 48, 192, 192,
-        0, coefficient_stride, grid_stride, tile_nodes, stream,
-        "DPA4 block grid left-to-grid projection launch failed");
-    launch_row_major_gemm(
-        grid_to, scratch1, scratch0,
-        152, 192, 48, 48, 192, 192,
-        0, coefficient_stride, grid_stride, tile_nodes, stream,
-        "DPA4 block grid right-to-grid projection launch failed");
-
-    const std::size_t product_count = static_cast<std::size_t>(tile_nodes)
-        * kGridSize * 192U;
-    grid_product_kernel<<<
-        static_cast<unsigned int>((product_count + 255U) / 256U), 256, 0, stream>>>(
-        scratch2, scratch0, product_count, scratch1);
-    launch_check(cudaGetLastError(), "DPA4 block grid product launch failed");
-
-    launch_row_major_gemm(
-        grid_from, scratch1, scratch2,
-        48, 192, 152, 152, 192, 192,
-        0, grid_stride, coefficient_stride, tile_nodes, stream,
-        "DPA4 block grid grid-to-coefficient projection launch failed");
-    launch_row_major_gemm(
-        scratch2, output_weight,
-        activation + static_cast<std::size_t>(node_begin) * 48U * 192U,
-        flattened_rows, 192, 192, 192, 192, 192,
-        0, 0, 0, 1, stream,
-        "DPA4 block grid output projection launch failed");
-    block_grid_post_kernel<<<
-        static_cast<unsigned int>(tile_nodes), 128, 0, stream>>>(
-        packed, node_begin, tile_nodes, scalar_weight, activation);
-    launch_check(cudaGetLastError(), "DPA4 block grid gate launch failed");
+    launch_check(cudaGetLastError(), kOutputGrid ? "DPA4 output grid gate launch failed"
+        : "DPA4 block grid gate launch failed");
 }
 
 void radial_so2(
@@ -2539,9 +2493,6 @@ DeviceDpa4Model::DeviceDpa4Model(
         model_payload, "wigner_l3_exponents", 84U * 4U);
     const auto gie_rows = read_exact<std::int64_t>(
         model_payload, "gie_row_index", 15U);
-    // The m0 payload is part of the checkpoint layout but unused by the CUDA
-    // kernels; still consumed so malformed files are rejected.
-    read_exact<std::int64_t>(model_payload, "gie_m0_index", 15U);
     const auto gie_radial = read_exact<std::int64_t>(
         model_payload, "gie_radial_index", 15U);
 
@@ -2685,7 +2636,6 @@ DeviceDpa4Model::DeviceDpa4Model(
         read_block(kFfnScalarGate, "ffn_scalar_gate", 384U * 192U);
         read_block(kFfnGridLeft, "ffn_grid_left", 192U * 192U);
         read_block(kFfnGridRight, "ffn_grid_right", 192U * 192U);
-        read_block(kFfnGridRouter, "ffn_grid_router", 384U);
         read_block(kFfnGridOut, "ffn_grid_out", 192U * 192U);
         for (int slot = 0; slot < kBlockWeightCount; ++slot) {
             model->blocks[block_index][slot] = upload_array(
@@ -2749,8 +2699,6 @@ DeviceDpa4Model::DeviceDpa4Model(
             model->blocks[block_index][kFfnGridLeft]);
         view.ffn_grid_right = device_data<float>(
             model->blocks[block_index][kFfnGridRight]);
-        view.ffn_grid_router = device_data<float>(
-            model->blocks[block_index][kFfnGridRouter]);
         view.ffn_grid_out = device_data<float>(
             model->blocks[block_index][kFfnGridOut]);
     }
@@ -3013,7 +2961,7 @@ std::vector<double> DeviceDpa4Model::compute(
         for (std::size_t start = 0; start < atoms; start += kGridTileNodes) {
             const std::size_t tile = std::min(
                 static_cast<std::size_t>(kGridTileNodes), atoms - start);
-            block_grid(
+            grid_ffn<192>(
                 hidden, static_cast<std::int64_t>(start),
                 static_cast<std::int64_t>(tile), model_->device.grid_to,
                 model_->device.grid_from, block.ffn_grid_left,
@@ -3032,7 +2980,7 @@ std::vector<double> DeviceDpa4Model::compute(
     for (std::size_t start = 0; start < atoms; start += kGridTileNodes) {
         const std::size_t tile = std::min(
             static_cast<std::size_t>(kGridTileNodes), atoms - start);
-        output_grid(
+        grid_ffn<384>(
             hidden, static_cast<std::int64_t>(start),
             static_cast<std::int64_t>(tile), model_->device.grid_to,
             model_->device.grid_from,

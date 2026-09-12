@@ -48,7 +48,9 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ runner.temp }}
-        run: python -m pytest --import-mode=importlib -m "not reference" --strict-markers "${{ github.workspace }}/tests"
+        # pytest discovers pyproject.toml (addopts -m "not reference") via the
+        # workspace argument even from runner.temp, so no explicit -m is needed.
+        run: python -m pytest --import-mode=importlib --strict-markers "${{ github.workspace }}/tests"
 
   coverage:
     name: Python branch coverage
@@ -67,7 +69,7 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install ".[test]"
       - name: Enforce Python branch coverage
         run: >-
-          python -m pytest --import-mode=importlib -m "not reference"
+          python -m pytest --import-mode=importlib
           --strict-markers --cov=mdescriptor --cov-report=term-missing
           --cov-report=xml tests
 

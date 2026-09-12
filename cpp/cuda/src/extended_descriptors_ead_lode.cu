@@ -89,8 +89,7 @@ py::dict compute_ead_descriptor(
         * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear CUDA EAD output");
+        zeroed_output(context, output, size, "could not clear CUDA EAD output");
         constexpr unsigned block_size = 64;
         ead_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -102,7 +101,7 @@ py::dict compute_ead_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, "EAD", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 // E1(x) via the alternating series for x < 1 and the asymptotic series
@@ -432,8 +431,7 @@ py::dict compute_lode_descriptor(
     const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear CUDA LODE output");
+        zeroed_output(context, output, size, "could not clear CUDA LODE output");
         constexpr unsigned block_size = 64;
         lode_exact_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -447,7 +445,7 @@ py::dict compute_lode_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, "LodeSphericalExpansion", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_ead_lode(
@@ -457,9 +455,7 @@ py::dict compute_extended_ead_lode(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
-    (void)control;
     (void)rotational_plan;
     if (name == "EAD") {
         return compute_ead_descriptor(context, batch, graph, host_batch, options);

@@ -45,7 +45,6 @@ reference-nepadapters = [
     "scipy>=1.11",
     "nep-adapters==1.0.2",
 ]
-all = ["ase>=3.22", "scipy>=1.11"]
 dev = [
     "pytest>=8",
     "pytest-cov>=7",
@@ -127,7 +126,6 @@ addopts = "-m 'not reference'"
 markers = [
     "gpu: tests that require a usable CUDA plugin and GPU device",
     "model: tests that exercise bundled model-backed descriptors and assets",
-    "timing: timing smoke tests that record runtimes without enforcing a speedup",
     "reference: tests that require a pinned external numerical reference implementation",
     "dscribe: external numerical comparisons against pinned DScribe",
     "featomic: external numerical comparisons against pinned Featomic",

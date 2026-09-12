@@ -1,6 +1,7 @@
 #include "mdescriptor/descriptor.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "descriptor_common.hpp"
+#include "extra_common.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -36,7 +37,7 @@ void compute_acsf_structure(
     const std::int64_t types = static_cast<std::int64_t>(options.species.size());
     const std::int64_t per_type = 1 + options.n_g2 + options.n_g3;
     const std::size_t feature_count = static_cast<std::size_t>(acsf_features(options));
-    const auto mapping = species_map(options.species);
+    const auto mapping = make_type_map(options.species);
 
     auto cutoff = [&](double distance) {
         return 0.5 * (std::cos(kPi * distance / options.r_cut) + 1.0);
@@ -65,7 +66,7 @@ void compute_acsf_structure(
     const bool has_angular = options.n_g4 > 0 || options.n_g5 > 0;
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(parallel_centers)
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads)) if(parallel_centers)
 #endif
     for (std::int64_t center = begin; center < end; ++center) {
         if (cancelled(control)) {
@@ -227,17 +228,8 @@ void compute_acsf(const StructureBatchView& batch, const AcsfOptions& options, d
     }
     run_parallel_structures(batch.structures, options.num_threads, control, [&](std::int64_t s) {
         const std::int64_t begin = batch.offsets[s];
-        const std::int64_t end = batch.offsets[s + 1];
-        const std::int64_t offsets[2] = {0, end - begin};
-        const StructureBatchView structure_batch{
-            batch.numbers + begin,
-            batch.positions + begin * 3,
-            batch.cells + s * 9,
-            batch.pbc + s * 3,
-            offsets,
-            1,
-            end - begin,
-        };
+        std::int64_t offsets[2];
+        const StructureBatchView structure_batch = structure_view(batch, s, offsets);
         const NeighborGraph neighbor_graph = build_neighbor_graph(
             structure_batch, options.r_cut, control, 1);
         compute_acsf_structure(
@@ -249,13 +241,9 @@ void compute_acsf(const StructureBatchView& batch, const AcsfOptions& options, d
 AcsfCalculator::AcsfCalculator(AcsfOptions options) : options_(std::move(options)) {}
 std::int64_t AcsfCalculator::feature_count() const noexcept { return acsf_features(options_); }
 const std::vector<std::int32_t>& AcsfCalculator::species() const noexcept { return options_.species; }
-void AcsfCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
-bool AcsfCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
 void AcsfCalculator::compute(const StructureBatchView& batch, double* output, const std::shared_ptr<ComputeControl>& control) const {
     std::lock_guard<std::mutex> lock(compute_mutex_);
-    if (closed()) {
-        throw std::runtime_error("ACSF calculator is closed");
-    }
+    assert_open("ACSF calculator");
     compute_acsf(batch, options_, output, control);
 }
 } // namespace mdescriptor

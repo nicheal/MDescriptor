@@ -37,8 +37,6 @@ except ImportError as exc:  # pragma: no cover - exercised only before a build
     ) from exc
 
 
-ComputeControl = _cpp.ComputeControl
-CancelledError = _cpp.CancelledError
 _build_neighbor_graph = _cpp.build_neighbor_graph
 _compute_coulomb_matrix = _cpp.compute_coulomb_matrix
 _compute_atomic_composition = _cpp.compute_atomic_composition
@@ -297,7 +295,6 @@ class SoapKernel(_Kernel):
             batch.pbc,
             batch.offsets,
             control,
-            0 if self.num_threads is None else int(self.num_threads),
             native_inner_average,
             native_outer_average,
         )

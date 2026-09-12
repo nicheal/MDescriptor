@@ -24,16 +24,11 @@ public:
     DeviceDpa4cModel& operator=(const DeviceDpa4cModel&) = delete;
     ~DeviceDpa4cModel() noexcept;
 
-    std::int64_t feature_count() const noexcept { return feature_count_; }
     double cutoff() const noexcept { return rcut_; }
-
-    // Returns the checkpoint type index for an atomic number, or -1 when the
-    // payload did not provide a type_numbers entry or the number is absent.
-    int type_index_for_number(std::int32_t number) const noexcept;
 
     // type_indices is intentionally host-owned.  The implementation uploads
     // it on the model's stream and returns host float64 values with shape
-    // (batch.atoms, feature_count()).
+    // (batch.atoms, feature_count_).
     std::vector<double> compute(
         CudaExecutionContext& context,
         const DeviceBatch& batch,
@@ -66,8 +61,6 @@ private:
     std::vector<std::int64_t> degree_offsets_;
     std::vector<std::int32_t> gram_index_;
     std::vector<float> gram_scale_;
-    std::vector<std::int32_t> type_numbers_;
-    std::vector<std::int32_t> host_type_lookup_;
 
     // Every tensor is contiguous and device-resident.  Keeping the ownership
     // in this object makes model construction exception safe and avoids a

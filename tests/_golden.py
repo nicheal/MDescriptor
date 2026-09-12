@@ -11,50 +11,16 @@ from typing import Any
 import numpy as np
 import pytest
 
-import mdescriptor
 from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor
+from scripts.external_reference import (
+    _batch_from_npz,
+    _restore_paths,
+    _single_structure,
+    assert_result_matches,
+)
 
 ROOT = Path(__file__).parents[1]
-PACKAGE_ROOT = Path(mdescriptor.__file__).resolve().parent
 GOLDEN_ROOT = ROOT / "tests" / "golden"
-
-
-def _restore_paths(value: Any) -> Any:
-    if isinstance(value, str):
-        if value.startswith("${PACKAGE_ROOT}/"):
-            return str(PACKAGE_ROOT / value.removeprefix("${PACKAGE_ROOT}/"))
-        if value.startswith("${PROJECT_ROOT}/"):
-            return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
-    if isinstance(value, dict):
-        return {key: _restore_paths(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_restore_paths(item) for item in value]
-    return value
-
-
-def _batch_from_npz(path: Path, ids: tuple[str, ...]) -> StructureBatch:
-    with np.load(path) as arrays:
-        return StructureBatch(
-            np.asarray(arrays["numbers"], dtype=np.int32),
-            np.asarray(arrays["positions"], dtype=np.float64),
-            np.asarray(arrays["cells"], dtype=np.float64),
-            np.asarray(arrays["pbc"], dtype=np.int32),
-            np.asarray(arrays["offsets"], dtype=np.int64),
-            ids,
-        )
-
-
-def _single_structure(batch: StructureBatch, index: int) -> StructureBatch:
-    begin = int(batch.offsets[index])
-    end = int(batch.offsets[index + 1])
-    return StructureBatch(
-        batch.numbers[begin:end],
-        batch.positions[begin:end],
-        batch.cells[index : index + 1],
-        batch.pbc[index : index + 1],
-        np.asarray([0, end - begin], dtype=np.int64),
-        (batch.ids[index],),
-    )
 
 
 def _descriptor(manifest: dict[str, Any]):
@@ -101,21 +67,7 @@ def _assert_process_abort(manifest: dict[str, Any], batch: StructureBatch, match
 
 
 def _assert_result(result: Any, expected: dict[str, Any], arrays: Any, tolerance: dict[str, float]) -> None:
-    np.testing.assert_allclose(
-        result.values,
-        arrays["values"],
-        rtol=tolerance["rtol"],
-        atol=tolerance["atol"],
-    )
-    np.testing.assert_array_equal(result.samples, arrays["samples"])
-    assert result.level.value == expected["level"]
-    assert result.feature_count == expected["feature_count"]
-    assert result.labels == tuple(expected["labels"])
-    assert result.structure_ids == tuple(expected["structure_ids"])
-    if expected["row_offsets"] is None:
-        assert result.row_offsets is None
-    else:
-        np.testing.assert_array_equal(result.row_offsets, expected["row_offsets"])
+    assert_result_matches(result, expected, arrays, tolerance)
     assert result.metadata == _restore_paths(expected["metadata"])
 
 

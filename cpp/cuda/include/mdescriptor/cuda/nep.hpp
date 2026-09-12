@@ -7,9 +7,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace mdescriptor::cuda {
+
+// Defined in device_memory.cuh; opaque here so the plugin-internal header
+// stays free of CUDA headers.
+struct DeviceArray;
 
 // Device-resident descriptor portion of one parsed NEP model.  The host
 // parser remains the single source of truth for the model protocol; this
@@ -44,20 +49,14 @@ public:
     // semantics instead of silently writing an all-zero GPU row.
     bool supports_atomic_number(std::int32_t number) const noexcept;
 
-    const std::int32_t* type_lookup() const noexcept { return type_lookup_; }
-    const float* radial_cutoff_pair() const noexcept { return radial_cutoff_pair_; }
-    const float* angular_cutoff_pair() const noexcept { return angular_cutoff_pair_; }
-    const float* radial_pair_coefficients() const noexcept {
-        return radial_pair_coefficients_;
-    }
-    const float* angular_pair_coefficients() const noexcept {
-        return angular_pair_coefficients_;
-    }
-    const float* scalers() const noexcept { return scalers_; }
+    const std::int32_t* type_lookup() const noexcept;
+    const float* radial_cutoff_pair() const noexcept;
+    const float* angular_cutoff_pair() const noexcept;
+    const float* radial_pair_coefficients() const noexcept;
+    const float* angular_pair_coefficients() const noexcept;
+    const float* scalers() const noexcept;
 
 private:
-    void release() noexcept;
-
     int num_types_ = 0;
     int n_max_radial_ = 0;
     int n_max_angular_ = 0;
@@ -75,19 +74,18 @@ private:
     bool has_q_134_ = false;
     std::vector<std::int32_t> host_type_lookup_;
 
-    std::int32_t* type_lookup_ = nullptr;
-    float* radial_cutoff_pair_ = nullptr;
-    float* angular_cutoff_pair_ = nullptr;
-    float* radial_pair_coefficients_ = nullptr;
-    float* angular_pair_coefficients_ = nullptr;
-    float* scalers_ = nullptr;
+    std::unique_ptr<DeviceArray> type_lookup_;
+    std::unique_ptr<DeviceArray> radial_cutoff_pair_;
+    std::unique_ptr<DeviceArray> angular_cutoff_pair_;
+    std::unique_ptr<DeviceArray> radial_pair_coefficients_;
+    std::unique_ptr<DeviceArray> angular_pair_coefficients_;
+    std::unique_ptr<DeviceArray> scalers_;
 };
 
 std::vector<double> compute_nep(
     CudaExecutionContext& context,
     const DeviceBatch& batch,
     const DeviceNeighborGraph& graph,
-    const DeviceNepModel& model,
-    bool reference_radial_accumulation = false);
+    const DeviceNepModel& model);
 
 } // namespace mdescriptor::cuda

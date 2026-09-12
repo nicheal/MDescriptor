@@ -24,7 +24,7 @@ namespace py = pybind11;
 
 namespace mdescriptor::cuda {
 
-struct DeviceDpa4cModel::DeviceArray : dpa4_common::DeviceArray {};
+struct DeviceDpa4cModel::DeviceArray : mdescriptor::cuda::DeviceArray {};
 
 namespace {
 
@@ -606,14 +606,7 @@ DeviceDpa4cModel::DeviceDpa4cModel(CudaExecutionContext& context, py::dict paylo
     device_ = context.device(); rcut_ = p.rcut; ntypes_ = p.ntypes; channels_ = p.channels; lmax_ = p.lmax;
     n_radial_ = p.n_radial; radial_modes_ = p.radial_modes; radial_hidden_ = p.radial_hidden;
     pair_hidden_ = p.pair_hidden; calibrate_ = p.calibrate; degree_channels_ = p.degree_channels;
-    bispectrum_ranks_ = p.bispectrum_ranks; type_numbers_ = p.type_numbers;
-    host_type_lookup_.assign(119, -1);
-    for (int index = 0; index < static_cast<int>(type_numbers_.size()); ++index) {
-        const int number = type_numbers_[index];
-        if (number <= 0 || number >= static_cast<int>(host_type_lookup_.size()) || host_type_lookup_[number] >= 0)
-            throw std::invalid_argument("DPA4C CUDA type_numbers contains an invalid or duplicate atomic number");
-        host_type_lookup_[number] = index;
-    }
+    bispectrum_ranks_ = p.bispectrum_ranks;
     degree_offsets_.assign(static_cast<std::size_t>(lmax_ + 2), 0);
     for (int degree = 0; degree <= lmax_; ++degree) degree_offsets_[degree + 1] = degree_offsets_[degree] + (2 * degree + 1) * degree_channels_[degree];
     moment_count_ = degree_offsets_.back();
@@ -706,11 +699,6 @@ void DeviceDpa4cModel::release() noexcept {
     layout_.reset();
 }
 
-int DeviceDpa4cModel::type_index_for_number(std::int32_t number) const noexcept {
-    return number > 0 && number < static_cast<std::int32_t>(host_type_lookup_.size())
-        ? host_type_lookup_[static_cast<std::size_t>(number)] : -1;
-}
-
 std::vector<double> DeviceDpa4cModel::compute(
     CudaExecutionContext& context, const DeviceBatch& batch,
     const DeviceNeighborGraph& graph, const std::vector<std::int32_t>& type_indices) const {
@@ -734,11 +722,9 @@ std::vector<double> DeviceDpa4cModel::compute(
         throw CudaOutOfMemory("DPA4C CUDA output is too large");
     const std::size_t output_count = atom_count * feature_count;
     double* output = context.output_buffer(output_count);
-    DeviceArray type_indices_device;
-    check_cuda(cudaSetDevice(context.device()), "could not select the CUDA device for DPA4C compute");
-    check_cuda(cudaMalloc(&type_indices_device.pointer, type_indices.size() * sizeof(std::int32_t)), "could not allocate DPA4C CUDA type indices");
-    auto* device_types = static_cast<std::int32_t*>(type_indices_device.pointer);
-    check_cuda(cudaMemcpyAsync(device_types, type_indices.data(), type_indices.size() * sizeof(std::int32_t), cudaMemcpyHostToDevice, context.stream()), "could not upload DPA4C CUDA type indices");
+    const auto type_indices_device = upload_array(
+        context, type_indices, "could not upload DPA4C CUDA type indices");
+    auto* device_types = device_data<std::int32_t>(type_indices_device);
     KernelModel model{
         0.0, ntypes_, channels_, lmax_, n_radial_, radial_modes_, radial_hidden_, pair_hidden_, calibrate_, feature_count_, moment_count_, triple_count_,
         device_data<float>(type_embedding_), device_data<float>(radial_freqs_), device_data<float>(radial_w0_), device_data<float>(radial_w1_), device_data<float>(radial_mode_w_),

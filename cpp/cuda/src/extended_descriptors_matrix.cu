@@ -83,10 +83,8 @@ py::dict compute_extended_matrix(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
     (void)graph;
-    (void)control;
     (void)rotational_plan;
     const int kind = name == "CoulombMatrix" ? kMatrixKindCoulomb
         : name == "SineMatrix" ? kMatrixKindSine : kMatrixKindEwald;

@@ -142,12 +142,9 @@ def _info(
     spin: bool = False,
     charge_spin: bool = False,
     cooperative_cancel: bool = True,
-    mixed_periodicity: bool | None = None,
     devices: tuple[str, ...] = ("cpu",),
     asset: dict[str, Any] | None = None,
 ) -> DescriptorInfo:
-    if mixed_periodicity is None:
-        mixed_periodicity = set(periodicity) == set(_ALL_PERIODICITY)
     return DescriptorInfo(
         display_name,
         description,

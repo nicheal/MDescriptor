@@ -1,6 +1,8 @@
 #include "mdescriptor/cuda/batch.hpp"
 #include "mdescriptor/cuda/error.hpp"
 
+#include "device_memory.cuh"
+
 #include <cuda_runtime.h>
 
 #include <array>
@@ -11,56 +13,6 @@
 
 namespace mdescriptor::cuda {
 namespace {
-
-template <typename Value>
-void ensure_and_copy(
-    Value** destination,
-    std::size_t* capacity,
-    const Value* source,
-    std::size_t count,
-    cudaStream_t stream,
-    const char* operation) {
-    if (count > *capacity) {
-        if (*destination != nullptr) {
-            check_cuda(cudaFree(*destination), operation);
-            *destination = nullptr;
-        }
-        *capacity = 0;
-        check_cuda(
-            cudaMalloc(reinterpret_cast<void**>(destination), count * sizeof(Value)),
-            operation);
-        *capacity = count;
-    }
-    if (count != 0) {
-        check_cuda(
-            cudaMemcpyAsync(
-                *destination, source, count * sizeof(Value),
-                cudaMemcpyHostToDevice, stream),
-            operation);
-    }
-}
-
-template <typename Value>
-void ensure_capacity(Value** destination, std::size_t* capacity, std::size_t count) {
-    if (count <= *capacity) {
-        return;
-    }
-    if (*destination != nullptr) {
-        check_cuda(cudaFree(*destination), "could not release CUDA batch storage");
-        *destination = nullptr;
-    }
-    *capacity = 0;
-    if (count == 0) {
-        return;
-    }
-    if (count > std::numeric_limits<std::size_t>::max() / sizeof(Value)) {
-        throw CudaOutOfMemory("requested CUDA batch storage is too large");
-    }
-    check_cuda(
-        cudaMalloc(reinterpret_cast<void**>(destination), count * sizeof(Value)),
-        "could not allocate CUDA batch storage");
-    *capacity = count;
-}
 
 __global__ void stage_positions_aos_to_soa_kernel(
     int atoms,
@@ -75,47 +27,18 @@ __global__ void stage_positions_aos_to_soa_kernel(
     positions_soa[2 * stride + atom] = positions_aos[3 * atom + 2];
 }
 
-bool inverse_row_major3(const double* matrix, double* inverse) {
-    const double determinant =
-        matrix[0] * (matrix[4] * matrix[8] - matrix[5] * matrix[7])
-        - matrix[1] * (matrix[3] * matrix[8] - matrix[5] * matrix[6])
-        + matrix[2] * (matrix[3] * matrix[7] - matrix[4] * matrix[6]);
-    if (!std::isfinite(determinant) || std::abs(determinant) <= 1.0e-12) {
-        return false;
-    }
-    const double inverse_determinant = 1.0 / determinant;
-    inverse[0] = (matrix[4] * matrix[8] - matrix[5] * matrix[7]) * inverse_determinant;
-    inverse[1] = (matrix[2] * matrix[7] - matrix[1] * matrix[8]) * inverse_determinant;
-    inverse[2] = (matrix[1] * matrix[5] - matrix[2] * matrix[4]) * inverse_determinant;
-    inverse[3] = (matrix[5] * matrix[6] - matrix[3] * matrix[8]) * inverse_determinant;
-    inverse[4] = (matrix[0] * matrix[8] - matrix[2] * matrix[6]) * inverse_determinant;
-    inverse[5] = (matrix[2] * matrix[3] - matrix[0] * matrix[5]) * inverse_determinant;
-    inverse[6] = (matrix[3] * matrix[7] - matrix[4] * matrix[6]) * inverse_determinant;
-    inverse[7] = (matrix[1] * matrix[6] - matrix[0] * matrix[7]) * inverse_determinant;
-    inverse[8] = (matrix[0] * matrix[4] - matrix[1] * matrix[3]) * inverse_determinant;
-    return true;
-}
-
 std::array<std::int32_t, 3> nep_replication_counts(
     const double* source_cell,
     double cutoff) {
     double reference_cell[9] = {};
-    for (int row = 0; row < 3; ++row) {
-        for (int column = 0; column < 3; ++column) {
-            reference_cell[row * 3 + column] = source_cell[column * 3 + row];
-        }
-    }
     double inverse[9] = {};
-    if (!inverse_row_major3(reference_cell, inverse)) {
-        throw std::invalid_argument("cannot expand a singular periodic NEP cell");
-    }
+    const auto norms = reciprocal_row_norms(
+        source_cell, reference_cell, inverse,
+        "cannot expand a singular periodic NEP cell");
     std::array<std::int32_t, 3> counts{1, 1, 1};
     for (int axis = 0; axis < 3; ++axis) {
-        const double x = inverse[axis * 3 + 0];
-        const double y = inverse[axis * 3 + 1];
-        const double z = inverse[axis * 3 + 2];
-        const double reciprocal_norm = std::sqrt(x * x + y * y + z * z);
-        const double required = 2.0 * cutoff * reciprocal_norm;
+        const double required =
+            2.0 * cutoff * norms[static_cast<std::size_t>(axis)];
         if (!std::isfinite(required)
             || required > static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
             throw std::invalid_argument("CUDA NEP periodic image range is too large");
@@ -186,14 +109,6 @@ DeviceBatch::~DeviceBatch() noexcept {
     clear();
 }
 
-template <typename Value>
-void DeviceBatch::release(Value*& pointer) noexcept {
-    if (pointer != nullptr) {
-        (void)cudaFree(pointer);
-        pointer = nullptr;
-    }
-}
-
 void DeviceBatch::upload(
     CudaExecutionContext& context,
     const detail::StructureBatchView& batch) {
@@ -205,19 +120,19 @@ void DeviceBatch::upload(
     structures_ = batch.structures;
     atoms_ = batch.atoms;
     check_cuda(cudaSetDevice(context.device()), "could not select the CUDA device");
-    ensure_and_copy(
+    ensure_and_upload(
         &numbers_, &numbers_capacity_, batch.numbers,
         static_cast<std::size_t>(atoms_), context.stream(), "could not upload numbers");
-    ensure_and_copy(
+    ensure_and_upload(
         &positions_, &positions_capacity_, batch.positions,
         static_cast<std::size_t>(atoms_) * 3, context.stream(), "could not upload positions");
-    ensure_and_copy(
+    ensure_and_upload(
         &cells_, &cells_capacity_, batch.cells,
         static_cast<std::size_t>(structures_) * 9, context.stream(), "could not upload cells");
-    ensure_and_copy(
+    ensure_and_upload(
         &pbc_, &pbc_capacity_, batch.pbc,
         static_cast<std::size_t>(structures_) * 3, context.stream(), "could not upload pbc");
-    ensure_and_copy(
+    ensure_and_upload(
         &offsets_, &offsets_capacity_, batch.offsets,
         static_cast<std::size_t>(structures_ + 1), context.stream(), "could not upload offsets");
 }
@@ -355,22 +270,22 @@ bool DeviceBatch::expand_nep(
         &expansion_counts_, &expansion_counts_capacity_, structure_count * 3U);
 
     const cudaStream_t stream = context.stream();
-    ensure_and_copy(
+    ensure_and_upload(
         &cells_, &cells_capacity_, host_cells_.data(), host_cells_.size(), stream,
         "could not upload expanded NEP cells");
-    ensure_and_copy(
+    ensure_and_upload(
         &pbc_, &pbc_capacity_, host_pbc_.data(), host_pbc_.size(), stream,
         "could not upload expanded NEP pbc");
-    ensure_and_copy(
+    ensure_and_upload(
         &offsets_, &offsets_capacity_, host_offsets_.data(), host_offsets_.size(), stream,
         "could not upload expanded NEP offsets");
-    ensure_and_copy(
+    ensure_and_upload(
         &expansion_first_, &expansion_first_capacity_, expansion_first.data(),
         expansion_first.size(), stream, "could not upload NEP expansion mapping");
-    ensure_and_copy(
+    ensure_and_upload(
         &expansion_stride_, &expansion_stride_capacity_, expansion_stride.data(),
         expansion_stride.size(), stream, "could not upload NEP expansion strides");
-    ensure_and_copy(
+    ensure_and_upload(
         &expansion_replicas_, &expansion_replicas_capacity_, expansion_replicas.data(),
         expansion_replicas.size(), stream, "could not upload NEP expansion replica counts");
     std::vector<std::int32_t> replication_flat(structure_count * 3U, 1);
@@ -380,7 +295,7 @@ bool DeviceBatch::expand_nep(
                 replication[structure][static_cast<std::size_t>(axis)];
         }
     }
-    ensure_and_copy(
+    ensure_and_upload(
         &expansion_counts_, &expansion_counts_capacity_, replication_flat.data(),
         replication_flat.size(), stream, "could not upload NEP expansion counts");
 
@@ -423,16 +338,16 @@ void DeviceBatch::ensure_positions_soa(CudaExecutionContext& context) {
 }
 
 void DeviceBatch::clear() noexcept {
-    release(numbers_);
-    release(positions_);
-    release(positions_soa_);
-    release(cells_);
-    release(pbc_);
-    release(offsets_);
-    release(expansion_first_);
-    release(expansion_stride_);
-    release(expansion_replicas_);
-    release(expansion_counts_);
+    device_free(numbers_);
+    device_free(positions_);
+    device_free(positions_soa_);
+    device_free(cells_);
+    device_free(pbc_);
+    device_free(offsets_);
+    device_free(expansion_first_);
+    device_free(expansion_stride_);
+    device_free(expansion_replicas_);
+    device_free(expansion_counts_);
     structures_ = 0;
     atoms_ = 0;
     numbers_capacity_ = 0;

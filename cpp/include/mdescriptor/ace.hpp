@@ -2,10 +2,8 @@
 
 #include "descriptor.hpp"
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -37,7 +35,7 @@ struct AceOptions {
     int num_threads = 0;
 };
 
-class AceCalculator {
+class AceCalculator : public detail::CalculatorBase {
 public:
     struct Impl;
 
@@ -64,8 +62,6 @@ public:
     const std::vector<std::int64_t>& term_channel_offsets() const noexcept;
     const std::vector<std::int32_t>& term_channels() const noexcept;
     const std::vector<double>& term_coefficients() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const detail::StructureBatchView& batch,
@@ -95,8 +91,6 @@ private:
     std::vector<std::int64_t> term_channel_offsets_;
     std::vector<std::int32_t> term_channels_;
     std::vector<double> term_coefficients_;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
 
     std::shared_ptr<const Impl> impl_;
 };

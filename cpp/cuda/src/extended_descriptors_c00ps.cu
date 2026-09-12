@@ -370,8 +370,7 @@ py::dict compute_c00ps_mlff_descriptor(
         static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(coefficient_stride)
         * sizeof(double)));
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear C00PS output");
+        zeroed_output(context, output, size, "could not clear C00PS output");
         constexpr unsigned block_size = 64;
         c00ps_mlff_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -386,7 +385,7 @@ py::dict compute_c00ps_mlff_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, "C00PSMLFF", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_c00ps(
@@ -396,10 +395,8 @@ py::dict compute_extended_c00ps(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
     (void)name;
-    (void)control;
     (void)rotational_plan;
     return compute_c00ps_mlff_descriptor(context, batch, graph, host_batch, options);
 }

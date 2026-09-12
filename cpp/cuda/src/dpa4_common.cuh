@@ -6,6 +6,8 @@
 
 #include "mdescriptor/cuda/error.hpp"
 
+#include "device_memory.cuh"
+
 #include <cuda_runtime.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pytypes.h>
@@ -21,15 +23,6 @@
 namespace mdescriptor::cuda::dpa4_common {
 
 namespace py = pybind11;
-
-// Owning handle for one model-owned device allocation.
-struct DeviceArray {
-    void* pointer = nullptr;
-    std::size_t bytes = 0;
-    ~DeviceArray() noexcept {
-        if (pointer != nullptr) (void)cudaFree(pointer);
-    }
-};
 
 inline py::handle required(
     const py::dict& payload, const char* name, const char* backend) {

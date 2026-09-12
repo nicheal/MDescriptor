@@ -170,8 +170,7 @@ py::dict compute_ace_descriptor(
     auto* coefficient_workspace = static_cast<double*>(context.workspace_buffer(
         static_cast<std::size_t>(batch.atoms()) * base_species.size() * 2 * sizeof(double)));
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear ACE output");
+        zeroed_output(context, output, size, "could not clear ACE output");
         constexpr unsigned block_size = 64;
         ace_cuda_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -188,7 +187,7 @@ py::dict compute_ace_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, "ACE", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_ace(
@@ -198,10 +197,8 @@ py::dict compute_extended_ace(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
     (void)name;
-    (void)control;
     (void)rotational_plan;
     return compute_ace_descriptor(context, batch, graph, host_batch, options);
 }

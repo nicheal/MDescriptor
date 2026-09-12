@@ -90,7 +90,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "." "ase>=3.22" "scipy>=1.11"
       - name: Run controlled benchmark
-        run: python scripts/run_benchmark.py --output benchmark.json
+        run: python scripts/benchmarking/run_descriptor_benchmark.py --output benchmark.json
       - name: Upload benchmark report
         uses: actions/upload-artifact@v6
         with:

@@ -54,13 +54,6 @@ public:
     DeviceNeighborGraph& operator=(const DeviceNeighborGraph&) = delete;
     ~DeviceNeighborGraph() noexcept;
 
-    void upload(
-        CudaExecutionContext& context,
-        const std::vector<std::int64_t>& offsets,
-        const std::vector<std::int32_t>& atoms,
-        const std::vector<std::int32_t>& shifts,
-        const std::vector<double>& displacements,
-        const std::vector<double>& distance2);
     // Build the DPA graph from device-resident coordinates.  The host batch
     // is metadata used to validate PBC and upload compact inverse cells/image
     // bounds; it is never used to enumerate or materialize pairs.
@@ -108,9 +101,6 @@ private:
         const std::vector<double>& grid_spacing,
         const std::vector<std::int32_t>& grid_dimensions);
 
-    template <typename Value>
-    void ensure_capacity(Value** pointer, std::size_t* capacity, std::size_t count);
-
     std::int64_t* offsets_ = nullptr;
     std::int32_t* atoms_ = nullptr;
     std::int32_t* shifts_ = nullptr;
@@ -148,7 +138,6 @@ private:
     std::int32_t* atom_to_structure_ = nullptr;
     std::int32_t* cell_counts_ = nullptr;
     std::int32_t* cell_offsets_ = nullptr;
-    std::int32_t* cell_fill_ = nullptr;
     std::int32_t* cell_atoms_ = nullptr;
     std::int32_t* cell_sort_keys_ = nullptr;
     std::int32_t* atom_cells_ = nullptr;
@@ -170,7 +159,6 @@ private:
     std::size_t reference_cell_inverses_capacity_ = 0;
     std::size_t cell_counts_capacity_ = 0;
     std::size_t cell_offsets_capacity_ = 0;
-    std::size_t cell_fill_capacity_ = 0;
 };
 
 } // namespace mdescriptor::cuda

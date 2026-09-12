@@ -396,8 +396,7 @@ py::dict compute_generic_moment_descriptor(
             * static_cast<std::size_t>(moment_stride) * sizeof(double)))
         : nullptr;
     if (size > 0) {
-        check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-            "could not clear generic CUDA descriptor output");
+        zeroed_output(context, output, size, "could not clear generic CUDA descriptor output");
         constexpr unsigned block_size = 64;
         generic_moment_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
@@ -411,7 +410,7 @@ py::dict compute_generic_moment_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), features, name, options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_generic(
@@ -421,9 +420,7 @@ py::dict compute_extended_generic(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
-    (void)control;
     (void)rotational_plan;
     return compute_generic_moment_descriptor(context, batch, graph, host_batch, name, options);
 }

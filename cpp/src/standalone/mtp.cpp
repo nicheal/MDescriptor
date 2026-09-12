@@ -271,7 +271,7 @@ void compute_mtp_impl(
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto graph = build_neighbor_graph(batch, options.max_dist, control, options.num_threads);
-    const auto mapping = species_map(options.species);
+    const auto mapping = make_type_map(options.species);
     const auto channels = static_cast<std::size_t>(channel_count(options));
     const auto features = static_cast<std::size_t>(mtp_feature_count(options));
     const auto tensor_offsets = [channels, &options](int rank) {
@@ -375,7 +375,7 @@ void compute_official_mtp_impl(
     const std::shared_ptr<ComputeControl>& control
 ) {
     const auto graph = build_neighbor_graph(batch, model.max_dist, control, options.num_threads);
-    const auto mapping = species_map(options.species);
+    const auto mapping = make_type_map(options.species);
     const auto features = static_cast<std::size_t>(model.feature_count());
     int max_coordinate_power = 0;
     for (const auto& index : model.alpha_index_basic) {
@@ -849,17 +849,12 @@ const std::vector<std::int32_t>& MtpCalculator::official_scalar_output_ids() con
     return official_model_ && official_model_->native_mlip4
         ? official_model_->native_model->scalar_output_ids() : empty_value<std::vector<std::int32_t>>();
 }
-void MtpCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
-bool MtpCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
-
 void MtpCalculator::compute(
     const StructureBatchView& batch,
     double* output,
     const std::shared_ptr<ComputeControl>& control
 ) const {
-    if (closed()) {
-        throw std::runtime_error("MTP calculator is closed");
-    }
+    assert_open("MTP calculator");
     std::lock_guard<std::mutex> lock(compute_mutex_);
     if (control) {
         control->reset(batch.structures);

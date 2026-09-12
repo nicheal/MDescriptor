@@ -31,4 +31,23 @@ inline Vec3 position(const StructureBatchView& batch, std::int64_t atom) {
     return {value[0], value[1], value[2]};
 }
 
+// View of one structure of a batch, with atom ranges rebased to zero. The
+// two-element `offsets` buffer is caller-owned and must outlive the view.
+inline StructureBatchView structure_view(
+    const StructureBatchView& batch, std::int64_t structure, std::int64_t* offsets) {
+    const std::int64_t begin = batch.offsets[structure];
+    const std::int64_t end = batch.offsets[structure + 1];
+    offsets[0] = 0;
+    offsets[1] = end - begin;
+    return StructureBatchView{
+        batch.numbers + begin,
+        batch.positions + begin * 3,
+        batch.cells + structure * 9,
+        batch.pbc + structure * 3,
+        offsets,
+        1,
+        end - begin,
+    };
+}
+
 } // namespace mdescriptor::detail

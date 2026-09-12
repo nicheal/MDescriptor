@@ -110,3 +110,9 @@ class _AtomKernel(_Kernel):
 
     def _species_for(self, batch: StructureBatch) -> tuple[int, ...]:
         return validate_batch_species(batch, self.species, descriptor=self.name)
+
+
+class _StructureKernel(_Kernel):
+    """Structure-level kernel seam whose width resolves on first compute."""
+
+    level = "structure"

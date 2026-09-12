@@ -11,7 +11,6 @@
 namespace mdescriptor::detail {
 
 using SpeciesList = std::vector<std::int32_t>;
-using SpeciesMap = std::unordered_map<std::int32_t, std::int32_t>;
 using TypeMap = std::unordered_map<std::int32_t, std::size_t>;
 
 inline void validate_species(const SpeciesList& species) {
@@ -28,15 +27,6 @@ inline void validate_species(const SpeciesList& species) {
             }
         }
     }
-}
-
-inline SpeciesMap species_map(const SpeciesList& species) {
-    validate_species(species);
-    SpeciesMap result;
-    for (std::size_t index = 0; index < species.size(); ++index) {
-        result.emplace(species[index], static_cast<std::int32_t>(index));
-    }
-    return result;
 }
 
 inline TypeMap make_type_map(const SpeciesList& species) {
@@ -65,7 +55,7 @@ inline std::vector<std::int32_t> make_atom_types(
 inline void validate_species(
     const StructureBatchView& batch,
     const SpeciesList& species) {
-    const auto mapping = species_map(species);
+    const auto mapping = make_type_map(species);
     for (std::int64_t atom = 0; atom < batch.atoms; ++atom) {
         if (batch.numbers[atom] <= 0) {
             throw std::invalid_argument("atomic numbers must be positive");

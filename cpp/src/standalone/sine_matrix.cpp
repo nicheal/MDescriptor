@@ -1,5 +1,6 @@
 #include "extra_common.hpp"
 #include "matrix_values.hpp"
+#include "descriptor_common.hpp"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -19,7 +20,7 @@ std::vector<double> sine_matrix_values(
     const Mat3 inverse_cell = inverse(cell);
     std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads()) if(count >= 32 && !omp_in_parallel())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(num_threads)) if(count >= 32 && !omp_in_parallel())
 #endif
     for (int i = 0; i < count; ++i) {
         const Vec3 first = position(batch, begin + i);

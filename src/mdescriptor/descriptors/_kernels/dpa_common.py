@@ -13,7 +13,19 @@ from ...core.input import StructureBatch
 from ...core.result import DescriptorResult
 from ...models.resolver import ResolvedModel
 from ..model_backed.dpa import compute_batch, load_dpa_checkpoint, new_runtime
-from ..model_backed.graph import _ATOMIC_SYMBOLS
+from ..model_backed.graph import _ATOMIC_SYMBOLS, _symbols_to_atype
+
+
+def _as_float32(value: Any) -> np.ndarray:
+    """Materialize one checkpoint tensor for the native ABI."""
+
+    return np.ascontiguousarray(np.asarray(value, dtype=np.float32))
+
+
+def _as_int64(value: Any) -> np.ndarray:
+    """Materialize one integer checkpoint/index buffer for the native ABI."""
+
+    return np.ascontiguousarray(np.asarray(value, dtype=np.int64))
 
 
 def compute_native_batch(
@@ -29,20 +41,9 @@ def compute_native_batch(
         if callable(reset):
             reset(batch.structures)
 
-    symbols: list[str] = []
-    for number in batch.numbers.tolist():
-        try:
-            symbols.append(_ATOMIC_SYMBOLS[int(number)])
-        except KeyError as exc:
-            raise ValueError(
-                f"atomic number {number} is absent from the checkpoint type_map"
-            ) from exc
-    try:
-        type_indices = type_mapper.symbols_to_atype(symbols).astype(np.int32, copy=False)
-    except KeyError as exc:
-        raise ValueError(
-            f"element {exc.args[0]!r} is absent from the checkpoint type_map"
-        ) from exc
+    type_indices = _symbols_to_atype(type_mapper, batch.numbers).astype(
+        np.int32, copy=False
+    )
     return calculator.compute(
         batch.numbers,
         batch.positions,

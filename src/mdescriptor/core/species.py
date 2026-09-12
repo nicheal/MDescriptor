@@ -69,17 +69,6 @@ def require_species(species: Iterable[int] | None, *, descriptor: str) -> tuple[
     return normalized
 
 
-def species_from_batch(batch: StructureBatch) -> tuple[int, ...]:
-    """Return the deterministic atomic-number set present in a batch."""
-
-    values = tuple(int(value) for value in np.unique(batch.numbers))
-    if not values:
-        raise DescriptorInputError(
-            "the input batch contains no atoms", path=["input", "numbers"]
-        )
-    return values
-
-
 def validate_batch_species(
     batch: StructureBatch, species: Iterable[int], *, descriptor: str
 ) -> tuple[int, ...]:
@@ -98,6 +87,5 @@ def validate_batch_species(
 __all__ = [
     "normalize_species",
     "require_species",
-    "species_from_batch",
     "validate_batch_species",
 ]

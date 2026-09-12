@@ -9,19 +9,7 @@ from typing import Any
 import numpy as np
 
 from ...models import DPA4_MODEL
-from .dpa_common import DpaKernelBase
-
-
-def _as_float32(value: Any) -> np.ndarray:
-    """Materialize one checkpoint tensor for the native DPA4 ABI."""
-
-    return np.ascontiguousarray(np.asarray(value, dtype=np.float32))
-
-
-def _as_int64(value: Any) -> np.ndarray:
-    """Materialize one integer checkpoint/index buffer for the native ABI."""
-
-    return np.ascontiguousarray(np.asarray(value, dtype=np.int64))
+from .dpa_common import DpaKernelBase, _as_float32, _as_int64
 
 
 def _native_payload(
@@ -176,7 +164,6 @@ def _native_payload(
                 "ffn_scalar_gate": value(prefix + "ffns.0.act.scalar_gate.weight"),
                 "ffn_grid_left": value(prefix + "ffns.0.act.grid_op.left_proj.weight"),
                 "ffn_grid_right": value(prefix + "ffns.0.act.grid_op.right_proj.weight"),
-                "ffn_grid_router": value(prefix + "ffns.0.act.grid_op.router.weight"),
                 "ffn_grid_out": value(prefix + "ffns.0.act.grid_op.out_proj.weight"),
             }
         )
@@ -206,7 +193,6 @@ def _native_payload(
         "wigner_l3_coefficients": _as_float32(kernels.C_l3).reshape(-1),
         "wigner_l3_exponents": _as_int64(kernels.exp_l3).reshape(-1),
         "gie_row_index": _as_int64(variables["gie.non_scalar_row_index"]),
-        "gie_m0_index": _as_int64(variables["gie.zonal_m0_col_index_for_row"]),
         "gie_radial_index": _as_int64(variables["gie.radial_slot_index_for_row"]),
         "grid_to": grid_to,
         "grid_from": grid_from,

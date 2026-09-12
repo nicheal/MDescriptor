@@ -399,8 +399,7 @@ py::dict compute_mbtr_descriptor(
     const std::size_t size = static_cast<std::size_t>(rows)
         * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
-    check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-        "could not clear CUDA MBTR output");
+    zeroed_output(context, output, size, "could not clear CUDA MBTR output");
     // Resolve element channels once on the host.  The previous kernel did a
     // linear species-table search for every edge of every angle, which made
     // the lookup part of the hottest inner loop.
@@ -433,7 +432,7 @@ py::dict compute_mbtr_descriptor(
     const auto values = download_output_with_gil_release(context, size);
     if (local) {
         return atom_result(values, rows, features, name, options, false,
-            std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+            host_row_offsets(host_batch));
     }
     py::dict result;
     result["values"] = values_array(values, rows, features);
@@ -450,9 +449,7 @@ py::dict compute_extended_mbtr(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
-    (void)control;
     (void)rotational_plan;
     return compute_mbtr_descriptor(context, batch, graph, host_batch, name, options);
 }

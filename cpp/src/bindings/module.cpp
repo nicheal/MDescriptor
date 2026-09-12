@@ -61,9 +61,10 @@ std::vector<Value> vector_from_array(py::handle value, const char* name) {
     return std::vector<Value>(data, data + info.size);
 }
 
-py::handle required_payload_value(const py::dict& payload, const char* name) {
+py::handle required_payload_value(
+    const py::dict& payload, const char* name, const char* label = "DPA4C") {
     if (!payload.contains(name)) {
-        throw std::invalid_argument(std::string("DPA4C payload is missing ") + name);
+        throw std::invalid_argument(std::string(label) + " payload is missing " + name);
     }
     return payload[name];
 }
@@ -134,13 +135,6 @@ Dpa4cOptions dpa4c_options_from_payload(const py::dict& payload) {
     return options;
 }
 
-py::handle dpa4_required_payload_value(const py::dict& payload, const char* name) {
-    if (!payload.contains(name)) {
-        throw std::invalid_argument(std::string("DPA4 payload is missing ") + name);
-    }
-    return payload[name];
-}
-
 std::vector<std::vector<float>> dpa4_float_sequence(
     py::handle value,
     std::size_t expected_count,
@@ -177,17 +171,20 @@ float dpa4_scalar_float(py::handle value, const char* name) {
 }
 
 Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
+    auto required = [&](const char* name) {
+        return required_payload_value(payload, name, "DPA4");
+    };
     Dpa4Options options;
-    options.rcut = py::cast<double>(dpa4_required_payload_value(payload, "rcut"));
-    options.ntypes = py::cast<int>(dpa4_required_payload_value(payload, "ntypes"));
-    options.channels = py::cast<int>(dpa4_required_payload_value(payload, "channels"));
-    options.n_radial = py::cast<int>(dpa4_required_payload_value(payload, "n_radial"));
+    options.rcut = py::cast<double>(required("rcut"));
+    options.ntypes = py::cast<int>(required("ntypes"));
+    options.channels = py::cast<int>(required("channels"));
+    options.n_radial = py::cast<int>(required("n_radial"));
     if (payload.contains("num_threads")) {
         options.num_threads = py::cast<int>(payload["num_threads"]);
     }
 
     auto required_float = [&](const char* name) {
-        return vector_from_array<float>(dpa4_required_payload_value(payload, name), name);
+        return vector_from_array<float>(required(name), name);
     };
     options.type_embedding = required_float("type_embedding");
     options.env_rbf_layer1 = required_float("env_rbf_layer1");
@@ -199,11 +196,9 @@ Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
     options.film_scale_norm = required_float("film_scale_norm");
     options.film_shift_norm = required_float("film_shift_norm");
     options.film_scale_strength_log = dpa4_scalar_float(
-        dpa4_required_payload_value(payload, "film_scale_strength_log"),
-        "film_scale_strength_log");
+        required("film_scale_strength_log"), "film_scale_strength_log");
     options.film_shift_strength_log = dpa4_scalar_float(
-        dpa4_required_payload_value(payload, "film_shift_strength_log"),
-        "film_shift_strength_log");
+        required("film_shift_strength_log"), "film_shift_strength_log");
     options.radial_freqs = required_float("radial_freqs");
     options.radial_layer1 = required_float("radial_layer1");
     options.radial_norm_scale = required_float("radial_norm_scale");
@@ -211,14 +206,11 @@ Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
     options.wigner_l2_tensor = required_float("wigner_l2_tensor");
     options.wigner_l3_coefficients = required_float("wigner_l3_coefficients");
     options.wigner_l3_exponents = vector_from_array<std::int64_t>(
-        dpa4_required_payload_value(payload, "wigner_l3_exponents"),
-        "wigner_l3_exponents");
+        required("wigner_l3_exponents"), "wigner_l3_exponents");
     options.gie_row_index = vector_from_array<std::int64_t>(
-        dpa4_required_payload_value(payload, "gie_row_index"), "gie_row_index");
-    options.gie_m0_index = vector_from_array<std::int64_t>(
-        dpa4_required_payload_value(payload, "gie_m0_index"), "gie_m0_index");
+        required("gie_row_index"), "gie_row_index");
     options.gie_radial_index = vector_from_array<std::int64_t>(
-        dpa4_required_payload_value(payload, "gie_radial_index"), "gie_radial_index");
+        required("gie_radial_index"), "gie_radial_index");
     options.grid_to = required_float("grid_to");
     options.grid_from = required_float("grid_from");
     options.output_linear1 = required_float("output_linear1");
@@ -228,8 +220,7 @@ Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
     options.output_grid_right = required_float("output_grid_right");
     options.output_grid_out = required_float("output_grid_out");
 
-    py::sequence blocks = py::cast<py::sequence>(
-        dpa4_required_payload_value(payload, "blocks"));
+    py::sequence blocks = py::cast<py::sequence>(required("blocks"));
     if (blocks.size() != 3) {
         throw std::invalid_argument("DPA4 payload must contain three blocks");
     }
@@ -237,7 +228,7 @@ Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
         const py::dict block_payload = py::cast<py::dict>(blocks[block_index]);
         Dpa4BlockOptions& block = options.blocks[static_cast<std::size_t>(block_index)];
         auto block_required = [&](const char* name) {
-            return dpa4_required_payload_value(block_payload, name);
+            return required_payload_value(block_payload, name, "DPA4");
         };
         if (block_payload.contains("pre_norm_enabled")) {
             block.pre_norm_enabled = py::cast<bool>(block_payload["pre_norm_enabled"]);
@@ -291,7 +282,6 @@ Dpa4Options dpa4_options_from_payload(const py::dict& payload) {
         block.ffn_scalar_gate = block_float("ffn_scalar_gate");
         block.ffn_grid_left = block_float("ffn_grid_left");
         block.ffn_grid_right = block_float("ffn_grid_right");
-        block.ffn_grid_router = block_float("ffn_grid_router");
         block.ffn_grid_out = block_float("ffn_grid_out");
     }
     return options;
@@ -382,11 +372,9 @@ py::array compute_soap_array(
     const I32Array& pbc,
     const I64Array& offsets,
     const std::shared_ptr<ComputeControl>& control,
-    std::int32_t num_threads,
     bool inner_average,
     bool outer_average
 ) {
-    (void)num_threads;
     return compute_batch_array(
         calculator, numbers, positions, cells, pbc, offsets, control,
         inner_average || outer_average);
@@ -975,11 +963,11 @@ PYBIND11_MODULE(_native, module) {
         .def(py::init<SoapOptions>())
         .def_property_readonly("feature_count", &SoapCalculator::feature_count)
         .def_property_readonly("species", &SoapCalculator::species)
-        .def("close", &SoapCalculator::close)
-        .def("closed", &SoapCalculator::closed)
+        .def("close", [](SoapCalculator& self) { self.close(); })
+        .def("closed", [](const SoapCalculator& self) { return self.closed(); })
         .def("compute", &compute_soap_array,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
-             py::arg("offsets"), py::arg("control") = nullptr, py::arg("num_threads") = 0,
+             py::arg("offsets"), py::arg("control") = nullptr,
              py::arg("inner_average") = true, py::arg("outer_average") = false);
 
     py::class_<SoapTurboCalculator>(module, "SoapTurboCalculator")
@@ -997,8 +985,8 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("compression_factors", &SoapTurboCalculator::compression_factors)
         .def_property_readonly("packed_count", &SoapTurboCalculator::packed_count)
         .def_property_readonly("dense_feature_count", &SoapTurboCalculator::dense_feature_count)
-        .def("close", &SoapTurboCalculator::close)
-        .def("closed", &SoapTurboCalculator::closed)
+        .def("close", [](SoapTurboCalculator& self) { self.close(); })
+        .def("closed", [](const SoapTurboCalculator& self) { return self.closed(); })
         .def("compute", &compute_atoms_array<SoapTurboCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
@@ -1007,8 +995,8 @@ PYBIND11_MODULE(_native, module) {
         .def(py::init<AcsfOptions>())
         .def_property_readonly("feature_count", &AcsfCalculator::feature_count)
         .def_property_readonly("species", &AcsfCalculator::species)
-        .def("close", &AcsfCalculator::close)
-        .def("closed", &AcsfCalculator::closed)
+        .def("close", [](AcsfCalculator& self) { self.close(); })
+        .def("closed", [](const AcsfCalculator& self) { return self.closed(); })
         .def("compute", &compute_atoms_array<AcsfCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
@@ -1021,8 +1009,8 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("basis_zeros", &C00PSMlffCalculator::basis_zeros)
         .def_property_readonly("basis_norms", &C00PSMlffCalculator::basis_norms)
         .def_property_readonly("basis_values", &C00PSMlffCalculator::basis_values)
-        .def("close", &C00PSMlffCalculator::close)
-        .def("closed", &C00PSMlffCalculator::closed)
+        .def("close", [](C00PSMlffCalculator& self) { self.close(); })
+        .def("closed", [](const C00PSMlffCalculator& self) { return self.closed(); })
         .def("compute", &compute_atoms_array<C00PSMlffCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
@@ -1065,8 +1053,8 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("official_eval_product_right", &MtpCalculator::official_eval_product_right)
         .def_property_readonly("official_eval_product_coefficients", &MtpCalculator::official_eval_product_coefficients)
         .def_property_readonly("official_scalar_output_ids", &MtpCalculator::official_scalar_output_ids)
-        .def("close", &MtpCalculator::close)
-        .def("closed", &MtpCalculator::closed)
+        .def("close", [](MtpCalculator& self) { self.close(); })
+        .def("closed", [](const MtpCalculator& self) { return self.closed(); })
         .def("compute", &compute_atoms_array<MtpCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
@@ -1094,8 +1082,8 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("term_channel_offsets", &AceCalculator::term_channel_offsets)
         .def_property_readonly("term_channels", &AceCalculator::term_channels)
         .def_property_readonly("term_coefficients", &AceCalculator::term_coefficients)
-        .def("close", &AceCalculator::close)
-        .def("closed", &AceCalculator::closed)
+        .def("close", [](AceCalculator& self) { self.close(); })
+        .def("closed", [](const AceCalculator& self) { return self.closed(); })
         .def("compute", &compute_atoms_array<AceCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
@@ -1110,8 +1098,8 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("n_max_radial", &NepCalculator::n_max_radial)
         .def_property_readonly("n_max_angular", &NepCalculator::n_max_angular)
         .def_property_readonly("l_max", &NepCalculator::l_max)
-        .def("close", &NepCalculator::close)
-        .def("closed", &NepCalculator::closed)
+        .def("close", [](NepCalculator& self) { self.close(); })
+        .def("closed", [](const NepCalculator& self) { return self.closed(); })
         .def("compute", &compute_atoms_array<NepCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
@@ -1123,8 +1111,8 @@ PYBIND11_MODULE(_native, module) {
                 dpa4c_options_from_payload(payload));
         }))
         .def_property_readonly("feature_count", &Dpa4cCalculator::feature_count)
-        .def("close", &Dpa4cCalculator::close)
-        .def("closed", &Dpa4cCalculator::closed)
+        .def("close", [](Dpa4cCalculator& self) { self.close(); })
+        .def("closed", [](const Dpa4cCalculator& self) { return self.closed(); })
         .def("compute", &compute_dpa_array<Dpa4cCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
@@ -1136,8 +1124,8 @@ PYBIND11_MODULE(_native, module) {
                 dpa4_options_from_payload(payload));
         }))
         .def_property_readonly("feature_count", &Dpa4Calculator::feature_count)
-        .def("close", &Dpa4Calculator::close)
-        .def("closed", &Dpa4Calculator::closed)
+        .def("close", [](Dpa4Calculator& self) { self.close(); })
+        .def("closed", [](const Dpa4Calculator& self) { return self.closed(); })
         .def("compute", &compute_dpa_array<Dpa4Calculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);

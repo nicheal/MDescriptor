@@ -842,16 +842,11 @@ const std::vector<std::int64_t>& AceCalculator::feature_term_offsets() const noe
 const std::vector<std::int64_t>& AceCalculator::term_channel_offsets() const noexcept { return term_channel_offsets_; }
 const std::vector<std::int32_t>& AceCalculator::term_channels() const noexcept { return term_channels_; }
 const std::vector<double>& AceCalculator::term_coefficients() const noexcept { return term_coefficients_; }
-void AceCalculator::close() noexcept {
-    closed_.store(true, std::memory_order_release);
-}
-bool AceCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
-
 void AceCalculator::compute(
     const StructureBatchView& batch,
     double* output,
     const std::shared_ptr<ComputeControl>& control) const {
-    if (closed()) throw std::runtime_error("ACE calculator is closed");
+    assert_open("ACE calculator");
     std::lock_guard<std::mutex> lock(compute_mutex_);
     if (control) control->reset(batch.structures);
     const auto graph = build_neighbor_graph(batch, options_.r_cut, control, options_.num_threads);

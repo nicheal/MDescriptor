@@ -294,10 +294,7 @@ class CudaBackend:
         labels = self.options.get("_cuda_labels")
         if labels is None:
             labels = tuple(f"{self.name}:{index}" for index in range(columns))
-        execution = self.options.get("execution")
-        num_threads = getattr(execution, "num_threads", None)
-        if isinstance(execution, Mapping):
-            num_threads = execution.get("num_threads")
+        num_threads = _execution_num_threads(self.options)
         return {
             "values": np.zeros((batch.structures, columns), dtype=np.float64),
             "level": "structure",
@@ -325,10 +322,7 @@ class CudaBackend:
                 value = builder()
                 if isinstance(value, Mapping):
                     return value
-        execution = self.options.get("execution")
-        num_threads = getattr(execution, "num_threads", None)
-        if isinstance(execution, Mapping):
-            num_threads = execution.get("num_threads")
+        num_threads = _execution_num_threads(self.options)
         return {
             "descriptor": self.name,
             "backend": "mdescriptor-cuda",
@@ -337,6 +331,15 @@ class CudaBackend:
                 "num_threads": num_threads,
             },
         }
+
+
+def _execution_num_threads(options: Mapping[str, Any]) -> Any:
+    """Read ``num_threads`` from an ExecutionOptions value or a plain mapping."""
+
+    execution = options.get("execution")
+    if isinstance(execution, Mapping):
+        return execution.get("num_threads")
+    return getattr(execution, "num_threads", None)
 
 
 def _looks_cancelled(value: BaseException) -> bool:

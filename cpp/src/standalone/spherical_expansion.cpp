@@ -167,7 +167,7 @@ void compute_spherical_expansion(
         }
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(options.num_threads))
 #endif
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         if (control && control->cancelled()) {

@@ -184,8 +184,7 @@ py::dict compute_acsf_descriptor(
     const std::size_t size = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(columns);
     double* output = context.output_buffer(size);
-    check_cuda(cudaMemsetAsync(output, 0, size * sizeof(double), context.stream()),
-        "could not clear CUDA ACSF output");
+    zeroed_output(context, output, size, "could not clear CUDA ACSF output");
     DeviceBuffer<I32> d_species;
     DeviceBuffer<double> d_g2;
     DeviceBuffer<double> d_g3;
@@ -208,7 +207,7 @@ py::dict compute_acsf_descriptor(
     }
     const auto values = download_output_with_gil_release(context, size);
     return atom_result(values, batch.atoms(), columns, "ACSF", options, false,
-        std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
+        host_row_offsets(host_batch));
 }
 
 py::dict compute_extended_acsf(
@@ -218,10 +217,8 @@ py::dict compute_extended_acsf(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options,
-    const py::object& control,
     RotationalPlanCache* rotational_plan) {
     (void)name;
-    (void)control;
     (void)rotational_plan;
     return compute_acsf_descriptor(context, batch, graph, host_batch, options);
 }

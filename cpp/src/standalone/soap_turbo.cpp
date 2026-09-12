@@ -644,11 +644,6 @@ std::shared_ptr<SoapTurboPrepared> make_soap_turbo_prepared(
     return result;
 }
 
-std::int64_t soap_turbo_feature_count(const SoapTurboOptions& options) {
-    validate_options(options);
-    return compression_feature_count(options);
-}
-
 void compute_soap_turbo(
     const StructureBatchView& batch,
     const SoapTurboOptions& options,
@@ -865,15 +860,11 @@ const std::vector<std::int64_t>& SoapTurboCalculator::compression_sources() cons
 const std::vector<double>& SoapTurboCalculator::compression_factors() const noexcept { return prepared_compression_factors_; }
 std::int32_t SoapTurboCalculator::packed_count() const noexcept { return prepared_->packed_count; }
 std::int64_t SoapTurboCalculator::dense_feature_count() const noexcept { return prepared_->dense_features; }
-void SoapTurboCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
-bool SoapTurboCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
 void SoapTurboCalculator::compute(
     const StructureBatchView& batch,
     double* output,
     const std::shared_ptr<ComputeControl>& control) const {
-    if (closed()) {
-        throw std::runtime_error("SOAPTurbo calculator is closed");
-    }
+    assert_open("SOAPTurbo calculator");
     std::lock_guard<std::mutex> lock(compute_mutex_);
     if (!prepared_) prepared_ = make_soap_turbo_prepared(options_);
     compute_soap_turbo(batch, options_, *prepared_, output, control);

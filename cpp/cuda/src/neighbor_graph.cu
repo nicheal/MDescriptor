@@ -1,6 +1,8 @@
 #include "mdescriptor/cuda/neighbor_graph.hpp"
 #include "mdescriptor/cuda/error.hpp"
 
+#include "device_memory.cuh"
+
 #include <cuda_runtime.h>
 #include <thrust/copy.h>
 #include <thrust/execution_policy.h>
@@ -21,81 +23,18 @@
 namespace mdescriptor::cuda {
 namespace {
 
-template <typename Value>
-void release(Value*& pointer) noexcept {
-    if (pointer != nullptr) {
-        (void)cudaFree(pointer);
-        pointer = nullptr;
-    }
-}
-
-template <typename Value>
-void ensure_and_upload(
-    Value** destination,
-    std::size_t* capacity,
-    const Value* source,
-    std::size_t count,
-    cudaStream_t stream) {
-    if (count > *capacity) {
-        if (*destination != nullptr) {
-            check_cuda(cudaFree(*destination), "could not release the CUDA neighbor graph");
-            *destination = nullptr;
-        }
-        check_cuda(
-            cudaMalloc(reinterpret_cast<void**>(destination), count * sizeof(Value)),
-            "could not allocate the CUDA neighbor graph");
-        *capacity = count;
-    }
-    if (count != 0) {
-        check_cuda(
-            cudaMemcpyAsync(
-                *destination, source, count * sizeof(Value), cudaMemcpyHostToDevice, stream),
-            "could not upload the CUDA neighbor graph");
-    }
-}
-
-bool inverse_row_major3(const double* matrix, double* inverse) {
-    const double determinant =
-        matrix[0] * (matrix[4] * matrix[8] - matrix[5] * matrix[7])
-        - matrix[1] * (matrix[3] * matrix[8] - matrix[5] * matrix[6])
-        + matrix[2] * (matrix[3] * matrix[7] - matrix[4] * matrix[6]);
-    if (!std::isfinite(determinant) || std::abs(determinant) <= 1.0e-12) {
-        return false;
-    }
-    const double inverse_determinant = 1.0 / determinant;
-    inverse[0] = (matrix[4] * matrix[8] - matrix[5] * matrix[7]) * inverse_determinant;
-    inverse[1] = (matrix[2] * matrix[7] - matrix[1] * matrix[8]) * inverse_determinant;
-    inverse[2] = (matrix[1] * matrix[5] - matrix[2] * matrix[4]) * inverse_determinant;
-    inverse[3] = (matrix[5] * matrix[6] - matrix[3] * matrix[8]) * inverse_determinant;
-    inverse[4] = (matrix[0] * matrix[8] - matrix[2] * matrix[6]) * inverse_determinant;
-    inverse[5] = (matrix[2] * matrix[3] - matrix[0] * matrix[5]) * inverse_determinant;
-    inverse[6] = (matrix[3] * matrix[7] - matrix[4] * matrix[6]) * inverse_determinant;
-    inverse[7] = (matrix[1] * matrix[6] - matrix[0] * matrix[7]) * inverse_determinant;
-    inverse[8] = (matrix[0] * matrix[4] - matrix[1] * matrix[3]) * inverse_determinant;
-    return true;
-}
-
 std::array<int, 3> nep_cell_dimensions(
     const double* source_cell,
     double cutoff,
     std::int64_t atom_count,
     double* reference_cell,
     double* reference_inverse) {
-    for (int row = 0; row < 3; ++row) {
-        for (int column = 0; column < 3; ++column) {
-            reference_cell[row * 3 + column] = source_cell[column * 3 + row];
-        }
-    }
-    if (!inverse_row_major3(reference_cell, reference_inverse)) {
-        throw std::invalid_argument("cannot build a CUDA NEP cell list for a singular cell");
-    }
+    const auto norms = reciprocal_row_norms(
+        source_cell, reference_cell, reference_inverse,
+        "cannot build a CUDA NEP cell list for a singular cell");
     std::array<int, 3> dimensions{1, 1, 1};
     for (int axis = 0; axis < 3; ++axis) {
-        const double x = reference_inverse[axis * 3 + 0];
-        const double y = reference_inverse[axis * 3 + 1];
-        const double z = reference_inverse[axis * 3 + 2];
-        const double reciprocal_norm = std::sqrt(x * x + y * y + z * z);
-        const double raw = 1.0 / (cutoff * reciprocal_norm);
+        const double raw = 1.0 / (cutoff * norms[static_cast<std::size_t>(axis)]);
         if (!std::isfinite(raw) || raw > static_cast<double>(std::numeric_limits<int>::max())) {
             throw std::invalid_argument("CUDA NEP cell-list dimensions are too large");
         }
@@ -922,40 +861,6 @@ DeviceNeighborGraph::~DeviceNeighborGraph() noexcept {
     clear();
 }
 
-void DeviceNeighborGraph::upload(
-    CudaExecutionContext& context,
-    const std::vector<std::int64_t>& offsets,
-    const std::vector<std::int32_t>& atoms,
-    const std::vector<std::int32_t>& shifts,
-    const std::vector<double>& displacements,
-    const std::vector<double>& distance2) {
-    if (offsets.empty() || shifts.size() != atoms.size() * 3
-        || displacements.size() != atoms.size() * 3
-        || distance2.size() != atoms.size()) {
-        throw std::invalid_argument("invalid CUDA neighbor graph arrays");
-    }
-    if (cudaSetDevice(context.device()) != cudaSuccess) {
-        throw std::runtime_error("could not select the CUDA device");
-    }
-    ensure_and_upload(&offsets_, &offsets_capacity_, offsets.data(), offsets.size(), context.stream());
-    try {
-        ensure_and_upload(&atoms_, &atoms_capacity_, atoms.data(), atoms.size(), context.stream());
-        ensure_and_upload(&shifts_, &shifts_capacity_, shifts.data(), shifts.size(), context.stream());
-        ensure_and_upload(
-            &displacements_, &displacements_capacity_, displacements.data(),
-            displacements.size(), context.stream());
-        ensure_and_upload(
-            &distance2_, &distance2_capacity_, distance2.data(),
-            distance2.size(), context.stream());
-    } catch (...) {
-        clear();
-        throw;
-    }
-    pairs_ = atoms.size();
-    slot_major_ = false;
-    neighbor_stride_ = 0;
-}
-
 void DeviceNeighborGraph::build_canonical_graph(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -1072,28 +977,36 @@ void DeviceNeighborGraph::build_canonical_graph(
     const cudaStream_t stream = context.stream();
     ensure_and_upload(
         &atom_to_structure_, &atom_to_structure_capacity_, atom_to_structure.data(),
-        atom_to_structure.size(), stream);
+        atom_to_structure.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &canonical_extended_offsets_, &canonical_extended_offsets_capacity_,
-        extended_offsets.data(), extended_offsets.size(), stream);
+        extended_offsets.data(), extended_offsets.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &dpa_image_bounds_, &dpa_image_bounds_capacity_, image_bounds.data(),
-        image_bounds.size(), stream);
+        image_bounds.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &canonical_grid_min_, &canonical_grid_min_capacity_, grid_minimum.data(),
-        grid_minimum.size(), stream);
+        grid_minimum.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &canonical_grid_spacing_, &canonical_grid_spacing_capacity_, grid_spacing.data(),
-        grid_spacing.size(), stream);
+        grid_spacing.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &canonical_grid_dimensions_, &canonical_grid_dimensions_capacity_,
-        grid_dimensions.data(), grid_dimensions.size(), stream);
+        grid_dimensions.data(), grid_dimensions.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &structure_cell_offsets_, &structure_cell_offsets_capacity_,
-        structure_cell_offsets.data(), structure_cell_offsets.size(), stream);
+        structure_cell_offsets.data(), structure_cell_offsets.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &structure_cell_dims_, &structure_cell_dims_capacity_,
-        structure_cell_dimensions.data(), structure_cell_dimensions.size(), stream);
+        structure_cell_dimensions.data(), structure_cell_dimensions.size(), stream,
+        "could not upload the CUDA neighbor graph");
     check_cuda(
         cudaMemsetAsync(cell_counts_, 0, cell_count * sizeof(std::int32_t), stream),
         "could not clear CUDA canonical graph cell counts");
@@ -1365,10 +1278,12 @@ void DeviceNeighborGraph::build_dpa(
     const cudaStream_t stream = context.stream();
     ensure_and_upload(
         &dpa_image_bounds_, &dpa_image_bounds_capacity_, image_bounds.data(),
-        image_bounds.size(), stream);
+        image_bounds.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &dpa_reference_inverses_, &dpa_reference_inverses_capacity_, inverses.data(),
-        inverses.size(), stream);
+        inverses.size(), stream,
+        "could not upload the CUDA neighbor graph");
     check_cuda(
         cudaMemsetAsync(neighbor_overflow_, 0, sizeof(std::int32_t), stream),
         "could not clear CUDA DPA graph overflow");
@@ -1443,28 +1358,6 @@ void DeviceNeighborGraph::build_dpa(
         displacements_, distance2_, tie_break_shifts, neighbor_overflow_);
     check_cuda(cudaGetLastError(), "CUDA DPA graph ordering failed");
     pairs_ = pairs;
-}
-
-template <typename Value>
-void DeviceNeighborGraph::ensure_capacity(
-    Value** pointer,
-    std::size_t* capacity,
-    std::size_t count) {
-    if (count <= *capacity) {
-        return;
-    }
-    if (*pointer != nullptr) {
-        check_cuda(cudaFree(*pointer), "could not release CUDA neighbor workspace");
-        *pointer = nullptr;
-    }
-    *capacity = 0;
-    if (count == 0) {
-        return;
-    }
-    check_cuda(
-        cudaMalloc(reinterpret_cast<void**>(pointer), count * sizeof(Value)),
-        "could not allocate CUDA neighbor workspace");
-    *capacity = count;
 }
 
 void DeviceNeighborGraph::build_nep(
@@ -1563,32 +1456,33 @@ void DeviceNeighborGraph::build_nep(
     ensure_capacity(
         &reference_cell_inverses_, &reference_cell_inverses_capacity_, structure_count * 9);
     ensure_capacity(&cell_counts_, &cell_counts_capacity_, cell_count);
-    ensure_capacity(&cell_fill_, &cell_fill_capacity_, cell_count);
     ensure_capacity(&cell_offsets_, &cell_offsets_capacity_, cell_count + 1);
     ensure_capacity(&offsets_, &offsets_capacity_, atom_count + 1);
 
     const cudaStream_t stream = context.stream();
     ensure_and_upload(
         &atom_to_structure_, &atom_to_structure_capacity_, atom_to_structure.data(),
-        atom_to_structure.size(), stream);
+        atom_to_structure.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &structure_cell_offsets_, &structure_cell_offsets_capacity_, structure_cell_offsets.data(),
-        structure_cell_offsets.size(), stream);
+        structure_cell_offsets.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &structure_cell_dims_, &structure_cell_dims_capacity_, structure_cell_dimensions.data(),
-        structure_cell_dimensions.size(), stream);
+        structure_cell_dimensions.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &reference_cells_, &reference_cells_capacity_, reference_cells.data(),
-        reference_cells.size(), stream);
+        reference_cells.size(), stream,
+        "could not upload the CUDA neighbor graph");
     ensure_and_upload(
         &reference_cell_inverses_, &reference_cell_inverses_capacity_, reference_inverses.data(),
-        reference_inverses.size(), stream);
+        reference_inverses.size(), stream,
+        "could not upload the CUDA neighbor graph");
     check_cuda(
         cudaMemsetAsync(cell_counts_, 0, cell_count * sizeof(std::int32_t), stream),
         "could not clear CUDA NEP cell counts");
-    check_cuda(
-        cudaMemsetAsync(cell_fill_, 0, cell_count * sizeof(std::int32_t), stream),
-        "could not clear CUDA NEP cell fill");
 
     // Match NEPAdapters' cell-list launch geometry.
     constexpr unsigned int block_size = 32;
@@ -1729,21 +1623,21 @@ void DeviceNeighborGraph::build_nep(
 }
 
 void DeviceNeighborGraph::clear() noexcept {
-    release(offsets_);
-    release(atoms_);
-    release(shifts_);
-    release(displacements_);
-    release(distance2_);
-    release(dpa_positions_);
-    release(dpa_image_bounds_);
-    release(dpa_reference_inverses_);
-    release(canonical_grid_min_);
-    release(canonical_grid_spacing_);
-    release(canonical_grid_dimensions_);
-    release(canonical_extended_offsets_);
-    release(canonical_extended_atoms_);
-    release(canonical_extended_shifts_);
-    release(canonical_extended_positions_);
+    device_free(offsets_);
+    device_free(atoms_);
+    device_free(shifts_);
+    device_free(displacements_);
+    device_free(distance2_);
+    device_free(dpa_positions_);
+    device_free(dpa_image_bounds_);
+    device_free(dpa_reference_inverses_);
+    device_free(canonical_grid_min_);
+    device_free(canonical_grid_spacing_);
+    device_free(canonical_grid_dimensions_);
+    device_free(canonical_extended_offsets_);
+    device_free(canonical_extended_atoms_);
+    device_free(canonical_extended_shifts_);
+    device_free(canonical_extended_positions_);
     pairs_ = 0;
     slot_major_ = false;
     neighbor_stride_ = 0;
@@ -1762,19 +1656,18 @@ void DeviceNeighborGraph::clear() noexcept {
     canonical_extended_atoms_capacity_ = 0;
     canonical_extended_shifts_capacity_ = 0;
     canonical_extended_positions_capacity_ = 0;
-    release(atom_to_structure_);
-    release(cell_counts_);
-    release(cell_offsets_);
-    release(cell_fill_);
-    release(cell_atoms_);
-    release(cell_sort_keys_);
-    release(atom_cells_);
-    release(neighbor_counts_);
-    release(neighbor_overflow_);
-    release(structure_cell_offsets_);
-    release(structure_cell_dims_);
-    release(reference_cells_);
-    release(reference_cell_inverses_);
+    device_free(atom_to_structure_);
+    device_free(cell_counts_);
+    device_free(cell_offsets_);
+    device_free(cell_atoms_);
+    device_free(cell_sort_keys_);
+    device_free(atom_cells_);
+    device_free(neighbor_counts_);
+    device_free(neighbor_overflow_);
+    device_free(structure_cell_offsets_);
+    device_free(structure_cell_dims_);
+    device_free(reference_cells_);
+    device_free(reference_cell_inverses_);
     atom_to_structure_capacity_ = 0;
     atom_cells_capacity_ = 0;
     neighbor_counts_capacity_ = 0;
@@ -1786,7 +1679,6 @@ void DeviceNeighborGraph::clear() noexcept {
     reference_cell_inverses_capacity_ = 0;
     cell_counts_capacity_ = 0;
     cell_offsets_capacity_ = 0;
-    cell_fill_capacity_ = 0;
     cell_sort_keys_capacity_ = 0;
 }
 

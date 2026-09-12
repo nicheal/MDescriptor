@@ -31,7 +31,11 @@
 
 namespace py = pybind11;
 
-namespace mdescriptor::cuda {
+// Shared extended-descriptor glue.  This header leaves namespace
+// mdescriptor::cuda open for its includers, so it must stay the last include:
+// everything below is already inside that namespace and the file closes it.
+#include "extended_descriptors_common.cuh"
+
 namespace {
 
 using I32Array = py::array_t<std::int32_t, py::array::c_style | py::array::forcecast>;
@@ -73,23 +77,6 @@ BatchArrays arrays_from_batch(const py::object& value) {
     detail::validate_batch(view);
     return {std::move(numbers), std::move(positions), std::move(cells),
             std::move(pbc), std::move(offsets), view};
-}
-
-template <typename Value>
-Value option(const py::dict& options, const char* name, Value fallback) {
-    const py::str key(name);
-    if (!options.contains(key) || options[key].is_none()) {
-        return fallback;
-    }
-    return py::cast<Value>(options[key]);
-}
-
-std::vector<std::int32_t> species_option(const py::dict& options) {
-    const py::str key("species");
-    if (!options.contains(key) || options[key].is_none()) {
-        return {};
-    }
-    return py::cast<std::vector<std::int32_t>>(options[key]);
 }
 
 py::dict dpa_payload_option(const py::dict& options, const std::string& name) {
@@ -148,13 +135,9 @@ std::int64_t feature_count_for(
     // that value private lets the CUDA plugin add a family without duplicating
     // every label/layout formula in this dispatch seam (matrix descriptors
     // may legitimately resolve their width only after seeing a batch).
-    const py::str feature_key("_cuda_feature_count");
-    if (options.contains(feature_key) && !options[feature_key].is_none()) {
-        const auto value = py::cast<std::int64_t>(options[feature_key]);
-        return value > 0 ? value : 0;
-    }
-    if (is_extended_descriptor(name)) {
-        return 0;
+    const std::int64_t configured = feature_count_option(options, 0);
+    if (is_extended_descriptor(name) || configured > 0) {
+        return configured;
     }
     throw std::invalid_argument("CUDA backend does not support this descriptor");
 }
@@ -190,8 +173,6 @@ std::vector<std::int32_t> dpa_type_indices(
     return result;
 }
 
-py::list generic_labels(const std::string& name, std::int64_t features);
-
 py::list dpa_labels(const py::dict& options, const std::string& name, std::int64_t features) {
     const py::dict payload = dpa_payload_option(options, name);
     const py::str key("labels");
@@ -202,7 +183,7 @@ py::list dpa_labels(const py::dict& options, const std::string& name, std::int64
             throw std::invalid_argument(name + " CUDA model payload has invalid labels");
         }
     }
-    return generic_labels(name, features);
+    return labels_option(options, name, features);
 }
 
 bool cancelled(const py::object& control) {
@@ -227,54 +208,12 @@ void check_cancelled(const py::object& control) {
     }
 }
 
-py::array double_array(const std::vector<double>& values, std::int64_t rows, std::int64_t columns) {
-    py::array_t<double> result({
-        static_cast<py::ssize_t>(rows), static_cast<py::ssize_t>(columns),
-    });
-    if (!values.empty()) {
-        std::copy(values.begin(), values.end(), result.mutable_data());
-    }
-    return result;
-}
-
-py::list generic_labels(const std::string& name, std::int64_t features) {
-    py::list labels;
-    for (std::int64_t index = 0; index < features; ++index) {
-        labels.append(name + ":" + std::to_string(index));
-    }
-    return labels;
-}
-
 py::list nep_labels(std::int64_t features) {
     py::list labels;
     for (std::int64_t index = 0; index < features; ++index) {
         labels.append("nep:q" + std::to_string(index + 1));
     }
     return labels;
-}
-
-py::array offsets_array(const std::vector<std::int64_t>& offsets) {
-    py::array_t<std::int64_t> result(offsets.size());
-    std::copy(offsets.begin(), offsets.end(), result.mutable_data());
-    return result;
-}
-
-py::dict result_metadata(const std::string& name, const py::dict& options) {
-    py::dict metadata;
-    metadata["descriptor"] = name;
-    metadata["backend"] = "mdescriptor-cuda";
-    py::dict execution;
-    execution["device"] = "cuda";
-    const py::str execution_key("execution");
-    if (options.contains(execution_key) && !options[execution_key].is_none()) {
-        const py::dict options_execution = py::cast<py::dict>(options[execution_key]);
-        execution["num_threads"] = options_execution.contains("num_threads")
-            ? options_execution["num_threads"] : py::none();
-    } else {
-        execution["num_threads"] = py::none();
-    }
-    metadata["execution"] = execution;
-    return metadata;
 }
 
 __global__ void write_neighbor_records(
@@ -501,17 +440,17 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             }
         }
         py::dict result;
-        result["values"] = double_array(values, rows, 4);
+        result["values"] = values_array(values, rows, 4);
         result["level"] = "pair";
-        result["row_offsets"] = offsets_array(row_offsets);
-        result["pair_records"] = double_array(pair_records, rows, 5);
+        result["row_offsets"] = i64_array(row_offsets);
+        result["pair_records"] = values_array(pair_records, rows, 5);
         py::list labels;
         labels.append("dx");
         labels.append("dy");
         labels.append("dz");
         labels.append("distance");
         result["labels"] = labels;
-        result["metadata"] = result_metadata(name_, options_);
+        result["metadata"] = mdescriptor::cuda::metadata(options_, name_);
         return std::move(result);
     }
 
@@ -521,11 +460,11 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                 mark_completed(control);
             }
             py::dict result;
-            result["values"] = double_array({}, 0, feature_count_);
+            result["values"] = values_array({}, 0, feature_count_);
             result["level"] = "atom";
             result["row_offsets"] = arrays.offsets;
             result["labels"] = nep_labels(feature_count_);
-            result["metadata"] = result_metadata(name_, options_);
+            result["metadata"] = mdescriptor::cuda::metadata(options_, name_);
             return std::move(result);
         }
         for (std::int64_t atom = 0; atom < arrays.view.atoms; ++atom) {
@@ -556,7 +495,7 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             device_graph_.build_nep(
                 *context_, *compute_batch, compute_view, cutoff);
             const auto computed = compute_nep(
-                *context_, *compute_batch, device_graph_, *nep_model_, true);
+                *context_, *compute_batch, device_graph_, *nep_model_);
             values = computed;
         }
         check_cancelled(control);
@@ -564,11 +503,11 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             mark_completed(control);
         }
         py::dict result;
-        result["values"] = double_array(values, arrays.view.atoms, feature_count_);
+        result["values"] = values_array(values, arrays.view.atoms, feature_count_);
         result["level"] = "atom";
         result["row_offsets"] = arrays.offsets;
         result["labels"] = nep_labels(feature_count_);
-        result["metadata"] = result_metadata(name_, options_);
+        result["metadata"] = mdescriptor::cuda::metadata(options_, name_);
         return std::move(result);
     }
 
@@ -591,11 +530,11 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             mark_completed(control);
         }
         py::dict result;
-        result["values"] = double_array(values, arrays.view.atoms, feature_count_);
+        result["values"] = values_array(values, arrays.view.atoms, feature_count_);
         result["level"] = "atom";
         result["row_offsets"] = arrays.offsets;
         result["labels"] = dpa_labels(options_, name_, feature_count_);
-        result["metadata"] = result_metadata(name_, options_);
+        result["metadata"] = mdescriptor::cuda::metadata(options_, name_);
         return std::move(result);
     }
 
@@ -648,16 +587,16 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         mark_completed(control);
     }
     py::dict result;
-    result["values"] = double_array(values, arrays.view.atoms, features);
+    result["values"] = values_array(values, arrays.view.atoms, features);
     result["level"] = "atom";
     result["row_offsets"] = arrays.offsets;
-    result["labels"] = generic_labels(name_, features);
-    result["metadata"] = result_metadata(name_, options_);
+    result["labels"] = labels_option(options_, name_, features);
+    result["metadata"] = mdescriptor::cuda::metadata(options_, name_);
     return std::move(result);
 }
 
 py::dict Backend::metadata() const {
-    return result_metadata(name_, options_);
+    return mdescriptor::cuda::metadata(options_, name_);
 }
 
 void Backend::close() noexcept {

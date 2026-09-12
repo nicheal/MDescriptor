@@ -23,7 +23,6 @@ from .result import RESULT_SCHEMA_VERSION, DescriptorLevel, DescriptorResult
 from .species import (
     normalize_species,
     require_species,
-    species_from_batch,
     validate_batch_species,
 )
 
@@ -50,6 +49,5 @@ __all__ = [
     "coerce_batch",
     "normalize_species",
     "require_species",
-    "species_from_batch",
     "validate_batch_species",
 ]

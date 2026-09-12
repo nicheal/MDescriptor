@@ -1,5 +1,6 @@
 #include "extra_common.hpp"
 #include "matrix_values.hpp"
+#include "descriptor_common.hpp"
 
 #include <cmath>
 #include <vector>
@@ -54,7 +55,7 @@ std::vector<double> coulomb_matrix_values(
     const int count = static_cast<int>(end - begin);
     std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(num_threads > 0 ? num_threads : omp_get_max_threads()) if(count >= 32 && !omp_in_parallel())
+#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(num_threads)) if(count >= 32 && !omp_in_parallel())
 #endif
     for (int i = 0; i < count; ++i) {
         const double zi = static_cast<double>(batch.numbers[begin + i]);

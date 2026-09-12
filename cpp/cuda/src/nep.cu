@@ -1,6 +1,8 @@
 #include "mdescriptor/cuda/nep.hpp"
 #include "mdescriptor/cuda/error.hpp"
 
+#include "dpa4_common.cuh"
+
 #include <cuda_runtime.h>
 
 #include <algorithm>
@@ -10,8 +12,6 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 namespace mdescriptor::cuda {
@@ -125,39 +125,6 @@ __device__ __constant__ const float kZ8[9][9] = {
     {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
 };
-
-template <typename Value>
-void upload_values(
-    const std::vector<Value>& values,
-    Value*& destination,
-    const char* operation) {
-    if (values.empty()) {
-        destination = nullptr;
-        return;
-    }
-    check_cuda(
-        cudaMalloc(reinterpret_cast<void**>(&destination), values.size() * sizeof(Value)),
-        operation);
-    try {
-        check_cuda(
-            cudaMemcpy(
-                destination, values.data(), values.size() * sizeof(Value),
-                cudaMemcpyHostToDevice),
-            operation);
-    } catch (...) {
-        (void)cudaFree(destination);
-        destination = nullptr;
-        throw;
-    }
-}
-
-template <typename Value>
-void release_value(Value*& value) noexcept {
-    if (value != nullptr) {
-        (void)cudaFree(value);
-        value = nullptr;
-    }
-}
 
 template <typename Value>
 __device__ __forceinline__ void complex_product(
@@ -489,7 +456,6 @@ __device__ __forceinline__ void write_angular_channels(
 
 constexpr int kNepAngularOrderTile = 3;
 
-template <bool ReferenceRadialAccumulation>
 __global__ void compute_nep_kernel(
     const std::int32_t* numbers,
     const std::int64_t* graph_offsets,
@@ -537,108 +503,73 @@ __global__ void compute_nep_kernel(
 
     float basis[17];
     float radial[13] = {};
-    if constexpr (ReferenceRadialAccumulation) {
-        // NEPAdapters first accumulates the radial basis by contiguous
-        // neighbor-type run and only then applies the type-pair coefficients.
-        // Reusing this buffer avoids a second per-thread array; it is
-        // overwritten by basis_values before the angular pass.
-        int radial_run_type = -1;
-        for (std::int64_t edge = begin; edge < end; ++edge) {
-            const std::int32_t neighbor = graph_atoms[edge];
-            const int neighbor_type = numbers[neighbor] >= 0 && numbers[neighbor] < kAtomicNumberCount
-                ? type_lookup[numbers[neighbor]] : -1;
-            if (center_type < 0 || neighbor_type < 0) {
-                continue;
-            }
-            const int pair = center_type * num_types + neighbor_type;
-            const float radial_cutoff = radial_cutoff_pair[pair];
-            if (neighbor_type != radial_run_type) {
-                if (radial_run_type >= 0) {
-                    const int run_pair = center_type * num_types + radial_run_type;
-                    const float* coefficients = radial_pair_coefficients
-                        + run_pair * radial_count * radial_basis_count;
-                    for (int n = 0; n < radial_count; ++n) {
-                        radial[n] += dot_basis(
-                            coefficients + n * radial_basis_count,
-                            basis, radial_basis_count);
-                    }
-                }
-                for (int k = 0; k < radial_basis_count; ++k) {
-                    basis[k] = 0.0f;
-                }
-                radial_run_type = neighbor_type;
-            }
-            const float dx = static_cast<float>(graph_displacements[edge * 3 + 0]);
-            const float dy = static_cast<float>(graph_displacements[edge * 3 + 1]);
-            const float dz = static_cast<float>(graph_displacements[edge * 3 + 2]);
-            const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
-            if (distance <= 0.0f) {
-                continue;
-            }
-            if (distance >= radial_cutoff) {
-                continue;
-            }
-            const float inverse_cutoff = 1.0f / radial_cutoff;
-            const float cutoff_value = 0.5f
-                * cosf(kPi * distance * inverse_cutoff) + 0.5f;
-            const float x = 2.0f * (distance * inverse_cutoff - 1.0f)
-                * (distance * inverse_cutoff - 1.0f) - 1.0f;
-            const float half_cutoff = 0.5f * cutoff_value;
-            basis[0] += cutoff_value;
-            if (basis_size_radial >= 1) {
-                basis[1] += (x + 1.0f) * half_cutoff;
-                float previous = 1.0f;
-                float current = x;
-                for (int k = 2; k < radial_basis_count; ++k) {
-                    const float next = 2.0f * x * current - previous;
-                    previous = current;
-                    current = next;
-                    basis[k] += (current + 1.0f) * half_cutoff;
-                }
-            }
+    // NEPAdapters first accumulates the radial basis by contiguous
+    // neighbor-type run and only then applies the type-pair coefficients.
+    // Reusing this buffer avoids a second per-thread array; it is
+    // overwritten by basis_values before the angular pass.
+    int radial_run_type = -1;
+    for (std::int64_t edge = begin; edge < end; ++edge) {
+        const std::int32_t neighbor = graph_atoms[edge];
+        const int neighbor_type = numbers[neighbor] >= 0 && numbers[neighbor] < kAtomicNumberCount
+            ? type_lookup[numbers[neighbor]] : -1;
+        if (center_type < 0 || neighbor_type < 0) {
+            continue;
         }
-        if (radial_run_type >= 0) {
-            const int run_pair = center_type * num_types + radial_run_type;
-            const float* coefficients = radial_pair_coefficients
-                + run_pair * radial_count * radial_basis_count;
-            for (int n = 0; n < radial_count; ++n) {
-                radial[n] += dot_basis(
-                    coefficients + n * radial_basis_count,
-                    basis, radial_basis_count);
-            }
-        }
-    } else {
-        // The compatibility graph path retains its original per-neighbor dot
-        // product order, which is the established MDescriptor CPU/GPU path.
-        for (std::int64_t edge = begin; edge < end; ++edge) {
-            const std::int32_t neighbor = graph_atoms[edge];
-            const int neighbor_type = numbers[neighbor] >= 0 && numbers[neighbor] < kAtomicNumberCount
-                ? type_lookup[numbers[neighbor]] : -1;
-            if (center_type < 0 || neighbor_type < 0) {
-                continue;
-            }
-            const int pair = center_type * num_types + neighbor_type;
-            // NEPAdapters forms the distance from float displacement components
-            // on the device.  Keep that ordering here as well; using the CPU
-            // graph's double distance2 would introduce a different rounding path.
-            const float dx = static_cast<float>(graph_displacements[edge * 3 + 0]);
-            const float dy = static_cast<float>(graph_displacements[edge * 3 + 1]);
-            const float dz = static_cast<float>(graph_displacements[edge * 3 + 2]);
-            const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
-            if (distance <= 0.0f) {
-                continue;
-            }
-
-            const float radial_cutoff = radial_cutoff_pair[pair];
-            if (distance < radial_cutoff) {
-                basis_values(basis_size_radial, radial_cutoff, distance, basis);
+        const int pair = center_type * num_types + neighbor_type;
+        const float radial_cutoff = radial_cutoff_pair[pair];
+        if (neighbor_type != radial_run_type) {
+            if (radial_run_type >= 0) {
+                const int run_pair = center_type * num_types + radial_run_type;
                 const float* coefficients = radial_pair_coefficients
-                    + pair * radial_count * radial_basis_count;
+                    + run_pair * radial_count * radial_basis_count;
                 for (int n = 0; n < radial_count; ++n) {
                     radial[n] += dot_basis(
-                        coefficients + n * radial_basis_count, basis, radial_basis_count);
+                        coefficients + n * radial_basis_count,
+                        basis, radial_basis_count);
                 }
             }
+            for (int k = 0; k < radial_basis_count; ++k) {
+                basis[k] = 0.0f;
+            }
+            radial_run_type = neighbor_type;
+        }
+        const float dx = static_cast<float>(graph_displacements[edge * 3 + 0]);
+        const float dy = static_cast<float>(graph_displacements[edge * 3 + 1]);
+        const float dz = static_cast<float>(graph_displacements[edge * 3 + 2]);
+        const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
+        if (distance <= 0.0f) {
+            continue;
+        }
+        if (distance >= radial_cutoff) {
+            continue;
+        }
+        const float inverse_cutoff = 1.0f / radial_cutoff;
+        const float cutoff_value = 0.5f
+            * cosf(kPi * distance * inverse_cutoff) + 0.5f;
+        const float x = 2.0f * (distance * inverse_cutoff - 1.0f)
+            * (distance * inverse_cutoff - 1.0f) - 1.0f;
+        const float half_cutoff = 0.5f * cutoff_value;
+        basis[0] += cutoff_value;
+        if (basis_size_radial >= 1) {
+            basis[1] += (x + 1.0f) * half_cutoff;
+            float previous = 1.0f;
+            float current = x;
+            for (int k = 2; k < radial_basis_count; ++k) {
+                const float next = 2.0f * x * current - previous;
+                previous = current;
+                current = next;
+                basis[k] += (current + 1.0f) * half_cutoff;
+            }
+        }
+    }
+    if (radial_run_type >= 0) {
+        const int run_pair = center_type * num_types + radial_run_type;
+        const float* coefficients = radial_pair_coefficients
+            + run_pair * radial_count * radial_basis_count;
+        for (int n = 0; n < radial_count; ++n) {
+            radial[n] += dot_basis(
+                coefficients + n * radial_basis_count,
+                basis, radial_basis_count);
         }
     }
 
@@ -792,31 +723,46 @@ DeviceNepModel::DeviceNepModel(
     std::copy(parameters.angular_pair_coefficients.begin(), parameters.angular_pair_coefficients.end(), angular_coefficients.begin());
     std::copy(parameters.scalers.begin(), parameters.scalers.end(), scalers.begin());
 
-    check_cuda(cudaSetDevice(context.device()), "could not select the CUDA device");
-    try {
-        upload_values(host_type_lookup_, type_lookup_, "could not upload NEP type lookup");
-        upload_values(radial_cutoff_pair, radial_cutoff_pair_, "could not upload NEP radial cutoffs");
-        upload_values(angular_cutoff_pair, angular_cutoff_pair_, "could not upload NEP angular cutoffs");
-        upload_values(radial_coefficients, radial_pair_coefficients_, "could not upload NEP radial coefficients");
-        upload_values(angular_coefficients, angular_pair_coefficients_, "could not upload NEP angular coefficients");
-        upload_values(scalers, scalers_, "could not upload NEP q scalers");
-    } catch (...) {
-        release();
-        throw;
-    }
+    const auto upload = [&](const auto& values, const char* operation) {
+        // Synchronous copies: the parser temporaries go out of scope right
+        // after construction, so no asynchronous DMA may borrow them.
+        return dpa4_common::upload_array<DeviceArray>(
+            context, values, operation, "could not select the CUDA device", true);
+    };
+    type_lookup_ = upload(host_type_lookup_, "could not upload NEP type lookup");
+    radial_cutoff_pair_ = upload(radial_cutoff_pair, "could not upload NEP radial cutoffs");
+    angular_cutoff_pair_ = upload(angular_cutoff_pair, "could not upload NEP angular cutoffs");
+    radial_pair_coefficients_ =
+        upload(radial_coefficients, "could not upload NEP radial coefficients");
+    angular_pair_coefficients_ =
+        upload(angular_coefficients, "could not upload NEP angular coefficients");
+    scalers_ = upload(scalers, "could not upload NEP q scalers");
 }
 
-DeviceNepModel::~DeviceNepModel() noexcept {
-    release();
+DeviceNepModel::~DeviceNepModel() noexcept = default;
+
+const std::int32_t* DeviceNepModel::type_lookup() const noexcept {
+    return dpa4_common::device_data<std::int32_t>(type_lookup_);
 }
 
-void DeviceNepModel::release() noexcept {
-    release_value(type_lookup_);
-    release_value(radial_cutoff_pair_);
-    release_value(angular_cutoff_pair_);
-    release_value(radial_pair_coefficients_);
-    release_value(angular_pair_coefficients_);
-    release_value(scalers_);
+const float* DeviceNepModel::radial_cutoff_pair() const noexcept {
+    return dpa4_common::device_data<float>(radial_cutoff_pair_);
+}
+
+const float* DeviceNepModel::angular_cutoff_pair() const noexcept {
+    return dpa4_common::device_data<float>(angular_cutoff_pair_);
+}
+
+const float* DeviceNepModel::radial_pair_coefficients() const noexcept {
+    return dpa4_common::device_data<float>(radial_pair_coefficients_);
+}
+
+const float* DeviceNepModel::angular_pair_coefficients() const noexcept {
+    return dpa4_common::device_data<float>(angular_pair_coefficients_);
+}
+
+const float* DeviceNepModel::scalers() const noexcept {
+    return dpa4_common::device_data<float>(scalers_);
 }
 
 bool DeviceNepModel::supports_atomic_number(std::int32_t number) const noexcept {
@@ -828,8 +774,7 @@ std::vector<double> compute_nep(
     CudaExecutionContext& context,
     const DeviceBatch& batch,
     const DeviceNeighborGraph& graph,
-    const DeviceNepModel& model,
-    bool reference_radial_accumulation) {
+    const DeviceNepModel& model) {
     if (batch.atoms() <= 0 || model.dimension() <= 0) {
         return {};
     }
@@ -859,25 +804,16 @@ std::vector<double> compute_nep(
     constexpr unsigned int block_size = 128;
     const auto blocks = static_cast<unsigned int>(
         (expanded_atoms + block_size - 1) / block_size);
-    // One launch site; the bool only selects the kernel's compile-time radial
-    // accumulation strategy.
-    auto launch_compute_nep = [&](auto reference_radial) {
-        compute_nep_kernel<decltype(reference_radial)::value><<<blocks, block_size, 0, context.stream()>>>(
-            batch.numbers(), graph.offsets(),
-            graph.slot_major() ? graph.neighbor_counts() : nullptr,
-            graph.neighbor_stride(), graph.atoms(), graph.displacements(),
-            model.type_lookup(), model.num_types(), model.n_max_radial(), model.n_max_angular(),
-            model.basis_size_radial(), model.basis_size_angular(), model.l_max(),
-            model.has_q_222(), model.has_q_1111(), model.has_q_112(), model.has_q_123(),
-            model.has_q_233(), model.has_q_134(), model.dimension(), model.radial_cutoff_pair(),
-            model.angular_cutoff_pair(), model.radial_pair_coefficients(),
-            model.angular_pair_coefficients(), model.scalers(), batch.atoms(), output);
-    };
-    if (reference_radial_accumulation) {
-        launch_compute_nep(std::true_type{});
-    } else {
-        launch_compute_nep(std::false_type{});
-    }
+    compute_nep_kernel<<<blocks, block_size, 0, context.stream()>>>(
+        batch.numbers(), graph.offsets(),
+        graph.slot_major() ? graph.neighbor_counts() : nullptr,
+        graph.neighbor_stride(), graph.atoms(), graph.displacements(),
+        model.type_lookup(), model.num_types(), model.n_max_radial(), model.n_max_angular(),
+        model.basis_size_radial(), model.basis_size_angular(), model.l_max(),
+        model.has_q_222(), model.has_q_1111(), model.has_q_112(), model.has_q_123(),
+        model.has_q_233(), model.has_q_134(), model.dimension(), model.radial_cutoff_pair(),
+        model.angular_cutoff_pair(), model.radial_pair_coefficients(),
+        model.angular_pair_coefficients(), model.scalers(), batch.atoms(), output);
     check_cuda(cudaGetLastError(), "CUDA NEP descriptor kernel launch failed");
     if (!batch.expanded()) {
         return context.download_output(expanded_count);

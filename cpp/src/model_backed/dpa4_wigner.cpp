@@ -15,19 +15,6 @@ namespace {
 constexpr float kOne = 1.0F;
 constexpr float kZero = 0.0F;
 
-float safe_norm(const Dpa4EdgeVector& edge, float eps) {
-    return std::sqrt(edge.x * edge.x + edge.y * edge.y + edge.z * edge.z + eps * eps);
-}
-
-float quaternion_norm(const Dpa4Quaternion& quaternion, float eps) {
-    return std::sqrt(
-        quaternion.w * quaternion.w
-        + quaternion.x * quaternion.x
-        + quaternion.y * quaternion.y
-        + quaternion.z * quaternion.z
-        + eps * eps);
-}
-
 Dpa4Quaternion normalize_quaternion_unchecked(
     const Dpa4Quaternion& quaternion,
     float eps) {
@@ -300,36 +287,7 @@ void copy_block(
     }
 }
 
-void validate_edge_batch_arguments(
-    const void* edges,
-    std::size_t edge_count,
-    const void* output,
-    int num_threads,
-    const char* name) {
-    if (edge_count != 0 && (edges == nullptr || output == nullptr)) {
-        throw std::invalid_argument(std::string(name) + " buffer is null");
-    }
-    if (num_threads < 0) {
-        throw std::invalid_argument(std::string(name) + " num_threads must be non-negative");
-    }
-    if (edge_count > static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max())) {
-        throw std::invalid_argument(std::string(name) + " edge count is too large");
-    }
-}
-
 } // namespace
-
-Dpa4Quaternion normalize_dpa4_quaternion(
-    const Dpa4Quaternion& quaternion,
-    float eps) {
-    return normalize_quaternion_unchecked(quaternion, eps);
-}
-
-Dpa4Quaternion build_dpa4_edge_quaternion(
-    const Dpa4EdgeVector& edge,
-    float eps) {
-    return build_edge_quaternion_from_length(edge, safe_norm(edge, eps), eps);
-}
 
 Dpa4Quaternion build_dpa4_edge_quaternion_with_length(
     const Dpa4EdgeVector& edge,
@@ -341,51 +299,6 @@ Dpa4Quaternion build_dpa4_edge_quaternion_with_length(
         eps);
 }
 
-void build_dpa4_edge_quaternions(
-    const Dpa4EdgeVector* edges,
-    std::size_t edge_count,
-    Dpa4Quaternion* output,
-    float eps,
-    int num_threads) {
-    validate_edge_batch_arguments(edges, edge_count, output, num_threads, "DPA4 edge quaternion");
-    const std::ptrdiff_t signed_count = static_cast<std::ptrdiff_t>(edge_count);
-
-#ifdef _OPENMP
-    if (num_threads > 0) {
-#pragma omp parallel for schedule(static) num_threads(num_threads)
-        for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
-            output[index] = build_dpa4_edge_quaternion(edges[index], eps);
-        }
-    } else {
-#pragma omp parallel for schedule(static)
-        for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
-            output[index] = build_dpa4_edge_quaternion(edges[index], eps);
-        }
-    }
-#else
-    (void)num_threads;
-    for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
-        output[index] = build_dpa4_edge_quaternion(edges[index], eps);
-    }
-#endif
-}
-
-void dpa4_quaternion_to_rotation_matrix(
-    const Dpa4Quaternion& quaternion,
-    float* output,
-    float eps) {
-    require_output(output, 9, "DPA4 rotation matrix");
-    rotation_matrix_from_normalized(normalize_quaternion_unchecked(quaternion, eps), output);
-}
-
-void compute_dpa4_l1_block(
-    const Dpa4Quaternion& quaternion,
-    float* output,
-    float eps) {
-    require_output(output, 9, "DPA4 l=1 block");
-    l1_block_from_normalized(normalize_quaternion_unchecked(quaternion, eps), output);
-}
-
 void validate_dpa4_wigner_payload(const Dpa4WignerPayload& payload) {
     if (payload.l2_tensor.coefficients != nullptr) {
         validate_l2_tensor(payload.l2_tensor);
@@ -395,50 +308,9 @@ void validate_dpa4_wigner_payload(const Dpa4WignerPayload& payload) {
     validate_monomial_payload(payload.l3, 3);
 }
 
-void compute_dpa4_monomial_block(
-    const Dpa4Quaternion& quaternion,
-    const Dpa4WignerMonomialPayload& payload,
-    float* output,
-    float eps) {
-    validate_monomial_payload(payload, payload.degree);
-    const int dimension = 2 * payload.degree + 1;
-    require_output(
-        output,
-        static_cast<std::size_t>(dimension * dimension),
-        "DPA4 Wigner monomial block");
-    compute_monomial_block_from_normalized(
-        normalize_quaternion_unchecked(quaternion, eps),
-        payload,
-        output);
-}
-
 Dpa4WignerLowOrder::Dpa4WignerLowOrder(Dpa4WignerPayload payload)
     : payload_(payload) {
     validate_dpa4_wigner_payload(payload_);
-}
-
-void Dpa4WignerLowOrder::compute_l2_block(
-    const Dpa4Quaternion& quaternion,
-    float* output,
-    float eps) const {
-    require_output(output, 25, "DPA4 l=2 block");
-    const Dpa4Quaternion normalized = normalize_quaternion_unchecked(quaternion, eps);
-    if (payload_.l2_tensor.coefficients != nullptr) {
-        compute_l2_tensor_from_normalized(normalized, payload_.l2_tensor, output);
-    } else {
-        compute_monomial_block_from_normalized(normalized, payload_.l2_monomial, output);
-    }
-}
-
-void Dpa4WignerLowOrder::compute_l3_block(
-    const Dpa4Quaternion& quaternion,
-    float* output,
-    float eps) const {
-    require_output(output, 49, "DPA4 l=3 block");
-    compute_monomial_block_from_normalized(
-        normalize_quaternion_unchecked(quaternion, eps),
-        payload_.l3,
-        output);
 }
 
 void Dpa4WignerLowOrder::compute_blocks(
@@ -463,45 +335,6 @@ void Dpa4WignerLowOrder::compute_blocks(
     copy_block(l1, 3, 1, output);
     copy_block(l2, 5, 4, output);
     copy_block(l3, 7, 9, output);
-}
-
-void Dpa4WignerLowOrder::compute_blocks_batch(
-    const Dpa4Quaternion* quaternions,
-    std::size_t edge_count,
-    float* output,
-    float eps,
-    int num_threads) const {
-    validate_edge_batch_arguments(
-        quaternions, edge_count, output, num_threads, "DPA4 Wigner batch");
-    const std::ptrdiff_t signed_count = static_cast<std::ptrdiff_t>(edge_count);
-
-#ifdef _OPENMP
-    if (num_threads > 0) {
-#pragma omp parallel for schedule(static) num_threads(num_threads)
-        for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
-            compute_blocks(
-                quaternions[index],
-                output + static_cast<std::size_t>(index) * 16U * 16U,
-                eps);
-        }
-    } else {
-#pragma omp parallel for schedule(static)
-        for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
-            compute_blocks(
-                quaternions[index],
-                output + static_cast<std::size_t>(index) * 16U * 16U,
-                eps);
-        }
-    }
-#else
-    (void)num_threads;
-    for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
-        compute_blocks(
-            quaternions[index],
-            output + static_cast<std::size_t>(index) * 16U * 16U,
-            eps);
-    }
-#endif
 }
 
 } // namespace mdescriptor

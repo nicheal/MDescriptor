@@ -17,7 +17,6 @@ from .resource import ModelResource
 class ResolvedModel:
     """The concrete file identity selected by a resolver."""
 
-    resource: ModelResource
     path: Path
     digest: str
     source: Literal["explicit", "cache", "package"]
@@ -65,20 +64,6 @@ class ModelResolver:
             )
         return self._resolve_file(resource, packaged, "package")
 
-    def packaged(self, resource: ModelResource | str | PathLike[str]) -> ResolvedModel:
-        """Resolve a package-owned resource explicitly, bypassing the cache."""
-
-        if not isinstance(resource, ModelResource):
-            resource = ModelResource.from_value(resource)
-        if resource.path is not None:
-            path = resource.path
-        else:
-            assert resource.name is not None
-            path = self.package_dir / resource.name
-        if not path.is_file():
-            raise ModelLoadError(f"packaged model resource does not exist: {path}")
-        return self._resolve_file(resource, path, "package")
-
     @staticmethod
     def digest(path: Path) -> str:
         """Return a streaming SHA-256 digest for one model file."""
@@ -107,7 +92,7 @@ class ModelResolver:
             raise ModelLoadError(
                 f"model resource checksum mismatch for {path}: expected {expected}, got {actual}"
             )
-        return ResolvedModel(resource, path, actual, source)
+        return ResolvedModel(path, actual, source)
 
 
 __all__ = ["ModelResolver", "ModelResource", "ResolvedModel"]

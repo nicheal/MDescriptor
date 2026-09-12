@@ -9,13 +9,7 @@ from typing import Any
 import numpy as np
 
 from ...models import DPA4C_MODEL
-from .dpa_common import DpaKernelBase
-
-
-def _as_float32(value: Any) -> np.ndarray:
-    """Materialize one validated checkpoint tensor for the native backend."""
-
-    return np.ascontiguousarray(np.asarray(value, dtype=np.float32))
+from .dpa_common import DpaKernelBase, _as_float32
 
 
 def _native_payload(descriptor: Any, *, calibrate: bool, num_threads: int) -> dict[str, Any] | None:

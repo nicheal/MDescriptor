@@ -2,10 +2,8 @@
 
 #include "descriptor.hpp"
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -51,7 +49,7 @@ struct NepDescriptorParameters {
 
 struct NepModel;
 
-class NepCalculator {
+class NepCalculator : public detail::CalculatorBase {
 public:
     explicit NepCalculator(NepOptions options);
 
@@ -64,8 +62,6 @@ public:
     int n_max_angular() const noexcept;
     int l_max() const noexcept;
     NepDescriptorParameters descriptor_parameters() const;
-    bool closed() const noexcept;
-    void close() noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -76,8 +72,6 @@ public:
 private:
     std::shared_ptr<const NepModel> model_;
     int num_threads_ = 0;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
 };
 
 } // namespace mdescriptor

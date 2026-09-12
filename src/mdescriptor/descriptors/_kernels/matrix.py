@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 
 from ...core.errors import CancelledError
+from ._base import _StructureKernel
 from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
-from .structure import _StructureKernel
 
 _MATRIX_KINDS = {
     "sine": 0,

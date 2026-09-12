@@ -24,7 +24,6 @@ public:
 
     NeighborView for_center(std::int64_t center) const noexcept;
     std::int64_t atoms() const noexcept { return static_cast<std::int64_t>(offsets_.size()) - 1; }
-    double cutoff() const noexcept { return cutoff_; }
 
     const std::vector<std::int64_t>& offsets() const noexcept { return offsets_; }
     const std::vector<std::int32_t>& atoms_data() const noexcept { return atoms_; }
@@ -42,9 +41,7 @@ private:
         bool,
         bool);
 
-    double cutoff_ = 0.0;
-    std::vector<std::int64_t> offsets_;
-    std::vector<std::int32_t> atoms_;
+    std::vector<std::int64_t> offsets_;    std::vector<std::int32_t> atoms_;
     std::vector<std::int32_t> shifts_;
     std::vector<double> displacements_;
     std::vector<double> distance2_;

@@ -964,15 +964,12 @@ NepDescriptorParameters NepCalculator::descriptor_parameters() const {
     return result;
 }
 
-bool NepCalculator::closed() const noexcept { return closed_.load(std::memory_order_acquire); }
-void NepCalculator::close() noexcept { closed_.store(true, std::memory_order_release); }
-
 void NepCalculator::compute(
     const StructureBatchView& batch,
     double* output,
     const std::shared_ptr<ComputeControl>& control
 ) const {
-    if (closed()) throw std::runtime_error("NEP calculator is closed");
+    assert_open("NEP calculator");
     std::lock_guard<std::mutex> lock(compute_mutex_);
     if (batch.atoms == 0) return;
     compute_nep(batch, *model_, num_threads_, output, control);

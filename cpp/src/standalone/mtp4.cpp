@@ -1334,7 +1334,7 @@ void NativeMtp4Model::compute(
     validate_batch(batch);
     if (static_cast<int>(species.size()) != impl_->species_count) throw std::invalid_argument("MLIP-4 potential species_order does not match calculator species");
     const auto graph = build_neighbor_graph(batch, impl_->radial_basis.maxdist, control, num_threads);
-    const auto mapping = species_map(species);
+    const auto mapping = make_type_map(species);
     const std::size_t feature_count = impl_->scalar_output_ids.size();
     run_parallel_structures(batch.structures, num_threads, control, [&](std::int64_t structure) {
         for (std::int64_t center = batch.offsets[structure]; center < batch.offsets[structure + 1]; ++center) {

@@ -14,15 +14,14 @@ from typing import Any
 import numpy as np
 
 from ...core.species import require_species, validate_batch_species
+from ._base import _StructureKernel
 from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
 from .mbtr_config import resolve_mbtr_config
-from .structure import _StructureKernel
 
 
 class MBTRKernel(_StructureKernel):
     name = "MBTR"
     local = False
-    result_level = "structure"
 
     def __init__(
         self, species: Iterable[int] | None = None, geometry: dict[str, Any] | None = None,
@@ -75,7 +74,7 @@ class MBTRKernel(_StructureKernel):
         )
         self._feature_count = int(values.shape[1])
         return DescriptorResult(
-            values, self.result_level, batch.ids,
+            values, self.level, batch.ids,
             batch.offsets.copy() if self.local else None,
             tuple(f"{self.name}:{index}" for index in range(values.shape[1])),
             {"backend": "mdescriptor-cpp", "descriptor": self.name, "species": species},
@@ -85,7 +84,7 @@ class MBTRKernel(_StructureKernel):
 class LMBTRKernel(MBTRKernel):
     name = "LMBTR"
     local = True
-    result_level = "atom"
+    level = "atom"
 
 
 class ValleOganovKernel(MBTRKernel):

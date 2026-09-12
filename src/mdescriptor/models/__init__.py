@@ -13,11 +13,11 @@ from .session import (
     shared_loaded_model,
 )
 
-MODEL_DIR = Path(__file__).resolve().parent / "assets"
+_ASSETS = Path(__file__).resolve().parent / "assets"
 
-DPA4_MODEL = MODEL_DIR / "DPA4-Air-OMat24-v20260704.pt"
-DPA4C_MODEL = MODEL_DIR / "DPA4C-Air-OMat24-v20260819.pt"
-NEP_MODEL = MODEL_DIR / "nep89_20250409.txt"
+DPA4_MODEL = _ASSETS / "DPA4-Air-OMat24-v20260704.pt"
+DPA4C_MODEL = _ASSETS / "DPA4C-Air-OMat24-v20260819.pt"
+NEP_MODEL = _ASSETS / "nep89_20250409.txt"
 
 # Checksums are part of the packaged resource identity.  A changed bundled
 # artifact must therefore fail closed instead of silently changing descriptor
@@ -43,7 +43,6 @@ __all__ = [
     "DPA4C_MODEL",
     "DPA4C_RESOURCE",
     "LoadedModel",
-    "MODEL_DIR",
     "ModelResource",
     "ModelResolver",
     "ModelSession",

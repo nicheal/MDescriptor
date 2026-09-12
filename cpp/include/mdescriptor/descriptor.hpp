@@ -1,14 +1,12 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "mdescriptor/detail/batch.hpp"
+#include "mdescriptor/detail/calculator_base.hpp"
 #include "mdescriptor/detail/control.hpp"
 #include "mdescriptor/detail/species.hpp"
 
@@ -103,11 +101,6 @@ struct C00PSMlffOptions {
     int num_threads = 0;
 };
 
-std::int64_t soap_feature_count(const SoapOptions& options);
-std::int64_t soap_turbo_feature_count(const SoapTurboOptions& options);
-std::int64_t acsf_feature_count(const AcsfOptions& options);
-std::int64_t c00ps_mlff_feature_count(const C00PSMlffOptions& options);
-
 void compute_soap(
     const StructureBatchView& batch,
     const SoapOptions& options,
@@ -129,7 +122,7 @@ void compute_acsf(
     const std::shared_ptr<ComputeControl>& control
 );
 
-class C00PSMlffCalculator {
+class C00PSMlffCalculator : public detail::CalculatorBase {
 public:
     explicit C00PSMlffCalculator(C00PSMlffOptions options);
 
@@ -139,8 +132,6 @@ public:
     const std::vector<std::vector<double>>& basis_zeros() const noexcept;
     const std::vector<std::vector<double>>& basis_norms() const noexcept;
     const std::vector<std::vector<double>>& basis_values() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -150,8 +141,6 @@ public:
 
 private:
     C00PSMlffOptions options_;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
     mutable std::vector<std::vector<double>> zeros_;
     mutable std::vector<std::vector<double>> norms_;
     mutable std::vector<std::vector<double>> radial_values_;
@@ -159,14 +148,12 @@ private:
     mutable bool basis_ready_ = false;
 };
 
-class SoapCalculator {
+class SoapCalculator : public detail::CalculatorBase {
 public:
     SoapCalculator(SoapOptions options);
 
     std::int64_t feature_count() const noexcept;
     const std::vector<std::int32_t>& species() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -176,11 +163,9 @@ public:
 
 private:
     SoapOptions options_;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
 };
 
-class SoapTurboCalculator {
+class SoapTurboCalculator : public detail::CalculatorBase {
 public:
     SoapTurboCalculator(SoapTurboOptions options);
 
@@ -197,8 +182,6 @@ public:
     const std::vector<double>& compression_factors() const noexcept;
     std::int32_t packed_count() const noexcept;
     std::int64_t dense_feature_count() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -208,7 +191,6 @@ public:
 
 private:
     SoapTurboOptions options_;
-    mutable std::mutex compute_mutex_;
     mutable std::shared_ptr<SoapTurboPrepared> prepared_;
     std::vector<std::int32_t> prepared_alpha_max_;
     std::vector<std::int32_t> prepared_channel_offsets_;
@@ -219,17 +201,14 @@ private:
     std::vector<std::int64_t> prepared_compression_offsets_;
     std::vector<std::int64_t> prepared_compression_sources_;
     std::vector<double> prepared_compression_factors_;
-    std::atomic<bool> closed_{false};
 };
 
-class AcsfCalculator {
+class AcsfCalculator : public detail::CalculatorBase {
 public:
     AcsfCalculator(AcsfOptions options);
 
     std::int64_t feature_count() const noexcept;
     const std::vector<std::int32_t>& species() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -239,8 +218,6 @@ public:
 
 private:
     AcsfOptions options_;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
 };
 
 } // namespace mdescriptor

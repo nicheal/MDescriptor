@@ -3,11 +3,9 @@
 #include "mdescriptor/descriptor.hpp"
 #include "mdescriptor/detail/control.hpp"
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 namespace mdescriptor {
@@ -54,13 +52,11 @@ struct Dpa4cOptions {
     std::vector<float> output_stddev;
 };
 
-class Dpa4cCalculator {
+class Dpa4cCalculator : public detail::CalculatorBase {
 public:
     explicit Dpa4cCalculator(Dpa4cOptions options);
 
     std::int64_t feature_count() const noexcept;
-    void close() noexcept;
-    bool closed() const noexcept;
 
     void compute(
         const StructureBatchView& batch,
@@ -86,8 +82,6 @@ private:
     std::vector<std::int64_t> gram_index_;
     std::vector<float> gram_scale_;
     mutable std::vector<std::unique_ptr<PairCoefficients>> pair_cache_;
-    mutable std::mutex compute_mutex_;
-    std::atomic<bool> closed_{false};
 };
 
 } // namespace mdescriptor

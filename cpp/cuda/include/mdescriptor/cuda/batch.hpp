@@ -57,9 +57,6 @@ public:
     }
 
 private:
-    template <typename Value>
-    static void release(Value*& pointer) noexcept;
-
     std::int32_t* numbers_ = nullptr;
     double* positions_ = nullptr;
     double* positions_soa_ = nullptr;
