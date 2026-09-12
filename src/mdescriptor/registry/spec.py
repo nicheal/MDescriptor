@@ -30,7 +30,6 @@ class DescriptorSpec:
     backend: str
     level: str
     capabilities: frozenset[str] = field(default_factory=frozenset)
-    optional_extra: str | None = None
     info: DescriptorInfo | None = None
     descriptor_version: str = "1"
     execution_engine: str | None = None
@@ -75,8 +74,6 @@ class DescriptorSpec:
                 f"unknown descriptor capability(s): {', '.join(sorted(unknown))}"
             )
         object.__setattr__(self, "capabilities", capabilities)
-        if self.optional_extra is not None:
-            object.__setattr__(self, "optional_extra", str(self.optional_extra))
         if self.info is not None and not isinstance(self.info, DescriptorInfo):
             raise TypeError("descriptor spec info must be a DescriptorInfo or None")
 

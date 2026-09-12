@@ -48,8 +48,7 @@ __global__ void ace_cuda_kernel(
     DeviceComplex harmonics[441]{};
     for (I64 edge = begin; edge < end; ++edge) {
         const I32 atom = graph_atoms[edge];
-        if (atom == center && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0 && graph_shifts[edge * 3 + 2] == 0) continue;
+        if (exact_self_edge(center, atom, graph_shifts, edge)) continue;
         const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
         if (distance <= 0.0) continue;
         const int atom_type = species_index(numbers[atom], species, species_count);
@@ -57,7 +56,7 @@ __global__ void ace_cuda_kernel(
         ace_radial_values(
             distance, transform_a, transform_p, transform_r0, t_left, t_right,
             p_left, p_right, radial_a, radial_b, radial_c, max_radial, radial);
-        ace_spherical_harmonics(
+        complex_spherical_harmonics_device<21>(
             graph_displacements + edge * 3, max_angular, harmonics);
         for (I64 channel = 0; channel < base_channels; ++channel) {
             if (base_species[channel] != atom_type) continue;
@@ -191,9 +190,6 @@ py::dict compute_ace_descriptor(
     return atom_result(values, batch.atoms(), features, "ACE", options, false,
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
-
-
-} // namespace
 
 py::dict compute_extended_ace(
     CudaExecutionContext& context,

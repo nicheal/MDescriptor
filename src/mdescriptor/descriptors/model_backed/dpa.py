@@ -31,15 +31,9 @@ from .graph import _ATOMIC_SYMBOLS
 
 @dataclass(frozen=True, slots=True)
 class DpaCheckpointInfo:
-    """Validated immutable identity for one official DPA checkpoint."""
+    """The single checkpoint fact consumers actually read: model cutoff."""
 
-    descriptor: Literal["DPA4", "DPA4C"]
-    type_map: tuple[str, ...]
-    feature_count: int
     cutoff: float
-    precision: str
-    supports_spin: bool
-    supports_charge_spin: bool
 
 
 def _checkpoint_parameters(checkpoint: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -114,19 +108,10 @@ def _validate_checkpoint_mapping(
         strict=True,
         checkpoint=checkpoint,
     )
-    model_descriptor = evaluator.descriptor
     actual_type_map = tuple(str(value).strip() for value in evaluator.type_map)
     if actual_type_map != type_map:
         raise ValueError("checkpoint type_map was not preserved by the descriptor loader")
-    info = DpaCheckpointInfo(
-        descriptor=expected_descriptor,
-        type_map=type_map,
-        feature_count=int(evaluator.dim_out),
-        cutoff=float(evaluator.rcut),
-        precision=str(getattr(model_descriptor, "precision", "float64")),
-        supports_spin=bool(model_descriptor.supports_native_spin()),
-        supports_charge_spin=bool(model_descriptor.supports_charge_spin()),
-    )
+    info = DpaCheckpointInfo(cutoff=float(evaluator.rcut))
     return info, checkpoint
 
 
@@ -148,26 +133,6 @@ def load_dpa_checkpoint(
         raise
     except Exception as exc:
         raise ModelLoadError(f"invalid {expected_descriptor} checkpoint: {path}") from exc
-
-
-def validate_dpa_checkpoint_mapping(
-    checkpoint: Mapping[str, Any],
-    *,
-    expected_descriptor: Literal["DPA4", "DPA4C"],
-) -> DpaCheckpointInfo:
-    """Validate an already parsed checkpoint without touching the filesystem."""
-
-    try:
-        info, _ = _validate_checkpoint_mapping(
-            checkpoint,
-            path="<in-memory checkpoint>",
-            expected_descriptor=expected_descriptor,
-        )
-        return info
-    except Exception as exc:
-        raise ModelLoadError(
-            f"invalid {expected_descriptor} checkpoint mapping"
-        ) from exc
 
 
 def new_runtime(
@@ -355,5 +320,4 @@ __all__ = [
     "compute_batch",
     "load_dpa_checkpoint",
     "new_runtime",
-    "validate_dpa_checkpoint_mapping",
 ]

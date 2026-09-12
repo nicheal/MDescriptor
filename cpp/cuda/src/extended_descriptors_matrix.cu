@@ -76,8 +76,6 @@ py::dict compute_matrix_descriptor(
     return result;
 }
 
-} // namespace
-
 py::dict compute_extended_matrix(
     CudaExecutionContext& context,
     DeviceBatch& batch,

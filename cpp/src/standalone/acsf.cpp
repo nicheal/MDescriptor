@@ -15,48 +15,11 @@ namespace mdescriptor {
 using namespace detail;
 
 namespace {
-constexpr double kPi = 3.141592653589793238462643383279502884;
-constexpr double kSqrt2 = 1.414213562373095048801688724209698079;
 
 std::int64_t acsf_features(const AcsfOptions& options) {
     const std::int64_t types = static_cast<std::int64_t>(options.species.size());
     return (1 + options.n_g2 + options.n_g3) * types
         + (options.n_g4 + options.n_g5) * types * (types + 1) / 2;
-}
-
-struct AcsfG4Plan {
-    std::vector<double> eta_values;
-    std::vector<std::pair<double, double>> angular_values;
-    std::vector<std::size_t> eta_slots;
-    std::vector<std::size_t> angular_slots;
-};
-
-AcsfG4Plan prepare_acsf_g4(const AcsfOptions& options) {
-    AcsfG4Plan plan;
-    plan.eta_slots.resize(static_cast<std::size_t>(options.n_g4));
-    plan.angular_slots.resize(static_cast<std::size_t>(options.n_g4));
-    for (std::int64_t p = 0; p < options.n_g4; ++p) {
-        const double eta = options.g4_params[p * 3];
-        const std::pair<double, double> angular{
-            options.g4_params[p * 3 + 1],
-            options.g4_params[p * 3 + 2],
-        };
-        auto eta_it = std::find(plan.eta_values.begin(), plan.eta_values.end(), eta);
-        if (eta_it == plan.eta_values.end()) {
-            plan.eta_slots[static_cast<std::size_t>(p)] = plan.eta_values.size();
-            plan.eta_values.push_back(eta);
-        } else {
-            plan.eta_slots[static_cast<std::size_t>(p)] = static_cast<std::size_t>(eta_it - plan.eta_values.begin());
-        }
-        auto angular_it = std::find(plan.angular_values.begin(), plan.angular_values.end(), angular);
-        if (angular_it == plan.angular_values.end()) {
-            plan.angular_slots[static_cast<std::size_t>(p)] = plan.angular_values.size();
-            plan.angular_values.push_back(angular);
-        } else {
-            plan.angular_slots[static_cast<std::size_t>(p)] = static_cast<std::size_t>(angular_it - plan.angular_values.begin());
-        }
-    }
-    return plan;
 }
 
 void compute_acsf_structure(
@@ -66,8 +29,7 @@ void compute_acsf_structure(
     std::int64_t structure,
     double* output,
     const std::shared_ptr<ComputeControl>& control,
-    bool parallel_centers,
-    const AcsfG4Plan& g4_plan
+    bool parallel_centers
 ) {
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
@@ -100,11 +62,7 @@ void compute_acsf_structure(
         std::int64_t type;
     };
     thread_local std::vector<AcsfNeighbor> cached;
-    thread_local std::vector<double> radial_values;
-    thread_local std::vector<double> angular_values;
     const bool has_angular = options.n_g4 > 0 || options.n_g5 > 0;
-    const bool cache_radial = g4_plan.eta_values.size() < static_cast<std::size_t>(options.n_g4);
-    const bool cache_angular = g4_plan.angular_values.size() < static_cast<std::size_t>(options.n_g4);
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(options.num_threads > 0 ? options.num_threads : omp_get_max_threads()) if(parallel_centers)
@@ -173,31 +131,16 @@ void compute_acsf_structure(
                 const double fc4 = j.cutoff * k.cutoff * (rjk <= options.r_cut ? cutoff(rjk) : 0.0);
                 const double fc5 = j.cutoff * k.cutoff;
                 const double distance_sum = j.distance2 + k.distance2 + rjk2;
-                if (cache_radial && rjk <= options.r_cut) {
-                    radial_values.resize(g4_plan.eta_values.size());
-                    for (std::size_t slot = 0; slot < g4_plan.eta_values.size(); ++slot) {
-                        radial_values[slot] = std::exp(-g4_plan.eta_values[slot] * distance_sum);
-                    }
-                }
-                if (cache_angular) {
-                    angular_values.resize(g4_plan.angular_values.size());
-                    for (std::size_t slot = 0; slot < g4_plan.angular_values.size(); ++slot) {
-                        const auto [zeta, lambda] = g4_plan.angular_values[slot];
-                        angular_values[slot] = angular_power(0.5 * (1.0 + lambda * cosine), zeta);
-                    }
-                }
                 const std::size_t offset = angular_offset
                     + static_cast<std::size_t>(pair_index(j.type, k.type) * (options.n_g4 + options.n_g5));
                 for (std::int64_t p = 0; p < options.n_g4; ++p) {
                     const double eta = options.g4_params[p * 3];
                     const double zeta = options.g4_params[p * 3 + 1];
                     const double lambda = options.g4_params[p * 3 + 2];
-                    const double angular = rjk <= options.r_cut && cache_angular
-                        ? angular_values[g4_plan.angular_slots[static_cast<std::size_t>(p)]]
-                        : rjk <= options.r_cut ? angular_power(0.5 * (1.0 + lambda * cosine), zeta) : 0.0;
-                    const double radial = rjk <= options.r_cut && cache_radial
-                        ? radial_values[g4_plan.eta_slots[static_cast<std::size_t>(p)]]
-                        : rjk <= options.r_cut ? std::exp(-eta * distance_sum) : 0.0;
+                    const bool in_cutoff = rjk <= options.r_cut;
+                    const double angular = in_cutoff
+                        ? angular_power(0.5 * (1.0 + lambda * cosine), zeta) : 0.0;
+                    const double radial = in_cutoff ? std::exp(-eta * distance_sum) : 0.0;
                     values[offset + static_cast<std::size_t>(p)] +=
                         2.0 * angular * radial * fc4;
                 }
@@ -270,11 +213,10 @@ void compute_acsf(const StructureBatchView& batch, const AcsfOptions& options, d
     if (control) {
         control->reset(batch.structures);
     }
-    const AcsfG4Plan g4_plan = prepare_acsf_g4(options);
     const std::int64_t features = acsf_features(options);
     if (batch.structures == 1) {
         const NeighborGraph neighbor_graph = build_neighbor_graph(batch, options.r_cut, control, options.num_threads);
-        compute_acsf_structure(batch, options, neighbor_graph, 0, output, control, true, g4_plan);
+        compute_acsf_structure(batch, options, neighbor_graph, 0, output, control, true);
         if (control && control->cancelled()) {
             throw CancelledError();
         }
@@ -300,7 +242,7 @@ void compute_acsf(const StructureBatchView& batch, const AcsfOptions& options, d
             structure_batch, options.r_cut, control, 1);
         compute_acsf_structure(
             structure_batch, options, neighbor_graph, 0,
-            output + begin * features, control, false, g4_plan);
+            output + begin * features, control, false);
     });
 }
 

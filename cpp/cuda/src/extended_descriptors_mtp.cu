@@ -44,16 +44,13 @@ __global__ void mtp4_cuda_kernel(
     if (center_type < 0) return;
     double* raw = eval_workspace + center * eval_count;
     for (I64 index = 0; index < eval_count; ++index) raw[index] = 0.0;
-    const I64 radial_count = static_cast<I64>(species_count) * species_count
-        * radial_funcs_count * radial_basis_size;
     double radial_basis[64]{};
     double radial_values[32]{};
     const I64 begin = graph_offsets[center];
     const I64 end = graph_offsets[center + 1];
     for (I64 edge = begin; edge < end; ++edge) {
         const I32 atom = graph_atoms[edge];
-        if (atom == center && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0 && graph_shifts[edge * 3 + 2] == 0) continue;
+        if (exact_self_edge(center, atom, graph_shifts, edge)) continue;
         const double r_sq = fmax(0.0, graph_distance2[edge]);
         const double distance = sqrt(r_sq);
         if (distance <= 0.0 || distance > max_dist) continue;
@@ -115,7 +112,6 @@ __global__ void mtp4_cuda_kernel(
     for (I64 feature = 0; feature < features; ++feature) {
         target[feature] = raw[scalar_output_ids[feature]];
     }
-    (void)radial_count;
 }
 
 py::dict compute_mtp4_descriptor(
@@ -295,8 +291,7 @@ __global__ void mtp2_cuda_kernel(
     const I64 pair_stride = static_cast<I64>(radial_funcs_count) * radial_basis_size;
     for (I64 edge = begin; edge < end; ++edge) {
         const I32 atom = graph_atoms[edge];
-        if (atom == center && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0 && graph_shifts[edge * 3 + 2] == 0) continue;
+        if (exact_self_edge(center, atom, graph_shifts, edge)) continue;
         const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
         if (distance <= 0.0 || distance > max_dist) continue;
         const int neighbor_type = species_index(numbers[atom], species, species_count);
@@ -413,9 +408,6 @@ py::dict compute_mtp2_descriptor(
     return atom_result(values, batch.atoms(), features, "MTP", options, false,
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
-
-
-} // namespace
 
 py::dict compute_extended_mtp(
     CudaExecutionContext& context,

@@ -1,6 +1,7 @@
 #include "mdescriptor/cuda/dpa4.hpp"
 #include "mdescriptor/cuda/error.hpp"
 
+#include "dpa4_common.cuh"
 #include "mdescriptor/dpa4_wigner.hpp"
 
 #include <cuda_runtime.h>
@@ -23,16 +24,7 @@ namespace py = pybind11;
 
 namespace mdescriptor::cuda {
 
-struct DeviceDpa4Model::DeviceArray {
-    void* pointer = nullptr;
-    std::size_t bytes = 0;
-
-    ~DeviceArray() noexcept {
-        if (pointer != nullptr) {
-            (void)cudaFree(pointer);
-        }
-    }
-};
+struct DeviceDpa4Model::DeviceArray : dpa4_common::DeviceArray {};
 
 namespace {
 
@@ -97,7 +89,6 @@ enum TopWeight : int {
     kWignerL3,
     kWignerL3Exponents,
     kGieRows,
-    kGieM0,
     kGieRadial,
     kGridTo,
     kGridFrom,
@@ -158,27 +149,13 @@ enum BlockWeight : int {
 
 template <typename Value>
 std::vector<Value> payload_array(py::handle value, const char* name) {
-    using Array = py::array_t<Value, py::array::c_style | py::array::forcecast>;
-    const Array array = Array::ensure(value);
-    if (!array || array.ndim() == 0) {
-        throw std::invalid_argument(
-            std::string("DPA4 payload field ") + name + " must be an array");
-    }
-    const auto info = array.request();
-    if (info.size < 0) {
-        throw std::invalid_argument(
-            std::string("DPA4 payload field ") + name + " has an invalid size");
-    }
-    const auto* data = static_cast<const Value*>(info.ptr);
-    return std::vector<Value>(data, data + info.size);
+    const std::string error =
+        std::string("DPA4 payload field ") + name + " must be an array";
+    return dpa4_common::payload_array<Value>(value, name, error.c_str(), true);
 }
 
 py::handle required(const py::dict& payload, const char* name) {
-    if (!payload.contains(name)) {
-        throw std::invalid_argument(
-            std::string("DPA4 CUDA payload is missing ") + name);
-    }
-    return payload[name];
+    return dpa4_common::required(payload, name, "DPA4");
 }
 
 template <typename Value>
@@ -210,34 +187,18 @@ std::unique_ptr<DeviceDpa4Model::DeviceArray> upload_array(
     CudaExecutionContext& context,
     const std::vector<Value>& values,
     const char* operation) {
-    auto result = std::make_unique<DeviceDpa4Model::DeviceArray>();
-    result->bytes = values.size() * sizeof(Value);
-    if (result->bytes == 0) {
-        return result;
-    }
-    check_cuda(cudaSetDevice(context.device()), "could not select the DPA4 CUDA device");
-    check_cuda(cudaMalloc(&result->pointer, result->bytes), operation);
-    // A blocking copy is intentional here.  The input vector is a temporary
-    // parser buffer, and model construction must not leave an asynchronous
-    // DMA operation borrowing memory that has already gone out of scope.
-    try {
-        check_cuda(
-            cudaMemcpy(
-                result->pointer, values.data(), result->bytes,
-                cudaMemcpyHostToDevice),
-            operation);
-    } catch (...) {
-        (void)cudaFree(result->pointer);
-        result->pointer = nullptr;
-        throw;
-    }
-    return result;
+    // The input vector is a temporary parser buffer, so the copy must be
+    // blocking; model construction must not leave an asynchronous DMA
+    // operation borrowing memory that has already gone out of scope.
+    return dpa4_common::upload_array<DeviceDpa4Model::DeviceArray>(
+        context, values, operation, "could not select the DPA4 CUDA device",
+        true);
 }
 
 template <typename Value>
 const Value* device_data(
     const std::unique_ptr<DeviceDpa4Model::DeviceArray>& value) {
-    return value == nullptr ? nullptr : static_cast<const Value*>(value->pointer);
+    return dpa4_common::device_data<Value>(value);
 }
 
 struct HostBlock {
@@ -289,9 +250,6 @@ struct DeviceBlock {
 
 struct DeviceModel {
     double rcut = 0.0;
-    int ntypes = 0;
-    int channels = 0;
-    int feature_count = 0;
     const float* type_embedding = nullptr;
     const float* env_rbf1 = nullptr;
     const float* env_rbf2 = nullptr;
@@ -311,7 +269,6 @@ struct DeviceModel {
     const float* wigner_l3 = nullptr;
     const std::int64_t* wigner_l3_exponents = nullptr;
     const std::int64_t* gie_rows = nullptr;
-    const std::int64_t* gie_m0 = nullptr;
     const std::int64_t* gie_radial = nullptr;
     const float* grid_to = nullptr;
     const float* grid_from = nullptr;
@@ -373,9 +330,7 @@ struct WorkspaceLayout {
     std::size_t bytes = 0;
 };
 
-std::size_t align_bytes(std::size_t value, std::size_t alignment) {
-    return (value + alignment - 1U) / alignment * alignment;
-}
+using dpa4_common::align_bytes;
 
 WorkspaceLayout make_workspace_layout(
     std::size_t atoms,
@@ -907,11 +862,7 @@ __global__ void build_rotation_gie_kernel(
     const std::int64_t center = center_for_edge(
         graph_offsets, atoms, static_cast<std::int64_t>(edge));
     const std::int32_t neighbor = graph_atoms[edge];
-    const bool exact_self = neighbor == center
-        && graph_shifts != nullptr
-        && graph_shifts[edge * 3] == 0
-        && graph_shifts[edge * 3 + 1] == 0
-        && graph_shifts[edge * 3 + 2] == 0;
+    const bool exact_self = exact_self_edge(center, neighbor, graph_shifts, edge);
     float* rotation_destination = rotation + edge * kReducedDim * kFullDim;
     float* gie_destination = gie + edge * 15;
     for (int index = 0; index < kReducedDim * kFullDim; ++index) {
@@ -1020,11 +971,7 @@ __global__ void prepare_geometry_kernel(
     }
     const std::int64_t center = center_for_edge(graph_offsets, atoms, edge);
     const std::int32_t neighbor = graph_atoms[edge];
-    const bool exact_self = neighbor == center
-        && graph_shifts != nullptr
-        && graph_shifts[edge * 3] == 0
-        && graph_shifts[edge * 3 + 1] == 0
-        && graph_shifts[edge * 3 + 2] == 0;
+    const bool exact_self = exact_self_edge(center, neighbor, graph_shifts, edge);
     float* compact = radial_compact + edge * 25;
     for (int value = 0; value < 25; ++value) {
         compact[value] = 0.0F;
@@ -1040,7 +987,6 @@ __global__ void prepare_geometry_kernel(
     const float dz = static_cast<float>(displacements[edge * 3 + 2]);
     const float distance = sqrtf(
         dx * dx + dy * dy + dz * dz + kEpsilon * kEpsilon);
-    const float inv_r = 1.0F / distance;
     float u = (static_cast<float>(model.rcut) - distance)
         / static_cast<float>(model.rcut);
     u = fmaxf(0.0F, fminf(1.0F, u));
@@ -1069,7 +1015,6 @@ __global__ void prepare_geometry_kernel(
             ? 1.0F : sinf(pi * zarg) / (pi * zarg);
         compact[radial] = model.radial_freqs[radial] * sinc * radial_envelope;
     }
-    (void)inv_r;
 }
 
 __global__ void environment_silu_kernel(
@@ -1105,11 +1050,7 @@ __global__ void prepare_environment_input_kernel(
     }
     const std::int64_t center = center_for_edge(graph_offsets, atoms, edge);
     const std::int32_t neighbor = graph_atoms[edge];
-    const bool exact_self = neighbor == center
-        && graph_shifts != nullptr
-        && graph_shifts[edge * 3] == 0
-        && graph_shifts[edge * 3 + 1] == 0
-        && graph_shifts[edge * 3 + 2] == 0;
+    const bool exact_self = exact_self_edge(center, neighbor, graph_shifts, edge);
     float* destination = environment_input + edge * 256;
     if (exact_self) {
         for (int index = 0; index < 64; ++index) {
@@ -1261,11 +1202,7 @@ __global__ void prepare_finalize_kernel(
     const float inv_degree = degree_inverse[center * 1024];
     for (std::int64_t edge = begin; edge < end; ++edge) {
         const std::int32_t neighbor = graph_atoms[edge];
-        const bool exact_self = neighbor == center
-            && graph_shifts != nullptr
-            && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0
-            && graph_shifts[edge * 3 + 2] == 0;
+        const bool exact_self = exact_self_edge(center, neighbor, graph_shifts, edge);
         if (exact_self) {
             continue;
         }
@@ -1395,11 +1332,7 @@ __global__ void edge_local_from_state_kernel(
     const std::int64_t center = center_for_edge(
         graph_offsets, atoms, static_cast<std::int64_t>(edge));
     const std::int32_t neighbor = graph_atoms[edge];
-    const bool exact_self = neighbor == center
-        && graph_shifts != nullptr
-        && graph_shifts[edge * 3] == 0
-        && graph_shifts[edge * 3 + 1] == 0
-        && graph_shifts[edge * 3 + 2] == 0;
+    const bool exact_self = exact_self_edge(center, neighbor, graph_shifts, edge);
     float* destination = local + edge * kReducedDim * kChannels;
     float* bias_destination = radial_bias + edge * kChannels;
     if (exact_self) {
@@ -1780,11 +1713,7 @@ __global__ void attention_kernel(
     double max_logit = null_logit;
     for (std::int64_t edge = begin; edge < end; ++edge) {
         const std::int32_t source = graph_atoms[edge];
-        const bool exact_self = source == node
-            && graph_shifts != nullptr
-            && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0
-            && graph_shifts[edge * 3 + 2] == 0;
+        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
         const float envelope = envelopes[edge];
         if (exact_self || envelope <= 0.0F) {
             continue;
@@ -1806,11 +1735,7 @@ __global__ void attention_kernel(
     double denominator = exp(null_logit - max_logit);
     for (std::int64_t edge = begin; edge < end; ++edge) {
         const std::int32_t source = graph_atoms[edge];
-        const bool exact_self = source == node
-            && graph_shifts != nullptr
-            && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0
-            && graph_shifts[edge * 3 + 2] == 0;
+        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
         const float envelope = envelopes[edge];
         if (exact_self || envelope <= 0.0F) {
             continue;
@@ -1831,11 +1756,7 @@ __global__ void attention_kernel(
     const double inverse = 1.0 / denominator;
     for (std::int64_t edge = begin; edge < end; ++edge) {
         const std::int32_t source = graph_atoms[edge];
-        const bool exact_self = source == node
-            && graph_shifts != nullptr
-            && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0
-            && graph_shifts[edge * 3 + 2] == 0;
+        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
         const float envelope = envelopes[edge];
         if (exact_self || envelope <= 0.0F) {
             continue;
@@ -2618,8 +2539,9 @@ DeviceDpa4Model::DeviceDpa4Model(
         model_payload, "wigner_l3_exponents", 84U * 4U);
     const auto gie_rows = read_exact<std::int64_t>(
         model_payload, "gie_row_index", 15U);
-    const auto gie_m0 = read_exact<std::int64_t>(
-        model_payload, "gie_m0_index", 15U);
+    // The m0 payload is part of the checkpoint layout but unused by the CUDA
+    // kernels; still consumed so malformed files are rejected.
+    read_exact<std::int64_t>(model_payload, "gie_m0_index", 15U);
     const auto gie_radial = read_exact<std::int64_t>(
         model_payload, "gie_radial_index", 15U);
 
@@ -2650,7 +2572,6 @@ DeviceDpa4Model::DeviceDpa4Model(
     host_top[kWignerL3] = model->wigner_l3;
     host_top[kWignerL3Exponents] = {};
     host_top[kGieRows] = {};
-    host_top[kGieM0] = {};
     host_top[kGieRadial] = {};
     host_top[kGridTo] = read_exact<float>(
         model_payload, "grid_to", static_cast<std::size_t>(kGridSize) * kGridCoeff);
@@ -2672,13 +2593,11 @@ DeviceDpa4Model::DeviceDpa4Model(
         upload_array(context, model->wigner_l3_exponents, "could not upload DPA4 Wigner exponents");
     model->top[kGieRows] =
         upload_array(context, gie_rows, "could not upload DPA4 GIE rows");
-    model->top[kGieM0] =
-        upload_array(context, gie_m0, "could not upload DPA4 GIE m0 indices");
     model->top[kGieRadial] =
         upload_array(context, gie_radial, "could not upload DPA4 GIE radial indices");
     for (int index = 0; index < kTopWeightCount; ++index) {
         if (index == kWignerL3Exponents || index == kGieRows
-            || index == kGieM0 || index == kGieRadial) {
+            || index == kGieRadial) {
             continue;
         }
         model->top[index] = upload_array(
@@ -2837,9 +2756,6 @@ DeviceDpa4Model::DeviceDpa4Model(
     }
 
     model->device.rcut = model->rcut;
-    model->device.ntypes = model->ntypes;
-    model->device.channels = channels;
-    model->device.feature_count = model->feature_count;
     model->device.type_embedding = device_data<float>(model->top[kTypeEmbedding]);
     model->device.env_rbf1 = device_data<float>(model->top[kEnvRbf1]);
     model->device.env_rbf2 = device_data<float>(model->top[kEnvRbf2]);
@@ -2873,7 +2789,6 @@ DeviceDpa4Model::DeviceDpa4Model(
     model->device.wigner_l3_exponents = device_data<std::int64_t>(
         model->top[kWignerL3Exponents]);
     model->device.gie_rows = device_data<std::int64_t>(model->top[kGieRows]);
-    model->device.gie_m0 = device_data<std::int64_t>(model->top[kGieM0]);
     model->device.gie_radial = device_data<std::int64_t>(model->top[kGieRadial]);
     model->device.grid_to = device_data<float>(model->top[kGridTo]);
     model->device.grid_from = device_data<float>(model->top[kGridFrom]);
@@ -2887,10 +2802,6 @@ DeviceDpa4Model::~DeviceDpa4Model() noexcept {
 
 void DeviceDpa4Model::release() noexcept {
     model_.reset();
-}
-
-std::int64_t DeviceDpa4Model::feature_count() const noexcept {
-    return model_ == nullptr ? 0 : model_->feature_count;
 }
 
 double DeviceDpa4Model::cutoff() const noexcept {

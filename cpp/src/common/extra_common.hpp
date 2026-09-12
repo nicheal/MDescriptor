@@ -15,9 +15,6 @@
 
 namespace mdescriptor::detail {
 
-constexpr double kPi = 3.141592653589793238462643383279502884;
-constexpr double kSqrt2 = 1.414213562373095048801688724209698079;
-
 inline Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
     Mat3 result;
     const double* source = batch.cells + structure * 9;

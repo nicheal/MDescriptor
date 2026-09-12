@@ -5,9 +5,6 @@ set(PYBIND11_FINDPYTHON ON)
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
-option(MDESCRIPTOR_BUILD_NATIVE "Build the CPU native extension" ON)
-
-if(MDESCRIPTOR_BUILD_NATIVE)
 # OpenBLAS is a build-time dependency and is vendored into the resulting
 # wheel.  scipy-openblas32 deliberately exports a prefixed CBLAS ABI so that
 # this extension cannot accidentally bind to NumPy/SciPy's copy of OpenBLAS.
@@ -198,7 +195,6 @@ install(
     LIBRARY DESTINATION mdescriptor
     RUNTIME DESTINATION mdescriptor
 )
-endif()
 
 # The CPU and CUDA backends ship inside the same wheel; CUDA availability is
 # a runtime choice (execution.device), never a separate distribution.

@@ -215,9 +215,6 @@ py::dict compute_spherical_pair(
     return result;
 }
 
-
-} // namespace
-
 py::dict compute_extended_basic(
     CudaExecutionContext& context,
     DeviceBatch& batch,

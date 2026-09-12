@@ -2,58 +2,18 @@
 
 #include "matrix_output.hpp"
 #include "matrix_values.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
-#include <exception>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 namespace mdescriptor {
 using namespace detail;
 
 namespace {
-
-template <typename Function>
-void run_parallel_matrix_structures(
-    std::int64_t structures,
-    int requested_threads,
-    const std::shared_ptr<ComputeControl>& control,
-    Function&& fn) {
-    // Exceptions must not escape an OpenMP loop: doing so calls std::terminate.
-    // Keep each structure independent, capture failures in the worker, and
-    // rethrow after all workers have joined.
-    std::vector<std::exception_ptr> exceptions(static_cast<std::size_t>(structures));
-    std::atomic<bool> failed{false};
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(requested_threads > 0 ? requested_threads : omp_get_max_threads())
-#endif
-    for (std::int64_t structure = 0; structure < structures; ++structure) {
-        if (failed.load(std::memory_order_acquire) || (control && control->cancelled())) {
-            continue;
-        }
-        try {
-            fn(structure);
-        } catch (...) {
-            exceptions[static_cast<std::size_t>(structure)] = std::current_exception();
-            failed.store(true, std::memory_order_release);
-        }
-    }
-    for (const auto& exception : exceptions) {
-        if (exception) {
-            std::rethrow_exception(exception);
-        }
-    }
-    if (control && control->cancelled()) {
-        throw CancelledError();
-    }
-}
 
 void validate_matrix_kind(MatrixKind kind) {
     switch (kind) {

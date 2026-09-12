@@ -9,6 +9,7 @@
 #include "mdescriptor/matrix.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "local_spherical_common.hpp"
+#include "rotational_math.hpp"
 
 #include <cuda_runtime.h>
 
@@ -110,114 +111,30 @@ std::vector<double> download_output_with_gil_release(
     return context.download_output(count);
 }
 
-std::vector<double> inverse_symmetric_sqrt_host(
+// Host-side SO3 math is shared with the CPU standalone implementation via
+// rotational_math.hpp; only the CUDA-specific signatures live here.
+inline std::vector<double> inverse_symmetric_sqrt_host(
     const std::vector<double>& matrix,
     int size) {
-    std::vector<double> values = matrix;
-    std::vector<double> vectors(static_cast<std::size_t>(size * size), 0.0);
-    for (int index = 0; index < size; ++index) {
-        vectors[static_cast<std::size_t>(index * size + index)] = 1.0;
-    }
-    for (int iteration = 0; iteration < 100 * size * size; ++iteration) {
-        int p = 0;
-        int q = size > 1 ? 1 : 0;
-        double largest = 0.0;
-        for (int row = 0; row < size; ++row) {
-            for (int column = row + 1; column < size; ++column) {
-                const double candidate = std::abs(
-                    values[static_cast<std::size_t>(row * size + column)]);
-                if (candidate > largest) {
-                    largest = candidate;
-                    p = row;
-                    q = column;
-                }
-            }
-        }
-        if (largest < 1e-15) break;
-        const double angle = 0.5 * std::atan2(
-            2.0 * values[static_cast<std::size_t>(p * size + q)],
-            values[static_cast<std::size_t>(q * size + q)]
-                - values[static_cast<std::size_t>(p * size + p)]);
-        const double cosine = std::cos(angle);
-        const double sine = std::sin(angle);
-        for (int row = 0; row < size; ++row) {
-            const double row_p = values[static_cast<std::size_t>(row * size + p)];
-            const double row_q = values[static_cast<std::size_t>(row * size + q)];
-            values[static_cast<std::size_t>(row * size + p)] = cosine * row_p - sine * row_q;
-            values[static_cast<std::size_t>(row * size + q)] = sine * row_p + cosine * row_q;
-        }
-        for (int column = 0; column < size; ++column) {
-            const double column_p = values[static_cast<std::size_t>(p * size + column)];
-            const double column_q = values[static_cast<std::size_t>(q * size + column)];
-            values[static_cast<std::size_t>(p * size + column)] = cosine * column_p - sine * column_q;
-            values[static_cast<std::size_t>(q * size + column)] = sine * column_p + cosine * column_q;
-        }
-        for (int row = 0; row < size; ++row) {
-            const double row_p = vectors[static_cast<std::size_t>(row * size + p)];
-            const double row_q = vectors[static_cast<std::size_t>(row * size + q)];
-            vectors[static_cast<std::size_t>(row * size + p)] = cosine * row_p - sine * row_q;
-            vectors[static_cast<std::size_t>(row * size + q)] = sine * row_p + cosine * row_q;
-        }
-    }
-    std::vector<double> result(static_cast<std::size_t>(size * size), 0.0);
-    for (int row = 0; row < size; ++row) {
-        for (int column = 0; column < size; ++column) {
-            for (int eigen = 0; eigen < size; ++eigen) {
-                const double eigenvalue = values[static_cast<std::size_t>(eigen * size + eigen)];
-                if (!(eigenvalue > 0.0) || !std::isfinite(eigenvalue)) {
-                    throw std::invalid_argument("SO3 radial overlap matrix is not positive definite");
-                }
-                result[static_cast<std::size_t>(row * size + column)] +=
-                    vectors[static_cast<std::size_t>(row * size + eigen)]
-                    * vectors[static_cast<std::size_t>(column * size + eigen)]
-                    / std::sqrt(eigenvalue);
-            }
+    std::vector<double> result = mdescriptor::detail::inverse_symmetric_sqrt(matrix, size);
+    for (const double value : result) {
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument("SO3 radial overlap matrix is not positive definite");
         }
     }
     return result;
 }
 
-std::vector<double> so3_basis_host(
+inline std::vector<double> so3_basis_host(
     int nmax,
     int lmax,
     double cutoff,
     double alpha,
     int* quadrature_count) {
-    std::vector<double> overlap(static_cast<std::size_t>(nmax * nmax), 0.0);
-    for (int first = 1; first <= nmax; ++first) {
-        for (int second = 1; second <= nmax; ++second) {
-            overlap[static_cast<std::size_t>((first - 1) * nmax + second - 1)] = std::sqrt(
-                (2.0 * first + 5.0) * (2.0 * first + 6.0) * (2.0 * first + 7.0)
-                * (2.0 * second + 5.0) * (2.0 * second + 6.0) * (2.0 * second + 7.0))
-                / ((5.0 + first + second) * (6.0 + first + second)
-                    * (7.0 + first + second));
-        }
+    if (quadrature_count != nullptr) {
+        *quadrature_count = (nmax + lmax + 1) * 10;
     }
-    const auto inverse_sqrt = inverse_symmetric_sqrt_host(overlap, nmax);
-    const int quadrature = (nmax + lmax + 1) * 10;
-    if (quadrature_count != nullptr) *quadrature_count = quadrature;
-    std::vector<double> basis(static_cast<std::size_t>(nmax * quadrature), 0.0);
-    for (int q_index = 0; q_index < quadrature; ++q_index) {
-        const double x = std::cos(
-            (2.0 * (q_index + 1) - 1.0) * kPi / (2.0 * quadrature));
-        const double radius = cutoff * 0.5 * (x + 1.0);
-        const double weight = (kPi / quadrature) * cutoff * 0.5;
-        const double common = radius * radius * std::exp(-alpha * radius * radius)
-            * std::sqrt(std::max(0.0, 1.0 - x * x)) * weight;
-        for (int radial = 0; radial < nmax; ++radial) {
-            double value = 0.0;
-            for (int exponent = 1; exponent <= nmax; ++exponent) {
-                const double phi = std::pow(cutoff - radius, exponent + 2.0) / std::sqrt(
-                    2.0 * std::pow(cutoff, 2.0 * exponent + 7.0)
-                    / ((2.0 * exponent + 5.0) * (2.0 * exponent + 6.0)
-                        * (2.0 * exponent + 7.0)));
-                value += inverse_sqrt[static_cast<std::size_t>(radial * nmax + exponent - 1)]
-                    * phi;
-            }
-            basis[static_cast<std::size_t>(radial * quadrature + q_index)] = value * common;
-        }
-    }
-    return basis;
+    return mdescriptor::detail::so3_radial_basis(nmax, lmax, cutoff, alpha);
 }
 
 template <typename Value>
@@ -647,10 +564,7 @@ __global__ void soap_coefficients_kernel(
         const double distance2 = fmax(0.0, graph_distance2[edge]);
         const double distance = sqrt(distance2);
         if (distance >= graph_cutoff) continue;
-        const bool exact_self = atom == center
-            && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0
-            && graph_shifts[edge * 3 + 2] == 0;
+        const bool exact_self = exact_self_edge(center, atom, graph_shifts, edge);
         const double weight = soap_weight_device(
             weighting_function, weighting_r0, weighting_c, weighting_d, weighting_m,
             weighting_threshold, weighting_w0, weighting_has_w0, exact_self,
@@ -704,13 +618,11 @@ __device__ double soap_coefficient_at(
 __device__ double soap_power_feature(
     const double* coefficients,
     int feature,
-    int features,
     int species_count,
     int coefficient_types,
     int radial_count,
     int max_angular,
     int compression) {
-    (void)features;
     const int harmonic_count = (max_angular + 1) * (max_angular + 1);
     int first = 0;
     int second = 0;
@@ -835,7 +747,7 @@ __global__ void soap_power_kernel(
     if (compression != 2) {
         for (int feature = 0; feature < features; ++feature) {
             target[feature] = soap_power_feature(
-                source, feature, features, species_count, coefficient_types,
+                source, feature, species_count, coefficient_types,
                 radial_count, max_angular, compression);
         }
         return;
@@ -1926,8 +1838,66 @@ using mdescriptor::detail::rotational::complex_conjugate;
 using mdescriptor::detail::rotational::complex_multiply;
 using mdescriptor::detail::rotational::complex_scale;
 
-__device__ double factorial_for_so3_device(int value) {
-    return value < 0 ? 0.0 : tgamma(static_cast<double>(value) + 1.0);
+// Complex spherical harmonics for the SO3 (Stride = 9) and ACE (Stride = 21)
+// paths.  Stride sizes the local Legendre scratch so the small SO3
+// instantiation keeps its register footprint.
+template <int Stride>
+__device__ void complex_spherical_harmonics_device(
+    const double* vector,
+    int max_angular,
+    DeviceComplex* output) {
+    double legendre[Stride * Stride]{};
+    const double radius = sqrt(
+        vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
+    if (radius <= 1e-14) {
+        output[0] = {0.5 / sqrt(kPi), 0.0};
+        return;
+    }
+    const double cos_theta = vector[2] / radius;
+    const double sin_theta = hypot(vector[0], vector[1]) / radius;
+    legendre[0] = 1.0;
+    for (int m = 1; m <= max_angular; ++m) {
+        legendre[m * Stride + m] = -(2.0 * m - 1.0) * sin_theta
+            * legendre[(m - 1) * Stride + (m - 1)];
+    }
+    for (int m = 0; m < max_angular; ++m) {
+        legendre[(m + 1) * Stride + m] = (2.0 * m + 1.0) * cos_theta
+            * legendre[m * Stride + m];
+        for (int angular = m + 2; angular <= max_angular; ++angular) {
+            legendre[angular * Stride + m] = (
+                (2.0 * angular - 1.0) * cos_theta
+                    * legendre[(angular - 1) * Stride + m]
+                - (angular + m - 1.0) * legendre[(angular - 2) * Stride + m])
+                / (angular - m);
+        }
+    }
+    const double phi = atan2(vector[1], vector[0]);
+    const double cos_phi = cos(phi);
+    const double sin_phi = sin(phi);
+    double cos_m = 1.0;
+    double sin_m = 0.0;
+    for (int m = 0; m <= max_angular; ++m) {
+        if (m > 0) {
+            const double next_cos = cos_m * cos_phi - sin_m * sin_phi;
+            const double next_sin = sin_m * cos_phi + cos_m * sin_phi;
+            cos_m = next_cos;
+            sin_m = next_sin;
+        }
+        for (int angular = m; angular <= max_angular; ++angular) {
+            const double normalization = sqrt(
+                (2.0 * angular + 1.0) / (4.0 * kPi)
+                * tgamma(static_cast<double>(angular - m) + 1.0)
+                / tgamma(static_cast<double>(angular + m) + 1.0));
+            const double scale = normalization * legendre[angular * Stride + m];
+            const DeviceComplex positive = {scale * cos_m, scale * sin_m};
+            output[angular * angular + angular + m] = positive;
+            if (m > 0) {
+                output[angular * angular + angular - m] =
+                    m % 2 == 0 ? complex_conjugate(positive)
+                               : complex_scale(complex_conjugate(positive), -1.0);
+            }
+        }
+    }
 }
 
 __device__ void modified_spherical_bessel_device(
@@ -1962,69 +1932,11 @@ __device__ void modified_spherical_bessel_device(
     result[1] = (absolute * cosh(absolute) - sinh(absolute))
         / (absolute * absolute);
     for (int angular = 1; angular < max_angular; ++angular) {
-        result[angular + 1] = result[angular - 1]
+                result[angular + 1] = result[angular - 1]
             - (2.0 * angular + 1.0) / absolute * result[angular];
     }
 }
 
-__device__ void complex_spherical_harmonics_device(
-    const double* vector,
-    int max_angular,
-    DeviceComplex* output) {
-    constexpr int stride = 9;
-    double legendre[stride * stride]{};
-    const double radius = sqrt(
-        vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
-    if (radius <= 1e-14) {
-        output[0] = {0.5 / sqrt(kPi), 0.0};
-        return;
-    }
-    const double cos_theta = vector[2] / radius;
-    const double sin_theta = hypot(vector[0], vector[1]) / radius;
-    legendre[0] = 1.0;
-    for (int m = 1; m <= max_angular; ++m) {
-        legendre[m * stride + m] = -(2.0 * m - 1.0) * sin_theta
-            * legendre[(m - 1) * stride + (m - 1)];
-    }
-    for (int m = 0; m < max_angular; ++m) {
-        legendre[(m + 1) * stride + m] = (2.0 * m + 1.0) * cos_theta
-            * legendre[m * stride + m];
-        for (int angular = m + 2; angular <= max_angular; ++angular) {
-            legendre[angular * stride + m] = (
-                (2.0 * angular - 1.0) * cos_theta
-                    * legendre[(angular - 1) * stride + m]
-                - (angular + m - 1.0) * legendre[(angular - 2) * stride + m])
-                / (angular - m);
-        }
-    }
-    const double phi = atan2(vector[1], vector[0]);
-    const double cos_phi = cos(phi);
-    const double sin_phi = sin(phi);
-    double cos_m = 1.0;
-    double sin_m = 0.0;
-    for (int m = 0; m <= max_angular; ++m) {
-        if (m > 0) {
-            const double next_cos = cos_m * cos_phi - sin_m * sin_phi;
-            const double next_sin = sin_m * cos_phi + cos_m * sin_phi;
-            cos_m = next_cos;
-            sin_m = next_sin;
-        }
-        for (int angular = m; angular <= max_angular; ++angular) {
-            const double normalization = sqrt(
-                (2.0 * angular + 1.0) / (4.0 * kPi)
-                * factorial_for_so3_device(angular - m)
-                / factorial_for_so3_device(angular + m));
-            const double scale = normalization * legendre[angular * stride + m];
-            const DeviceComplex positive = {scale * cos_m, scale * sin_m};
-            output[angular * angular + angular + m] = positive;
-            if (m > 0) {
-                output[angular * angular + angular - m] =
-                    m % 2 == 0 ? complex_conjugate(positive)
-                               : complex_scale(complex_conjugate(positive), -1.0);
-            }
-        }
-    }
-}
 
 __global__ void so3_kernel(
     const I32* numbers,
@@ -2052,7 +1964,7 @@ __global__ void so3_kernel(
         if (radius <= 0.0 || radius >= cutoff) continue;
         const I32 atom = graph_atoms[edge];
         DeviceComplex harmonics[81]{};
-        complex_spherical_harmonics_device(
+        complex_spherical_harmonics_device<9>(
             graph_displacements + edge * 3, lmax, harmonics);
         const double cutoff_value = 0.5 * (cos(kPi * radius / cutoff) + 1.0);
         const double sign = weight_on && numbers[atom] != numbers[center] ? -1.0 : 1.0;
@@ -2107,11 +2019,9 @@ __global__ void so3_kernel(
     }
 }
 
-__device__ int rotational_u_offset(int order, int angular) {
-    const int offset = static_cast<int>(
+__device__ int rotational_u_offset(int angular) {
+    return static_cast<int>(
         mdescriptor::detail::rotational::u_block_offset(angular));
-    (void)order;
-    return offset;
 }
 
 __device__ int rotational_u_size(int order) {
@@ -2216,7 +2126,7 @@ __global__ void rotational_kernel(
             ? static_cast<double>(numbers[center]) : 1.0;
         const int total_size = rotational_u_size(expansion);
         for (int angular = 0; angular <= expansion; ++angular) {
-            const int base = rotational_u_offset(expansion, angular);
+            const int base = rotational_u_offset(angular);
             for (int m = 0; m <= angular; ++m) {
                 total[base + m * (angular + 1) + m] = {center_weight, 0.0};
             }
@@ -2245,7 +2155,7 @@ __global__ void rotational_kernel(
         if (normalize_u) {
             for (int angular = 0; angular <= expansion; ++angular) {
                 const double scale = 4.0 * kPi / sqrt(angular + 1.0);
-                const int base = rotational_u_offset(expansion, angular);
+                const int base = rotational_u_offset(angular);
                 for (int mb = 0; mb <= angular; ++mb) {
                     for (int ma = 0; ma <= angular; ++ma) {
                         total[base + mb * (angular + 1) + ma] = complex_scale(
@@ -2282,16 +2192,6 @@ __global__ void rotational_kernel(
             }
             n2 = remainder / (lmax + 1);
             wanted_l = remainder % (lmax + 1);
-        } else {
-            // Components are generated in the same lexicographic order as the
-            // CPU rotational descriptor.  A compact modulo representation keeps
-            // the kernel independent of a host-side component table.
-            const int component_count = max(1, features);
-            const int component = feature % component_count;
-            const int order = max(0, expansion);
-            wanted_l = order == 0 ? 0 : component % (order + 1);
-            n1 = order == 0 ? 0 : (component / (order + 1)) % (order + 1);
-            n2 = order == 0 ? 0 : (component / ((order + 1) * (order + 1))) % (order + 1);
         }
         double value = 0.0;
         for (I64 first = begin; first < end; ++first) {
@@ -2422,66 +2322,6 @@ __device__ void mtp4_radial_basis_device(
     }
 }
 
-__device__ void ace_spherical_harmonics(
-    const double* vector, int max_angular, DeviceComplex* output) {
-    constexpr int stride = 21;
-    for (int index = 0; index < (max_angular + 1) * (max_angular + 1); ++index) {
-        output[index] = {0.0, 0.0};
-    }
-    const double radius = sqrt(
-        vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
-    if (radius <= 1e-14) {
-        output[0] = {0.5 / sqrt(kPi), 0.0};
-        return;
-    }
-    const double cos_theta = fmax(-1.0, fmin(1.0, vector[2] / radius));
-    const double sin_theta = hypot(vector[0], vector[1]) / radius;
-    double legendre[stride * stride]{};
-    legendre[0] = 1.0;
-    for (int m = 1; m <= max_angular; ++m) {
-        legendre[m * stride + m] = -(2.0 * m - 1.0) * sin_theta
-            * legendre[(m - 1) * stride + (m - 1)];
-    }
-    for (int m = 0; m < max_angular; ++m) {
-        legendre[(m + 1) * stride + m] = (2.0 * m + 1.0) * cos_theta
-            * legendre[m * stride + m];
-        for (int angular = m + 2; angular <= max_angular; ++angular) {
-            legendre[angular * stride + m] = (
-                (2.0 * angular - 1.0) * cos_theta
-                    * legendre[(angular - 1) * stride + m]
-                - (angular + m - 1.0) * legendre[(angular - 2) * stride + m])
-                / (angular - m);
-        }
-    }
-    const double phi = atan2(vector[1], vector[0]);
-    const double cos_phi = cos(phi);
-    const double sin_phi = sin(phi);
-    double cos_m = 1.0;
-    double sin_m = 0.0;
-    for (int m = 0; m <= max_angular; ++m) {
-        if (m > 0) {
-            const double next_cos = cos_m * cos_phi - sin_m * sin_phi;
-            const double next_sin = sin_m * cos_phi + cos_m * sin_phi;
-            cos_m = next_cos;
-            sin_m = next_sin;
-        }
-        for (int angular = m; angular <= max_angular; ++angular) {
-            const double normalization = sqrt(
-                (2.0 * angular + 1.0) / (4.0 * kPi)
-                * tgamma(static_cast<double>(angular - m) + 1.0)
-                / tgamma(static_cast<double>(angular + m) + 1.0));
-            const double scale = normalization * legendre[angular * stride + m];
-            const DeviceComplex positive = {scale * cos_m, scale * sin_m};
-            output[angular * angular + angular + m] = positive;
-            if (m > 0) {
-                output[angular * angular + angular - m] = m % 2 == 0
-                    ? complex_conjugate(positive)
-                    : complex_scale(complex_conjugate(positive), -1.0);
-            }
-        }
-    }
-}
-
 __device__ void ace_radial_values(
     double distance,
     double transform_a,
@@ -2521,3 +2361,7 @@ __device__ double chebyshev_device(int order, double x) {
     }
     return current;
 }
+
+// Close the anonymous namespace so includer code starts inside
+// namespace mdescriptor::cuda (which stays open for the translation unit).
+} // namespace

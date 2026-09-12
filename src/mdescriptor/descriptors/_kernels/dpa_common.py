@@ -163,10 +163,6 @@ class DpaKernelBase:
     def feature_count(self) -> int:
         return int(self._native.dim_out)
 
-    @property
-    def descriptor_dim(self) -> int:
-        return self.feature_count
-
     def compute(self, value: Any, control: Any = None) -> DescriptorResult:
         if self._closed or self._native is None:
             raise RuntimeError(f"{self.name} descriptor is closed")

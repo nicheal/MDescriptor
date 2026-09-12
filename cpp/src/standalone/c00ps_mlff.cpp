@@ -17,9 +17,9 @@ namespace {
 
 using detail::Vec3;
 using detail::cancelled;
+using detail::kPi;
 using detail::run_parallel_structures;
 
-constexpr double kPi = 3.141592653589793238462643383279502884;
 constexpr double kSqrtFourPi = 3.544907701811032054596334966682290365;
 // The reference MLFF constructs the radial basis on NR equally spaced points and
 // normalizes it with the corresponding right-endpoint sum.  The same grid is

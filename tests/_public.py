@@ -1,6 +1,7 @@
 """Canonical imports shared by the contract and numerical tests."""
 
-from mdescriptor import (
+# Re-export shim: every name here is imported by tests via ``tests._public``.
+from mdescriptor import (  # noqa: F401
     AssetPolicy,
     CancelledError,
     ComputeControl,
@@ -10,7 +11,7 @@ from mdescriptor import (
     StructureBatch,
     builtin_registry,
 )
-from mdescriptor.descriptors import (
+from mdescriptor.descriptors import (  # noqa: F401
     ACE,
     ACSF,
     C00PSMLFF,
@@ -40,42 +41,3 @@ from mdescriptor.descriptors import (
     SphericalExpansionByPair,
     ValleOganov,
 )
-
-__all__ = [
-    "ACSF",
-    "ACE",
-    "AssetPolicy",
-    "AtomicComposition",
-    "builtin_registry",
-    "C00PSMLFF",
-    "CancelledError",
-    "CoulombMatrix",
-    "ComputeControl",
-    "ExecutionOptions",
-    "DPA4",
-    "DPA4C",
-    "EAD",
-    "EwaldSumMatrix",
-    "LBispectrum",
-    "LMBTR",
-    "LodeSphericalExpansion",
-    "MBTR",
-    "MTP",
-    "ModelLoadError",
-    "OutputOptions",
-    "NEP",
-    "NeighborList",
-    "SNAP",
-    "SOAP",
-    "SOAPTurbo",
-    "SO3",
-    "SO4",
-    "SineMatrix",
-    "SortedDistances",
-    "SoapPowerSpectrum",
-    "SoapRadialSpectrum",
-    "SphericalExpansion",
-    "SphericalExpansionByPair",
-    "StructureBatch",
-    "ValleOganov",
-]

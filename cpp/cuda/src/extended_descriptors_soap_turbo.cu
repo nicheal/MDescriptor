@@ -1,6 +1,5 @@
 #include "extended_descriptors_common.cuh"
 
-
 __device__ double turbo_radial_normalization(int n) {
     return sqrt(1.0 / (2.0 * static_cast<double>(n) + 5.0));
 }
@@ -383,8 +382,7 @@ __global__ void soap_turbo_cuda_kernel(
     const I64 end = graph_offsets[center + 1];
     for (I64 edge = begin; edge < end; ++edge) {
         const I32 atom = graph_atoms[edge];
-        if (atom == center && graph_shifts[edge * 3] == 0
-            && graph_shifts[edge * 3 + 1] == 0 && graph_shifts[edge * 3 + 2] == 0) continue;
+        if (exact_self_edge(center, atom, graph_shifts, edge)) continue;
         const int atom_type = species_index(numbers[atom], species, species_count);
         if (atom_type < 0) continue;
         const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
@@ -569,8 +567,6 @@ py::dict compute_soap_turbo_descriptor(
     return atom_result(values, batch.atoms(), features, "SOAPTurbo", options, false,
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
-
-} // namespace
 
 py::dict compute_extended_soap_turbo(
     CudaExecutionContext& context,

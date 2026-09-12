@@ -6,16 +6,37 @@ from mdescriptor.descriptors.model_backed._vendor.dpa4desc.weights import (
     load_torch_checkpoint,
 )
 from mdescriptor.descriptors.model_backed.dpa import (
+    DpaCheckpointInfo,
     _frame_inputs,
+    _validate_checkpoint_mapping,
     compute_batch,
     load_dpa_checkpoint,
     new_runtime,
-    validate_dpa_checkpoint_mapping,
 )
 from mdescriptor.models import DPA4C_MODEL
 from tests._public import DPA4C, StructureBatch
 
 pytestmark = pytest.mark.model
+
+
+def validate_dpa_checkpoint_mapping(
+    checkpoint,
+    *,
+    expected_descriptor,
+) -> DpaCheckpointInfo:
+    try:
+        info, _ = _validate_checkpoint_mapping(
+            checkpoint,
+            path="<in-memory checkpoint>",
+            expected_descriptor=expected_descriptor,
+        )
+        return info
+    except ModelLoadError:
+        raise
+    except Exception as exc:
+        raise ModelLoadError(
+            f"invalid {expected_descriptor} checkpoint mapping"
+        ) from exc
 
 MODEL = DPA4C_MODEL
 

@@ -131,9 +131,7 @@ __global__ void mbtr_kernel(
                 const I32 atom = graph_atoms[edge];
                 const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
                 if (distance <= 1e-12
-                    || (atom == center && graph_shifts[edge * 3] == 0
-                        && graph_shifts[edge * 3 + 1] == 0
-                        && graph_shifts[edge * 3 + 2] == 0)) continue;
+                    || exact_self_edge(center, atom, graph_shifts, edge)) continue;
                 const int type = atom_types[atom];
                 if (type < 0) continue;
                 const double value = geometry == mbtr::kGeometryDistance
@@ -269,31 +267,6 @@ __global__ void mbtr_kernel(
         species_count, volume, geometry, grid_n, false);
 }
 
-double nested_number(
-    const py::dict& object, const char* key, double fallback) {
-    const py::str name(key);
-    if (!object.contains(name) || object[name].is_none()) return fallback;
-    return py::cast<double>(object[name]);
-}
-
-std::string nested_string(
-    const py::dict& object, const char* key, const std::string& fallback) {
-    const py::str name(key);
-    if (!object.contains(name) || object[name].is_none()) return fallback;
-    return py::cast<std::string>(object[name]);
-}
-
-py::dict nested_dict_option(
-    const py::dict& options, const char* key) {
-    const py::str name(key);
-    if (!options.contains(name) || options[name].is_none()) return py::dict();
-    try {
-        return py::cast<py::dict>(options[name]);
-    } catch (const py::cast_error&) {
-        throw std::invalid_argument(std::string(key) + " must be an object");
-    }
-}
-
 py::dict mbtr_config_option(const py::dict& options) {
     const py::str payload_key("_cuda_payload");
     const py::str config_key("mbtr_config");
@@ -372,33 +345,33 @@ py::dict compute_mbtr_descriptor(
         else if (normalization_name == "l2") normalization = mbtr::kNormalizationL2;
         else if (normalization_name == "n_atoms") normalization = mbtr::kNormalizationNAtoms;
     } else {
-        const py::dict geometry_object = nested_dict_option(options, "geometry");
-        const py::dict grid_object = nested_dict_option(options, "grid");
-        const py::dict weighting_object = nested_dict_option(options, "weighting");
-        const std::string geometry_name = nested_string(
-            geometry_object, "function", "distance");
+        const py::dict geometry_object = child_dict(options, "geometry");
+        const py::dict grid_object = child_dict(options, "grid");
+        const py::dict weighting_object = child_dict(options, "weighting");
+        const std::string geometry_name = option(
+            geometry_object, "function", std::string("distance"));
         if (geometry_name == "atomic_number") geometry = mbtr::kGeometryAtomicNumber;
         else if (geometry_name == "distance") geometry = mbtr::kGeometryDistance;
         else if (geometry_name == "inverse_distance") geometry = mbtr::kGeometryInverseDistance;
         else if (geometry_name == "angle") geometry = mbtr::kGeometryAngle;
         else if (geometry_name == "cosine") geometry = mbtr::kGeometryCosine;
         else throw std::invalid_argument("unsupported CUDA MBTR geometry");
-        const std::string weighting_name = nested_string(
-            weighting_object, "function", "unity");
+        const std::string weighting_name = option(
+            weighting_object, "function", std::string("unity"));
         if (weighting_name == "unity" || weighting_name == "none") weighting = mbtr::kWeightingUnity;
         else if (weighting_name == "exp") weighting = mbtr::kWeightingExponential;
         else if (weighting_name == "inverse_square") weighting = mbtr::kWeightingInverseSquare;
         else if (weighting_name == "smooth_cutoff") weighting = mbtr::kWeightingSmoothCutoff;
         else throw std::invalid_argument("unsupported CUDA MBTR weighting");
-        grid_min = nested_number(grid_object, "min", 0.0);
-        grid_max = nested_number(grid_object, "max", 6.0);
-        grid_sigma = nested_number(grid_object, "sigma", 0.1);
-        grid_n = static_cast<int>(nested_number(grid_object, "n", 50));
-        scale = nested_number(weighting_object, "scale", 0.5);
-        threshold = nested_number(weighting_object, "threshold", 1e-3);
+        grid_min = option(grid_object, "min", 0.0);
+        grid_max = option(grid_object, "max", 6.0);
+        grid_sigma = option(grid_object, "sigma", 0.1);
+        grid_n = static_cast<int>(option(grid_object, "n", 50.0));
+        scale = option(weighting_object, "scale", 0.5);
+        threshold = option(weighting_object, "threshold", 1e-3);
         const double default_cutoff = weighting == mbtr::kWeightingUnity ? 0.0 : grid_max;
-        r_cut = nested_number(weighting_object, "r_cut", default_cutoff);
-        sharpness = nested_number(weighting_object, "sharpness", 2.0);
+        r_cut = option(weighting_object, "r_cut", default_cutoff);
+        sharpness = option(weighting_object, "sharpness", 2.0);
         const std::string normalization_name = option(
             options, "normalization", std::string("none"));
         if (normalization_name == "l2") normalization = mbtr::kNormalizationL2;
@@ -469,9 +442,6 @@ py::dict compute_mbtr_descriptor(
     result["metadata"] = metadata(options, name);
     return result;
 }
-
-
-} // namespace
 
 py::dict compute_extended_mbtr(
     CudaExecutionContext& context,

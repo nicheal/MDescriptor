@@ -19,10 +19,13 @@ import numpy as np
 
 from .errors import DescriptorConfigError
 from .json_value import JSON_UNHANDLED, json_safe_value
+from .options import ExecutionOptions, OutputOptions
 
 RESULT_SCHEMA_VERSION = 1
 
-_READONLY_CSR_TYPES: dict[type[Any], type[Any]] = {}
+# One lazy, process-wide read-only CSR subclass; ``scipy.sparse.csr_matrix``
+# is itself a per-process constant, so no per-type memoization is needed.
+_readonly_csr_type: type[Any] | None = None
 
 
 def format_values(values: Any, *, dtype: str = "float64", sparse: bool = False) -> Any:
@@ -90,10 +93,9 @@ def _restore_readonly_csr(
 def _readonly_csr(values: Any, scipy_sparse: Any) -> Any:
     """Return a CSR snapshot whose public mutation paths are disabled."""
 
-    csr_type = scipy_sparse.csr_matrix
-    readonly_type = _READONLY_CSR_TYPES.get(csr_type)
-    if readonly_type is None:
-        class ReadOnlyCSR(csr_type):  # type: ignore[misc, valid-type]
+    global _readonly_csr_type
+    if _readonly_csr_type is None:
+        class ReadOnlyCSR(scipy_sparse.csr_matrix):  # type: ignore[misc, valid-type]
             _MUTABLE_ATTRIBUTES = frozenset(
                 {
                     "data",
@@ -143,79 +145,13 @@ def _readonly_csr(values: Any, scipy_sparse: Any) -> Any:
                     ),
                 )
 
-            def _reject_mutation(self) -> None:
-                raise ValueError("sparse descriptor values are read-only")
-
-            def __iadd__(self, other: Any) -> Any:
-                del other
-                self._reject_mutation()
-
-            def __isub__(self, other: Any) -> Any:
-                del other
-                self._reject_mutation()
-
-            def __imul__(self, other: Any) -> Any:
-                del other
-                self._reject_mutation()
-
-            def __itruediv__(self, other: Any) -> Any:
-                del other
-                self._reject_mutation()
-
-            def __imatmul__(self, other: Any) -> Any:
-                del other
-                self._reject_mutation()
-
-            def resize(self, *args: Any, **kwargs: Any) -> None:
-                if not getattr(self, "_mdescriptor_read_only", False):
-                    super().resize(*args, **kwargs)
-                    return
-                del args, kwargs
-                self._reject_mutation()
-
-            def setdiag(self, *args: Any, **kwargs: Any) -> None:
-                if not getattr(self, "_mdescriptor_read_only", False):
-                    super().setdiag(*args, **kwargs)
-                    return
-                del args, kwargs
-                self._reject_mutation()
-
-            def eliminate_zeros(self) -> None:
-                if not getattr(self, "_mdescriptor_read_only", False):
-                    super().eliminate_zeros()
-                    return
-                self._reject_mutation()
-
-            def sum_duplicates(self) -> None:
-                if not getattr(self, "_mdescriptor_read_only", False):
-                    super().sum_duplicates()
-                    return
-                if self.has_canonical_format:
-                    return
-                self._reject_mutation()
-
-            def sort_indices(self) -> None:
-                if not getattr(self, "_mdescriptor_read_only", False):
-                    super().sort_indices()
-                    return
-                if self.has_sorted_indices:
-                    return
-                self._reject_mutation()
-
-            def prune(self) -> None:
-                if not getattr(self, "_mdescriptor_read_only", False):
-                    super().prune()
-                    return
-                self._reject_mutation()
-
-        readonly_type = ReadOnlyCSR
+        _readonly_csr_type = ReadOnlyCSR
         # Keep the established scipy class name for callers that use it as a
-        # lightweight representation check; the subclass only adds the
-        # read-only mutation guard.
-        readonly_type.__name__ = csr_type.__name__
-        readonly_type.__qualname__ = csr_type.__qualname__
-        _READONLY_CSR_TYPES[csr_type] = readonly_type
-    return readonly_type(values, copy=True)
+        # lightweight representation check (asserted by the sparse-output
+        # tests); the subclass only adds the read-only mutation guard.
+        _readonly_csr_type.__name__ = scipy_sparse.csr_matrix.__name__
+        _readonly_csr_type.__qualname__ = scipy_sparse.csr_matrix.__qualname__
+    return _readonly_csr_type(values, copy=True)
 
 
 class DescriptorLevel(str, Enum):
@@ -520,7 +456,7 @@ class DescriptorResult:
 
 def _metadata_v1(
     metadata: Mapping[str, Any],
-    level: DescriptorLevel,
+    level: DescriptorLevel | str,
     feature_count: int | None,
 ) -> dict[str, Any]:
     """Normalize legacy kernel details into the fixed metadata envelope."""
@@ -566,7 +502,7 @@ def _metadata_v1(
         "schema_version": RESULT_SCHEMA_VERSION,
         "descriptor": descriptor,
         "backend": backend,
-        "level": level.value,
+        "level": level.value if isinstance(level, DescriptorLevel) else str(level),
         "feature_count": feature_count,
         "output": output,
         "execution": execution,
@@ -608,26 +544,22 @@ def _metadata_options(
             f"metadata {name} has unsupported field(s): {', '.join(sorted(map(str, unknown)))}"
         )
     result = {key: value[key] for key in fields_allowed if key in value}
-    if name == "output":
-        dtype = result.get("dtype", "float64")
-        sparse = result.get("sparse", False)
-        if dtype not in {"float32", "float64"}:
-            raise TypeError("metadata output dtype must be 'float32' or 'float64'")
-        if not isinstance(sparse, bool):
-            raise TypeError("metadata output sparse must be a boolean")
-        return {"dtype": dtype, "sparse": sparse}
-    device = result.get("device", "cpu")
-    num_threads = result.get("num_threads")
-    if not isinstance(device, str) or not device.strip():
-        raise TypeError("metadata execution device must be a non-empty string")
-    if num_threads == 0:
-        num_threads = None
-    if isinstance(num_threads, bool) or (
-        num_threads is not None
-        and (not isinstance(num_threads, int) or num_threads <= 0)
-    ):
-        raise TypeError("metadata execution num_threads must be positive or None")
-    return {"device": device, "num_threads": num_threads}
+    try:
+        if name == "output":
+            options = OutputOptions(
+                dtype=result.get("dtype", "float64"),
+                sparse=result.get("sparse", False),
+            )
+            return {"dtype": options.dtype, "sparse": options.sparse}
+        num_threads = result.get("num_threads")
+        options = ExecutionOptions(
+            device=result.get("device", "cpu"),
+            # Zero is the native kernels' spelling of an omitted thread count.
+            num_threads=None if num_threads == 0 else num_threads,
+        )
+        return {"device": options.device, "num_threads": options.num_threads}
+    except DescriptorConfigError as exc:
+        raise TypeError(str(exc)) from exc
 
 
 def _json_safe(value: Any) -> Any:

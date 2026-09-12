@@ -59,7 +59,7 @@
     "expected_output_sha256": "f327fc6997c467e33a6d5842a7ef7a5867542cb006aa46b4db7d83b8196c9019",
     "fixture": "external_manifest.json",
     "generator": "scripts/generate_external_static_goldens.py",
-    "generator_sha256": "e84fcb289658926c5746ba8bffcebd5f1a19783ac98ea8d9263549bc9e33d47e",
+    "generator_sha256": "06ed107e1b4a454830ad2f2d78985329b1ac82eb919eef7038155a0b2eea5ba2",
     "project_snapshot_sha256": "350957132e5a690c97ece94cb57708abfdf574f4df1a4c3332c6ea12c01e7991"
   },
   "result": {

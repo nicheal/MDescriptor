@@ -91,12 +91,6 @@ def _cuda_factory() -> Any:
         raise
 
     factory = getattr(module, "create_backend", None)
-    if factory is None:
-        factory = getattr(module, "backend_factory", None)
-    if factory is None:
-        backend_type = getattr(module, "CudaBackend", None)
-        if backend_type is not None:
-            factory = backend_type
     if not callable(factory):
         error = ImportError(
             "the CUDA plugin does not expose create_backend(name, options)"
@@ -115,56 +109,28 @@ def create_cuda_backend(name: str, options: dict[str, Any]) -> Any:
     stable API string.
     """
 
+    from .core.errors import translate_backend_error
+
     try:
         factory = _cuda_factory()
     except (ImportError, OSError) as exc:
-        from .core.errors import MDescriptorError
-
-        raise MDescriptorError(
-            "CUDA backend is unavailable",
-            code="device_unavailable",
-            path=["execution", "device"],
-            details={"exception": type(exc).__name__},
+        raise translate_backend_error(
+            exc,
+            unavailable_message="CUDA backend is unavailable",
+            failure_message="CUDA backend failed to initialize",
         ) from exc
     try:
         return factory(name, dict(options))
-    except (ImportError, OSError) as exc:
-        from .core.errors import MDescriptorError
-
-        raise MDescriptorError(
-            "CUDA backend is unavailable",
-            code="device_unavailable",
-            path=["execution", "device"],
-            details={"exception": type(exc).__name__},
-        ) from exc
-    except MemoryError as exc:
-        from .core.errors import MDescriptorError
-
-        raise MDescriptorError(
-            "CUDA backend ran out of memory",
-            code="backend_out_of_memory",
-            path=["execution", "device"],
-        ) from exc
     except Exception as exc:
-        from .core.errors import MDescriptorError
-
-        raise MDescriptorError(
-            "CUDA backend failed to initialize",
-            code="backend_error",
-            path=["execution", "device"],
-            details={"exception": type(exc).__name__},
+        raise translate_backend_error(
+            exc,
+            unavailable_message="CUDA backend is unavailable",
+            failure_message="CUDA backend failed to initialize",
         ) from exc
-
-
-def load_cuda_plugin() -> Any:
-    """Load the optional CUDA plugin on demand (private runtime hook)."""
-
-    return _cuda_factory()
 
 
 __all__ = [
     "create_cuda_backend",
-    "load_cuda_plugin",
     "native_extension_available",
     "preload_native",
 ]

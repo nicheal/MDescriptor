@@ -6,29 +6,30 @@ import subprocess
 import sys
 
 
+class _FakePath:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def resolve(self):
+        return self
+
+    @property
+    def parent(self):
+        return _FakePath("C:/package")
+
+    def glob(self, pattern: str):
+        assert pattern == "_native*.pyd"
+        return [_FakePath("C:/package/_native.cp312-win_amd64.pyd")]
+
+    def __str__(self) -> str:
+        return self.value
+
+
 def test_windows_preload_loads_packaged_binary_before_native_import(monkeypatch) -> None:
     from mdescriptor import _runtime
 
     loaded: list[str] = []
     dll_directories: list[str] = []
-
-    class FakePath:
-        def __init__(self, value: str) -> None:
-            self.value = value
-
-        def resolve(self):
-            return self
-
-        @property
-        def parent(self):
-            return FakePath("C:/package")
-
-        def glob(self, pattern: str):
-            assert pattern == "_native*.pyd"
-            return [FakePath("C:/package/_native.cp312-win_amd64.pyd")]
-
-        def __str__(self) -> str:
-            return self.value
 
     def add_dll_directory(path: str) -> None:
         dll_directories.append(path)
@@ -37,7 +38,7 @@ def test_windows_preload_loads_packaged_binary_before_native_import(monkeypatch)
         loaded.append(path)
         return object()
 
-    monkeypatch.setattr(_runtime, "Path", FakePath)
+    monkeypatch.setattr(_runtime, "Path", _FakePath)
     monkeypatch.setattr(_runtime.os, "name", "nt")
     monkeypatch.setattr(_runtime.os, "add_dll_directory", add_dll_directory, raising=False)
     monkeypatch.setattr(_runtime.ctypes, "WinDLL", load, raising=False)
@@ -53,31 +54,13 @@ def test_windows_preload_loads_packaged_binary_before_native_import(monkeypatch)
 def test_windows_preload_failure_marks_native_extension_unavailable(monkeypatch) -> None:
     from mdescriptor import _runtime
 
-    class FakePath:
-        def __init__(self, value: str) -> None:
-            self.value = value
-
-        def resolve(self):
-            return self
-
-        @property
-        def parent(self):
-            return FakePath("C:/package")
-
-        def glob(self, pattern: str):
-            assert pattern == "_native*.pyd"
-            return [FakePath("C:/package/_native.cp312-win_amd64.pyd")]
-
-        def __str__(self) -> str:
-            return self.value
-
     def add_dll_directory(path: str) -> None:
         del path
 
     def load(path: str):
         raise OSError(f"cannot load {path}")
 
-    monkeypatch.setattr(_runtime, "Path", FakePath)
+    monkeypatch.setattr(_runtime, "Path", _FakePath)
     monkeypatch.setattr(_runtime.os, "name", "nt")
     monkeypatch.setattr(_runtime.os, "add_dll_directory", add_dll_directory, raising=False)
     monkeypatch.setattr(_runtime.ctypes, "WinDLL", load, raising=False)

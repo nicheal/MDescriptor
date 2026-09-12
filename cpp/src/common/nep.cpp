@@ -1,12 +1,12 @@
 #include "mdescriptor/nep.hpp"
 
 #include "mdescriptor/neighbor.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <exception>
 #include <fstream>
 #include <limits>
 #include <mutex>
@@ -24,7 +24,7 @@
 namespace mdescriptor {
 namespace {
 
-constexpr double kPi = 3.141592653589793238462643383279502884;
+using detail::kPi;
 constexpr int kNumAngularTerms = 80;
 
 // These constants are the fixed angular normalization coefficients used by
@@ -870,58 +870,23 @@ void compute_nep(
     }
 
     if (batch.structures > 1) {
-        std::exception_ptr parallel_error;
-        std::mutex parallel_error_mutex;
-        auto record_error = [&](std::exception_ptr error) {
-            std::lock_guard<std::mutex> guard(parallel_error_mutex);
-            if (!parallel_error) parallel_error = std::move(error);
-        };
-#ifdef _OPENMP
-        const int requested_workers = num_threads > 0 ? num_threads : omp_get_max_threads();
-        // Each structure is one independent unit of work in this branch. Do
-        // not create idle OpenMP workers when a small batch has fewer
-        // structures than the machine's thread count.
-        const int workers = static_cast<int>(std::min<std::int64_t>(
-            requested_workers, batch.structures));
-#pragma omp parallel num_threads(workers)
-        {
-            std::vector<double> radial(radial_n);
-            std::vector<double> sums(angular_n * static_cast<std::size_t>(kNumAngularTerms));
-            std::vector<double> angular(angular_n * static_cast<std::size_t>(model.num_l));
-            std::vector<double> basis(workspace_basis);
-#pragma omp for schedule(dynamic, 1)
-            for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-                if (control && control->cancelled()) continue;
-                try {
-                    compute_structure(structure, radial, sums, angular, basis);
-                    if (control && !control->cancelled()) {
-                        control->mark_completed();
-                    }
-                } catch (...) {
-                    record_error(std::current_exception());
-                }
-            }
-        }
-#else
-        std::vector<double> radial(radial_n);
-        std::vector<double> sums(angular_n * static_cast<std::size_t>(kNumAngularTerms));
-        std::vector<double> angular(angular_n * static_cast<std::size_t>(model.num_l));
-        std::vector<double> basis(workspace_basis);
-        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-            if (control && control->cancelled()) break;
-            try {
+        // Each structure is one independent unit of work in this branch. The
+        // shared runner captures worker exceptions and caps the team size so
+        // a small batch never spawns idle OpenMP workers.
+        detail::run_parallel_matrix_structures(
+            batch.structures,
+            detail::effective_thread_count(batch.structures, num_threads),
+            control,
+            [&](std::int64_t structure) {
+                std::vector<double> radial(radial_n);
+                std::vector<double> sums(angular_n * static_cast<std::size_t>(kNumAngularTerms));
+                std::vector<double> angular(angular_n * static_cast<std::size_t>(model.num_l));
+                std::vector<double> basis(workspace_basis);
                 compute_structure(structure, radial, sums, angular, basis);
                 if (control && !control->cancelled()) {
                     control->mark_completed();
                 }
-            } catch (...) {
-                record_error(std::current_exception());
-                break;
-            }
-        }
-#endif
-        if (parallel_error) std::rethrow_exception(parallel_error);
-        if (control && control->cancelled()) throw CancelledError();
+            });
         return;
     }
 

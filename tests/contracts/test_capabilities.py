@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+from tests._golden import _restore_paths
 
 import mdescriptor
 from mdescriptor import (
@@ -18,21 +19,7 @@ from mdescriptor import (
 )
 
 ROOT = Path(__file__).parents[2]
-PACKAGE_ROOT = Path(mdescriptor.__file__).resolve().parent
 GOLDEN_ROOT = ROOT / "tests" / "golden"
-
-
-def _restore_paths(value):
-    if isinstance(value, str):
-        if value.startswith("${PACKAGE_ROOT}/"):
-            return str(PACKAGE_ROOT / value.removeprefix("${PACKAGE_ROOT}/"))
-        if value.startswith("${PROJECT_ROOT}/"):
-            return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
-    if isinstance(value, dict):
-        return {key: _restore_paths(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_restore_paths(item) for item in value]
-    return value
 
 
 def _configurations() -> dict[str, DescriptorConfiguration]:

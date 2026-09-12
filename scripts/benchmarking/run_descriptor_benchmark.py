@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import platform
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -24,50 +25,17 @@ for _thread_env in (
 
 import numpy as np  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # noqa: E402
 import mdescriptor  # noqa: E402
-from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor  # noqa: E402
+from external_reference import (  # noqa: E402
+    _batch_from_npz,
+    _restore_paths,
+    _single_structure,
+)
+from mdescriptor import DescriptorConfiguration, create_descriptor  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_ROOT = Path(mdescriptor.__file__).resolve().parent
 DEFAULT_GOLDEN_ROOT = ROOT / "tests" / "golden"
-
-
-def _restore_paths(value: Any) -> Any:
-    if isinstance(value, str):
-        if value.startswith("${PACKAGE_ROOT}/"):
-            return str(PACKAGE_ROOT / value.removeprefix("${PACKAGE_ROOT}/"))
-        if value.startswith("${PROJECT_ROOT}/"):
-            return str(ROOT / value.removeprefix("${PROJECT_ROOT}/"))
-    if isinstance(value, dict):
-        return {key: _restore_paths(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_restore_paths(item) for item in value]
-    return value
-
-
-def _batch(path: Path, ids: tuple[str, ...]) -> StructureBatch:
-    with np.load(path) as arrays:
-        return StructureBatch(
-            np.asarray(arrays["numbers"], dtype=np.int32),
-            np.asarray(arrays["positions"], dtype=np.float64),
-            np.asarray(arrays["cells"], dtype=np.float64),
-            np.asarray(arrays["pbc"], dtype=np.int32),
-            np.asarray(arrays["offsets"], dtype=np.int64),
-            ids,
-        )
-
-
-def _single_structure(batch: StructureBatch, index: int) -> StructureBatch:
-    begin = int(batch.offsets[index])
-    end = int(batch.offsets[index + 1])
-    return StructureBatch(
-        batch.numbers[begin:end],
-        batch.positions[begin:end],
-        batch.cells[index : index + 1],
-        batch.pbc[index : index + 1],
-        np.asarray([0, end - begin], dtype=np.int64),
-        (batch.ids[index],),
-    )
 
 
 def _configuration(manifest: dict[str, Any]) -> DescriptorConfiguration:
@@ -100,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
 
     measurements = []
     for fixture_dir, manifest in _cases(args.golden_root):
-        batch = _batch(fixture_dir / manifest["input"], tuple(manifest["input_ids"]))
+        batch = _batch_from_npz(fixture_dir / manifest["input"], tuple(manifest["input_ids"]))
         compute_batch = (
             _single_structure(batch, 0)
             if manifest["nonperiodic"]["mode"] != "output"

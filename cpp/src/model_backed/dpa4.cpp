@@ -4,6 +4,7 @@
 #include "mdescriptor/detail/batch.hpp"
 #include "mdescriptor/detail/math3.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "dpa_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -221,72 +222,6 @@ struct EdgeData {
     std::vector<float> gie_zonal;      // [E, 15]
 };
 
-// The dense DeepMD input adapter wraps periodic coordinates into the primary
-// cell before constructing the extended image list.  Do the same in the C++
-// path so a translated periodic frame follows exactly the same geometry and
-// neighbor ordering as the reference implementation.
-std::vector<double> normalized_positions(const StructureBatchView& batch) {
-    std::vector<double> positions(
-        static_cast<std::size_t>(batch.atoms) * 3U,
-        0.0);
-    if (batch.atoms > 0) {
-        std::copy(
-            batch.positions,
-            batch.positions + static_cast<std::size_t>(batch.atoms) * 3U,
-            positions.begin());
-    }
-    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-        const std::int32_t* pbc = batch.pbc + structure * 3;
-        const bool periodic = pbc[0] == 1 && pbc[1] == 1 && pbc[2] == 1;
-        if (!periodic) {
-            continue;
-        }
-        detail::Mat3 cell;
-        const double* cell_data = batch.cells + structure * 9U;
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                cell.a[row][column] = cell_data[row * 3 + column];
-            }
-        }
-        detail::Mat3 inverse;
-        const bool diagonal = cell.a[0][1] == 0.0 && cell.a[0][2] == 0.0
-            && cell.a[1][0] == 0.0 && cell.a[1][2] == 0.0
-            && cell.a[2][0] == 0.0 && cell.a[2][1] == 0.0;
-        if (diagonal) {
-            for (int axis = 0; axis < 3; ++axis) {
-                inverse.a[axis][axis] = 1.0 / cell.a[axis][axis];
-            }
-        } else {
-            inverse = detail::inverse(cell);
-        }
-        const std::int64_t begin = batch.offsets[structure];
-        const std::int64_t end = batch.offsets[structure + 1];
-        for (std::int64_t atom = begin; atom < end; ++atom) {
-            const double* point = batch.positions + atom * 3;
-            const detail::Vec3 fractional{
-                point[0] * inverse.a[0][0] + point[1] * inverse.a[1][0]
-                    + point[2] * inverse.a[2][0],
-                point[0] * inverse.a[0][1] + point[1] * inverse.a[1][1]
-                    + point[2] * inverse.a[2][1],
-                point[0] * inverse.a[0][2] + point[1] * inverse.a[1][2]
-                    + point[2] * inverse.a[2][2],
-            };
-            const detail::Vec3 wrapped{
-                fractional.x - std::floor(fractional.x),
-                fractional.y - std::floor(fractional.y),
-                fractional.z - std::floor(fractional.z),
-            };
-            const detail::Vec3 cartesian = wrapped.x * detail::row(cell, 0)
-                + wrapped.y * detail::row(cell, 1)
-                + wrapped.z * detail::row(cell, 2);
-            positions[static_cast<std::size_t>(atom * 3 + 0)] = cartesian.x;
-            positions[static_cast<std::size_t>(atom * 3 + 1)] = cartesian.y;
-            positions[static_cast<std::size_t>(atom * 3 + 2)] = cartesian.z;
-        }
-    }
-    return positions;
-}
-
 float c3_envelope(float distance, float rcut, int exponent) {
     float u = (rcut - distance) / rcut;
     u = std::max(0.0F, std::min(1.0F, u));
@@ -327,7 +262,7 @@ EdgeData build_edges(
     // convention as the other native descriptors.  DPA4's nlist excludes the
     // exact self pair, so remove only the original-cell self edge here; periodic
     // self images remain valid neighbors.
-    const std::vector<double> wrapped = normalized_positions(batch);
+    const std::vector<double> wrapped = detail::normalized_positions(batch);
     StructureBatchView normalized_batch = batch;
     normalized_batch.positions = wrapped.data();
     const NeighborGraph graph = build_neighbor_graph(
@@ -571,15 +506,6 @@ void row_matmul(
     }
 }
 
-void channel_matmul(
-    const float* input,
-    int input_width,
-    const std::vector<float>& weight,
-    int output_width,
-    float* output) {
-    row_matmul(input, input_width, weight, output_width, output);
-}
-
 void apply_so3_linear(
     const std::vector<float>& input,
     std::int64_t nodes,
@@ -656,15 +582,6 @@ void apply_so3_linear(
             }
         }
     }
-}
-
-void apply_channel_matrix(
-    const float* input,
-    int input_width,
-    const std::vector<float>& weight,
-    int output_width,
-    float* output) {
-    row_matmul(input, input_width, weight, output_width, output);
 }
 
 // Evaluate shared edge MLP weights in BLAS tiles rather than one matvec
@@ -1155,390 +1072,7 @@ void rotate_reduced_to_global(
     }
 }
 
-void apply_channel_projection(
-    const std::vector<float>& input,
-    int input_channels,
-    int output_channels,
-    const std::vector<float>& weight,
-    std::vector<float>& output) {
-    const std::size_t rows = input.size() / static_cast<std::size_t>(input_channels);
-    output.assign(rows * static_cast<std::size_t>(output_channels), 0.0F);
-    if (rows == 0) {
-        return;
-    }
-    detail::sgemm(
-        rows,
-        static_cast<std::size_t>(output_channels),
-        static_cast<std::size_t>(input_channels),
-        input.data(),
-        static_cast<std::size_t>(input_channels),
-        weight.data(),
-        static_cast<std::size_t>(output_channels),
-        output.data(),
-        static_cast<std::size_t>(output_channels));
-}
-
-void project_to_grid(
-    const std::vector<float>& coefficients,
-    int channels,
-    const std::vector<float>& matrix,
-    std::vector<float>& grid) {
-    const std::size_t coefficient_rows = coefficients.size() / static_cast<std::size_t>(channels);
-    if (coefficient_rows != kGridCoeff) {
-        throw std::invalid_argument("DPA4 grid coefficient width is not 48");
-    }
-    grid.assign(static_cast<std::size_t>(kGridSize) * static_cast<std::size_t>(channels), 0.0F);
-    detail::sgemm(
-        static_cast<std::size_t>(kGridSize),
-        static_cast<std::size_t>(channels),
-        static_cast<std::size_t>(kGridCoeff),
-        matrix.data(),
-        static_cast<std::size_t>(kGridCoeff),
-        coefficients.data(),
-        static_cast<std::size_t>(channels),
-        grid.data(),
-        static_cast<std::size_t>(channels));
-}
-
-void project_from_grid(
-    const std::vector<float>& grid,
-    int channels,
-    const std::vector<float>& matrix,
-    std::vector<float>& coefficients) {
-    if (grid.size() != static_cast<std::size_t>(kGridSize) * static_cast<std::size_t>(channels)) {
-        throw std::invalid_argument("DPA4 grid width is not 152");
-    }
-    coefficients.assign(static_cast<std::size_t>(kGridCoeff) * static_cast<std::size_t>(channels), 0.0F);
-    detail::sgemm(
-        static_cast<std::size_t>(kGridCoeff),
-        static_cast<std::size_t>(channels),
-        static_cast<std::size_t>(kGridSize),
-        matrix.data(),
-        static_cast<std::size_t>(kGridSize),
-        grid.data(),
-        static_cast<std::size_t>(channels),
-        coefficients.data(),
-        static_cast<std::size_t>(channels));
-}
-
-void expand_frames(
-    const std::vector<float>& input,
-    const std::vector<float>& weight,
-    std::vector<float>& output) {
-    // [packed coefficient, 64] -> [packed coefficient, frame(3), 64].
-    output.assign(static_cast<std::size_t>(kGridCoeff) * kChannels, 0.0F);
-    static constexpr std::array<int, 16> kDegree = {
-        0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3,
-    };
-    for (int row = 0; row < kFullDim; ++row) {
-        const int degree = kDegree[static_cast<std::size_t>(row)];
-        for (int frame = 0; frame < kFrames; ++frame) {
-            for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-                double value = 0.0;
-                for (int input_channel = 0; input_channel < kChannels; ++input_channel) {
-                    value += static_cast<double>(input[
-                        static_cast<std::size_t>(row * kChannels + input_channel)])
-                        * static_cast<double>(weight[static_cast<std::size_t>(
-                            degree * kChannels * (kFrames * kChannels)
-                            + input_channel * (kFrames * kChannels) + frame * kChannels + output_channel)]);
-                }
-                output[static_cast<std::size_t>((row * kFrames + frame) * kChannels + output_channel)] =
-                    static_cast<float>(value);
-            }
-        }
-    }
-}
-
-void contract_frames(
-    const std::vector<float>& input,
-    const std::vector<float>& weight,
-    std::vector<float>& output) {
-    output.assign(static_cast<std::size_t>(kFullDim) * kChannels, 0.0F);
-    static constexpr std::array<int, 16> kDegree = {
-        0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3,
-    };
-    for (int row = 0; row < kFullDim; ++row) {
-        const int degree = kDegree[static_cast<std::size_t>(row)];
-        for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-            double value = 0.0;
-            for (int frame = 0; frame < kFrames; ++frame) {
-                for (int input_channel = 0; input_channel < kChannels; ++input_channel) {
-                    value += static_cast<double>(input[static_cast<std::size_t>(
-                        (row * kFrames + frame) * kChannels + input_channel)])
-                        * static_cast<double>(weight[static_cast<std::size_t>(
-                            degree * (kFrames * kChannels) * kChannels
-                            + (frame * kChannels + input_channel) * kChannels + output_channel)]);
-                }
-            }
-            output[static_cast<std::size_t>(row * kChannels + output_channel)] =
-                static_cast<float>(value);
-        }
-    }
-}
-
-void scalar_swiglu(
-    const std::vector<float>& input,
-    int channels,
-    std::vector<float>& output) {
-    output.resize(static_cast<std::size_t>(channels));
-    for (int channel = 0; channel < channels; ++channel) {
-        const float gate = input[static_cast<std::size_t>(channel)];
-        const float value = input[static_cast<std::size_t>(channels + channel)];
-        output[static_cast<std::size_t>(channel)] = gate * sigmoid(gate) * value;
-    }
-}
-
-struct MessageGridWorkspace {
-    std::vector<float> query_node;
-    std::vector<float> context_node;
-    std::vector<float> query_frame;
-    std::vector<float> context_frame;
-    std::vector<float> query_grid;
-    std::vector<float> context_grid;
-    std::vector<float> product_grid;
-    std::vector<float> product_coeff;
-    std::vector<float> scalar_pair;
-    std::vector<float> scalar_out;
-    std::vector<float> output;
-    std::array<float, kChannels> scalar_gate{};
-};
-
-struct BlockGridWorkspace {
-    std::vector<float> input;
-    std::vector<float> left;
-    std::vector<float> right;
-    std::vector<float> left_projected;
-    std::vector<float> right_projected;
-    std::vector<float> left_grid;
-    std::vector<float> right_grid;
-    std::vector<float> product_grid;
-    std::vector<float> product_coeff;
-    std::vector<float> scalar_pair;
-    std::vector<float> scalar_out;
-    std::vector<float> output;
-    std::array<float, 192> scalar_gate{};
-};
-
-struct OutputGridWorkspace {
-    std::vector<float> input;
-    std::vector<float> fused;
-    std::vector<float> left;
-    std::vector<float> right;
-    std::vector<float> left_grid;
-    std::vector<float> right_grid;
-    std::vector<float> product_grid;
-    std::vector<float> product_coeff;
-    std::vector<float> projected;
-    std::vector<float> scalar_pair;
-    std::vector<float> scalar_out;
-    std::array<float, 192> scalar_gate{};
-};
-
-struct Dpa4ThreadWorkspace {
-    MessageGridWorkspace message;
-    BlockGridWorkspace block;
-    OutputGridWorkspace output;
-};
-
-int current_workspace_slot() noexcept {
-#ifdef _OPENMP
-    return omp_get_thread_num();
-#else
-    return 0;
-#endif
-}
-
-void message_grid_one(
-    const std::vector<float>& query,
-    const std::vector<float>& context,
-    const Dpa4BlockOptions& block,
-    const Dpa4Options& options,
-    MessageGridWorkspace& workspace) {
-    expand_frames(query, block.message_frame_expand, workspace.query_frame);
-    expand_frames(context, block.message_frame_expand, workspace.context_frame);
-
-    project_to_grid(
-        workspace.query_frame, kChannels, options.grid_to, workspace.query_grid);
-    project_to_grid(
-        workspace.context_frame, kChannels, options.grid_to, workspace.context_grid);
-    workspace.product_grid.resize(workspace.query_grid.size());
-    for (std::size_t index = 0; index < workspace.product_grid.size(); ++index) {
-        workspace.product_grid[index] = workspace.query_grid[index] * workspace.context_grid[index];
-    }
-    project_from_grid(
-        workspace.product_grid, kChannels, options.grid_from, workspace.product_coeff);
-
-    workspace.scalar_pair.resize(2U * kChannels);
-    for (int channel = 0; channel < kChannels; ++channel) {
-        workspace.scalar_pair[static_cast<std::size_t>(channel)] = query[
-            static_cast<std::size_t>(channel)];
-        workspace.scalar_pair[static_cast<std::size_t>(kChannels + channel)] = context[
-            static_cast<std::size_t>(channel)];
-    }
-    scalar_swiglu(workspace.scalar_pair, kChannels, workspace.scalar_out);
-    for (int output_channel = 0; output_channel < kChannels; ++output_channel) {
-        double value = 0.0;
-        for (int input_channel = 0; input_channel < 2 * kChannels; ++input_channel) {
-            value += static_cast<double>(workspace.scalar_pair[
-                static_cast<std::size_t>(input_channel)])
-                * static_cast<double>(block.message_scalar_gate[
-                    static_cast<std::size_t>(input_channel * kChannels + output_channel)]);
-        }
-        workspace.scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(
-            static_cast<float>(value));
-    }
-    for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
-        for (int channel = 0; channel < kChannels; ++channel) {
-            workspace.product_coeff[static_cast<std::size_t>(coefficient * kChannels + channel)]
-                *= workspace.scalar_gate[static_cast<std::size_t>(channel)];
-        }
-    }
-    for (int channel = 0; channel < kChannels; ++channel) {
-        workspace.product_coeff[static_cast<std::size_t>(channel)] += workspace.scalar_out[
-            static_cast<std::size_t>(channel)];
-    }
-
-    contract_frames(workspace.product_coeff, block.message_frame_contract, workspace.output);
-    for (int row = 0; row < kFullDim; ++row) {
-        for (int channel = 0; channel < kChannels; ++channel) {
-            workspace.output[static_cast<std::size_t>(row * kChannels + channel)]
-                *= block.message_residual_scale[static_cast<std::size_t>(channel)];
-        }
-    }
-}
-
-void block_grid_branch_one(
-    const std::vector<float>& input,
-    const Dpa4BlockOptions& block,
-    const Dpa4Options& options,
-    BlockGridWorkspace& workspace) {
-    workspace.left.resize(static_cast<std::size_t>(kGridCoeff) * 192U);
-    workspace.right.resize(workspace.left.size());
-    for (int row = 0; row < kFullDim; ++row) {
-        for (int frame = 0; frame < kFrames; ++frame) {
-            for (int channel = 0; channel < 192; ++channel) {
-                const std::size_t frame_offset = static_cast<std::size_t>((row * kFrames + frame) * 192 + channel);
-                workspace.left[frame_offset] = input[
-                    static_cast<std::size_t>(row * 1152 + frame * 192 + channel)];
-                workspace.right[frame_offset] = input[
-                    static_cast<std::size_t>(row * 1152 + 576 + frame * 192 + channel)];
-            }
-        }
-    }
-    apply_channel_projection(
-        workspace.left, 192, 192, block.ffn_grid_left, workspace.left_projected);
-    apply_channel_projection(
-        workspace.right, 192, 192, block.ffn_grid_right, workspace.right_projected);
-    project_to_grid(
-        workspace.left_projected, 192, options.grid_to, workspace.left_grid);
-    project_to_grid(
-        workspace.right_projected, 192, options.grid_to, workspace.right_grid);
-    workspace.product_grid.resize(workspace.left_grid.size());
-    for (std::size_t index = 0; index < workspace.product_grid.size(); ++index) {
-        workspace.product_grid[index] = workspace.left_grid[index] * workspace.right_grid[index];
-    }
-    project_from_grid(
-        workspace.product_grid, 192, options.grid_from, workspace.product_coeff);
-
-    workspace.scalar_pair.resize(384U);
-    for (int channel = 0; channel < 192; ++channel) {
-        workspace.scalar_pair[static_cast<std::size_t>(channel)] = workspace.left[
-            static_cast<std::size_t>(channel)];
-        workspace.scalar_pair[static_cast<std::size_t>(192 + channel)] = workspace.right[
-            static_cast<std::size_t>(channel)];
-    }
-    scalar_swiglu(workspace.scalar_pair, 192, workspace.scalar_out);
-    for (int output_channel = 0; output_channel < 192; ++output_channel) {
-        double value = 0.0;
-        for (int input_channel = 0; input_channel < 384; ++input_channel) {
-            value += static_cast<double>(workspace.scalar_pair[
-                static_cast<std::size_t>(input_channel)])
-                * static_cast<double>(block.ffn_scalar_gate[
-                    static_cast<std::size_t>(input_channel * 192 + output_channel)]);
-        }
-        workspace.scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(
-            static_cast<float>(value));
-    }
-    // The deployed model has one branch; the softmax over one route is exactly 1.
-    (void)block.ffn_grid_router;
-    apply_channel_projection(
-        workspace.product_coeff, 192, 192, block.ffn_grid_out, workspace.output);
-    for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
-        for (int channel = 0; channel < 192; ++channel) {
-            workspace.output[static_cast<std::size_t>(coefficient * 192 + channel)]
-                *= workspace.scalar_gate[static_cast<std::size_t>(channel)];
-        }
-    }
-    for (int channel = 0; channel < 192; ++channel) {
-        workspace.output[static_cast<std::size_t>(channel)] += workspace.scalar_out[
-            static_cast<std::size_t>(channel)];
-    }
-}
-
-void output_grid_mlp_one(
-    const std::vector<float>& input,
-    const Dpa4Options& options,
-    OutputGridWorkspace& workspace) {
-    workspace.fused.resize(static_cast<std::size_t>(kGridCoeff) * 384U);
-    for (int row = 0; row < kFullDim; ++row) {
-        for (int frame = 0; frame < kFrames; ++frame) {
-            for (int channel = 0; channel < 192; ++channel) {
-                const std::size_t out_offset = static_cast<std::size_t>((row * kFrames + frame) * 384 + channel);
-                workspace.fused[out_offset] = input[
-                    static_cast<std::size_t>(row * 1152 + frame * 192 + channel)];
-                workspace.fused[out_offset + 192U] = input[
-                    static_cast<std::size_t>(row * 1152 + 576 + frame * 192 + channel)];
-            }
-        }
-    }
-    apply_channel_projection(
-        workspace.fused, 384, 384, options.output_grid_left, workspace.left);
-    apply_channel_projection(
-        workspace.fused, 384, 384, options.output_grid_right, workspace.right);
-    project_to_grid(workspace.left, 384, options.grid_to, workspace.left_grid);
-    project_to_grid(workspace.right, 384, options.grid_to, workspace.right_grid);
-    workspace.product_grid.resize(workspace.left_grid.size());
-    for (std::size_t index = 0; index < workspace.product_grid.size(); ++index) {
-        workspace.product_grid[index] = workspace.left_grid[index] * workspace.right_grid[index];
-    }
-    project_from_grid(
-        workspace.product_grid, 384, options.grid_from, workspace.product_coeff);
-    apply_channel_projection(
-        workspace.product_coeff, 384, 192, options.output_grid_out, workspace.projected);
-
-    workspace.scalar_pair.resize(384U);
-    for (int channel = 0; channel < 192; ++channel) {
-        workspace.scalar_pair[static_cast<std::size_t>(channel)] = input[
-            static_cast<std::size_t>(channel)];
-        workspace.scalar_pair[static_cast<std::size_t>(192 + channel)] = input[
-            static_cast<std::size_t>(576 + channel)];
-    }
-    scalar_swiglu(workspace.scalar_pair, 192, workspace.scalar_out);
-    for (int output_channel = 0; output_channel < 192; ++output_channel) {
-        double value = 0.0;
-        for (int input_channel = 0; input_channel < 384; ++input_channel) {
-            value += static_cast<double>(workspace.scalar_pair[
-                static_cast<std::size_t>(input_channel)])
-                * static_cast<double>(options.output_scalar_gate[
-                    static_cast<std::size_t>(input_channel * 192 + output_channel)]);
-        }
-        workspace.scalar_gate[static_cast<std::size_t>(output_channel)] = sigmoid(
-            static_cast<float>(value));
-    }
-    for (int coefficient = 0; coefficient < kGridCoeff; ++coefficient) {
-        for (int channel = 0; channel < 192; ++channel) {
-            workspace.projected[static_cast<std::size_t>(coefficient * 192 + channel)]
-                *= workspace.scalar_gate[static_cast<std::size_t>(channel)];
-        }
-    }
-    for (int channel = 0; channel < 192; ++channel) {
-        workspace.projected[static_cast<std::size_t>(channel)] += workspace.scalar_out[
-            static_cast<std::size_t>(channel)];
-    }
-}
-
-// The grid branches above are useful as a compact reference for one node.
-// Production execution keeps the node dimension in the BLAS batch instead:
+// Production execution keeps the node dimension in the BLAS batch:
 // grid projection is a small matrix multiplied by many independent feature
 // matrices, so concatenating their channel columns turns the whole operation
 // into one large SGEMM.  The packing layout is private and is deliberately
@@ -1787,9 +1321,6 @@ void contract_frames_batch(
     int num_threads) {
     const std::size_t node_count = static_cast<std::size_t>(nodes);
     output.resize(node_count * static_cast<std::size_t>(kFullDim * kChannels));
-    static constexpr std::array<int, 16> kDegree = {
-        0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3,
-    };
     for (int degree = 0; degree < kDegrees; ++degree) {
         const int width = 2 * degree + 1;
         const std::size_t rows = node_count * static_cast<std::size_t>(width);
@@ -1848,7 +1379,6 @@ void contract_frames_batch(
             }
         }
     }
-    (void)kDegree;
 }
 
 void message_grid_batch_tile(

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import importlib
 import importlib.metadata
 import importlib.util
@@ -28,6 +27,17 @@ from typing import Any
 import numpy as np
 from ase import Atoms
 
+from external_reference import (
+    _block_data,
+    _flatten_atomic_composition,
+    _flatten_power_spectrum,
+    _flatten_radial_spectrum,
+    _flatten_sorted_distances,
+    _flatten_spherical_expansion,
+    _keys_and_blocks,
+    _portable,
+    sha256,
+)
 from mdescriptor import DescriptorConfiguration, StructureBatch, create_descriptor
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,66 +51,31 @@ WATER_POSITIONS = np.asarray(
 )
 WATER_CELL = np.diag([8.0, 8.0, 8.0]).astype(np.float64)
 
-TARGETS = (
-    "SOAP",
-    "ACSF",
-    "CoulombMatrix",
-    "SineMatrix",
-    "EwaldSumMatrix",
-    "MBTR",
-    "LMBTR",
-    "ValleOganov",
-    "AtomicComposition",
-    "NeighborList",
-    "SortedDistances",
-    "SphericalExpansion",
-    "SphericalExpansionByPair",
-    "SoapRadialSpectrum",
-    "SoapPowerSpectrum",
-    "LodeSphericalExpansion",
-    "EAD",
-    "SO3",
-    "SO4",
-    "SNAP",
-    "NEP",
-)
+_PROVIDERS: dict[str, str] = {
+    "SOAP": "DScribe",
+    "ACSF": "DScribe",
+    "CoulombMatrix": "DScribe",
+    "SineMatrix": "DScribe",
+    "EwaldSumMatrix": "DScribe",
+    "MBTR": "DScribe",
+    "LMBTR": "DScribe",
+    "ValleOganov": "DScribe",
+    "AtomicComposition": "Featomic",
+    "NeighborList": "Featomic",
+    "SortedDistances": "Featomic",
+    "SphericalExpansion": "Featomic",
+    "SphericalExpansionByPair": "Featomic",
+    "SoapRadialSpectrum": "Featomic",
+    "SoapPowerSpectrum": "Featomic",
+    "LodeSphericalExpansion": "Featomic",
+    "EAD": "PyXtal_FF",
+    "SO3": "PyXtal_FF",
+    "SO4": "PyXtal_FF",
+    "SNAP": "PyXtal_FF",
+    "NEP": "nep-adapters",
+}
 
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _portable(value: Any) -> Any:
-    """Replace checkout-specific paths in the generated manifest."""
-
-    package_root = Path(importlib.import_module("mdescriptor").__file__).resolve().parent
-    if isinstance(value, Path):
-        value = str(value)
-    if isinstance(value, str):
-        package = str(package_root)
-        root = str(ROOT)
-        if value == package:
-            return "${PACKAGE_ROOT}"
-        if value.startswith(package + "/"):
-            return "${PACKAGE_ROOT}/" + value[len(package) + 1 :]
-        if value == root:
-            return "${PROJECT_ROOT}"
-        if value.startswith(root + "/"):
-            return "${PROJECT_ROOT}/" + value[len(root) + 1 :]
-        return value
-    if isinstance(value, dict):
-        return {str(key): _portable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_portable(item) for item in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    return value
+TARGETS = tuple(_PROVIDERS)
 
 
 def _batch() -> StructureBatch:
@@ -319,117 +294,6 @@ def _dscribe_values(name: str, system: Atoms) -> np.ndarray:
     raise ValueError(f"{name} is not a DScribe descriptor")
 
 
-def _block_data(block: Any) -> tuple[np.ndarray, np.ndarray]:
-    samples = np.asarray(block.samples.values, dtype=np.int64)
-    raw_values = np.asarray(block.values, dtype=np.float64)
-    width = int(np.prod(raw_values.shape[1:], dtype=np.int64))
-    return samples, raw_values.reshape(samples.shape[0], width)
-
-
-def _keys_and_blocks(tensor_map: Any) -> dict[tuple[int, ...], tuple[np.ndarray, np.ndarray]]:
-    return {
-        tuple(int(value) for value in key): _block_data(tensor_map[key])
-        for key in tensor_map.keys
-    }
-
-
-def _values_for_atom(data: tuple[np.ndarray, np.ndarray], atom: int, width: int) -> np.ndarray:
-    samples, values = data
-    matches = np.flatnonzero((samples[:, 0] == 0) & (samples[:, 1] == atom))
-    if len(matches) == 0:
-        return np.zeros(width, dtype=np.float64)
-    if len(matches) != 1:
-        raise ValueError(f"expected one provider row for atom {atom}, got {len(matches)}")
-    return values[matches[0]]
-
-
-def _flatten_atomic_composition(tensor_map: Any) -> np.ndarray:
-    blocks = _keys_and_blocks(tensor_map)
-    result = np.zeros((3, 2), dtype=np.float64)
-    for column, species in enumerate((1, 8)):
-        samples, values = blocks[(species,)]
-        for sample, value in zip(samples, values, strict=True):
-            result[int(sample[1]), column] = value[0]
-    return result
-
-
-def _flatten_sorted_distances(tensor_map: Any) -> np.ndarray:
-    blocks = _keys_and_blocks(tensor_map)
-    result = np.zeros((3, 8), dtype=np.float64)
-    for atom, center in enumerate(WATER_NUMBERS):
-        offset = 0
-        for neighbor in (1, 8):
-            data = blocks.get(
-                (int(center), neighbor),
-                (np.empty((0, 2)), np.empty((0, 4))),
-            )
-            result[atom, offset : offset + 4] = _values_for_atom(data, atom, 4)
-            offset += 4
-    return result
-
-
-def _flatten_spherical(tensor_map: Any) -> np.ndarray:
-    blocks = _keys_and_blocks(tensor_map)
-    radial_count = 3
-    max_angular = 2
-    group_width = sum((2 * angular + 1) * radial_count for angular in range(max_angular + 1))
-    result = np.zeros((3, 2 * 2 * group_width), dtype=np.float64)
-    offset = 0
-    for center in (1, 8):
-        for neighbor in (1, 8):
-            for angular in range(max_angular + 1):
-                width = (2 * angular + 1) * radial_count
-                candidates = [
-                    (key, data)
-                    for key, data in blocks.items()
-                    if key[0] == angular and key[2:] == (center, neighbor)
-                ]
-                data = candidates[0][1] if candidates else (np.empty((0, 2)), np.empty((0, width)))
-                for atom in range(3):
-                    result[atom, offset : offset + width] = _values_for_atom(data, atom, width)
-                offset += width
-    return result
-
-
-def _flatten_power(tensor_map: Any) -> np.ndarray:
-    blocks = _keys_and_blocks(tensor_map)
-    # The power-spectrum block keeps the angular channel as the leading
-    # feature axis: (max_angular + 1) * radial * radial.
-    group_width = 3 * 3 * 3
-    group_count = 3
-    result = np.zeros((3, 2 * group_count * group_width), dtype=np.float64)
-    offset = 0
-    for center in (1, 8):
-        for first_index, first in enumerate((1, 8)):
-            for second in (1, 8)[first_index:]:
-                data = blocks.get(
-                    (center, first, second),
-                    (np.empty((0, 2)), np.empty((0, group_width))),
-                )
-                for atom in range(3):
-                    result[atom, offset : offset + group_width] = _values_for_atom(
-                        data, atom, group_width
-                    )
-                offset += group_width
-    return result
-
-
-def _flatten_radial(tensor_map: Any) -> np.ndarray:
-    blocks = _keys_and_blocks(tensor_map)
-    result = np.zeros((3, 2 * 2 * 3), dtype=np.float64)
-    offset = 0
-    for center in (1, 8):
-        for neighbor in (1, 8):
-            data = blocks.get(
-                (center, neighbor),
-                (np.empty((0, 2)), np.empty((0, 3))),
-            )
-            for atom in range(3):
-                result[atom, offset : offset + 3] = _values_for_atom(data, atom, 3)
-            offset += 3
-    return result
-
-
 def _flatten_neighbor_values(tensor_map: Any, native_samples: np.ndarray) -> np.ndarray:
     rows: dict[tuple[int, ...], np.ndarray] = {}
     for key in tensor_map.keys:
@@ -458,19 +322,23 @@ def _featomic_values(name: str, system: Atoms, native_samples: np.ndarray) -> np
     shifted = Cutoff(cutoff, ShiftedCosine(width=0.5))
     density = Gaussian(width=0.6)
     if name == "AtomicComposition":
-        return _flatten_atomic_composition(featomic.AtomicComposition(per_system=False).compute(system))
+        return _flatten_atomic_composition(
+            featomic.AtomicComposition(per_system=False).compute(system), 3, per_system=False
+        )
     if name == "SortedDistances":
         return _flatten_sorted_distances(
             featomic.SortedDistances(
                 cutoff=cutoff, max_neighbors=4, separate_neighbor_types=True
-            ).compute(system)
+            ).compute(system),
+            WATER_NUMBERS,
         )
     if name == "NeighborList":
         tensor_map = featomic.NeighborList(cutoff=cutoff, full_neighbor_list=True).compute(system)
         return _flatten_neighbor_values(tensor_map, native_samples)
     if name == "SphericalExpansion":
-        return _flatten_spherical(
-            featomic.SphericalExpansion(cutoff=shifted, density=density, basis=basis).compute(system)
+        return _flatten_spherical_expansion(
+            featomic.SphericalExpansion(cutoff=shifted, density=density, basis=basis).compute(system),
+            3,
         )
     if name == "SphericalExpansionByPair":
         tensor_map = featomic.SphericalExpansionByPair(
@@ -501,16 +369,18 @@ def _featomic_values(name: str, system: Atoms, native_samples: np.ndarray) -> np
                     offset += width
         return result
     if name == "SoapPowerSpectrum":
-        return _flatten_power(
-            featomic.SoapPowerSpectrum(cutoff=shifted, density=density, basis=basis).compute(system)
+        return _flatten_power_spectrum(
+            featomic.SoapPowerSpectrum(cutoff=shifted, density=density, basis=basis).compute(system),
+            3,
         )
     if name == "SoapRadialSpectrum":
-        return _flatten_radial(
+        return _flatten_radial_spectrum(
             featomic.SoapRadialSpectrum(
                 cutoff=shifted,
                 density=density,
                 basis={"radial": Gto(max_radial=2, radius=cutoff)},
-            ).compute(system)
+            ).compute(system),
+            3,
         )
     if name == "LodeSphericalExpansion":
         lode = featomic.LodeSphericalExpansion(
@@ -518,7 +388,7 @@ def _featomic_values(name: str, system: Atoms, native_samples: np.ndarray) -> np
             basis=basis,
             k_cutoff=2.5,
         ).compute(system)
-        return _flatten_spherical(lode)
+        return _flatten_spherical_expansion(lode, 3)
     raise ValueError(f"{name} is not a Featomic descriptor")
 
 
@@ -588,33 +458,16 @@ def _nep_values(system: Atoms) -> np.ndarray:
 
 
 def _provider_values(name: str, system: Atoms, native_samples: np.ndarray) -> np.ndarray:
-    if name in {
-        "SOAP",
-        "ACSF",
-        "CoulombMatrix",
-        "SineMatrix",
-        "EwaldSumMatrix",
-        "MBTR",
-        "LMBTR",
-        "ValleOganov",
-    }:
+    if name not in _PROVIDERS:
+        raise ValueError(f"no provider for {name!r}")
+    provider = _PROVIDERS[name]
+    if provider == "DScribe":
         return _dscribe_values(name, system)
-    if name in {
-        "AtomicComposition",
-        "NeighborList",
-        "SortedDistances",
-        "SphericalExpansion",
-        "SphericalExpansionByPair",
-        "SoapRadialSpectrum",
-        "SoapPowerSpectrum",
-        "LodeSphericalExpansion",
-    }:
+    if provider == "Featomic":
         return _featomic_values(name, system, native_samples)
-    if name in {"EAD", "SO3", "SO4", "SNAP"}:
+    if provider == "PyXtal_FF":
         return _pyxtal_values(name, system)
-    if name == "NEP":
-        return _nep_values(system)
-    raise ValueError(f"no provider for {name!r}")
+    return _nep_values(system)
 
 
 def _tolerance(name: str) -> dict[str, float]:
@@ -633,7 +486,7 @@ def _tolerance(name: str) -> dict[str, float]:
     return {"rtol": 1e-9, "atol": 1e-11}
 
 
-def _write_one(name: str, *, accept: bool) -> None:
+def _write_one(name: str) -> None:
     fixture_dir = GOLDEN_ROOT / name.lower()
     parent_manifest_path = fixture_dir / "manifest.json"
     parent_manifest = json.loads(parent_manifest_path.read_text(encoding="utf-8"))
@@ -687,29 +540,7 @@ def _write_one(name: str, *, accept: bool) -> None:
         offsets=np.asarray([0, 3], dtype=np.int64),
     )
     np.savez_compressed(output_path, values=provider, samples=native_samples)
-    provider_name = {
-        "SOAP": "DScribe",
-        "ACSF": "DScribe",
-        "CoulombMatrix": "DScribe",
-        "SineMatrix": "DScribe",
-        "EwaldSumMatrix": "DScribe",
-        "MBTR": "DScribe",
-        "LMBTR": "DScribe",
-        "ValleOganov": "DScribe",
-        "AtomicComposition": "Featomic",
-        "NeighborList": "Featomic",
-        "SortedDistances": "Featomic",
-        "SphericalExpansion": "Featomic",
-        "SphericalExpansionByPair": "Featomic",
-        "SoapRadialSpectrum": "Featomic",
-        "SoapPowerSpectrum": "Featomic",
-        "LodeSphericalExpansion": "Featomic",
-        "EAD": "PyXtal_FF",
-        "SO3": "PyXtal_FF",
-        "SO4": "PyXtal_FF",
-        "SNAP": "PyXtal_FF",
-        "NEP": "nep-adapters",
-    }[name]
+    provider_name = _PROVIDERS[name]
     distribution = {
         "DScribe": ("dscribe", "2.1.2"),
         "Featomic": ("featomic", "0.6.6"),
@@ -722,7 +553,7 @@ def _write_one(name: str, *, accept: bool) -> None:
         "package": distribution[0],
         "version": distribution[1],
         "generator": str(GENERATOR.relative_to(ROOT)),
-        "generator_sha256": _sha256(GENERATOR),
+        "generator_sha256": sha256(GENERATOR),
         "source": f"{distribution[0]} runtime evaluation",
         "verification": {
             **tolerance,
@@ -736,7 +567,7 @@ def _write_one(name: str, *, accept: bool) -> None:
         "configuration": config,
         "dataset": {
             "name": "external-water-v1",
-            "sha256": _sha256(input_path),
+            "sha256": sha256(input_path),
             "source": "pinned-external-provider",
         },
         "input": input_path.name,
@@ -748,7 +579,7 @@ def _write_one(name: str, *, accept: bool) -> None:
         "tolerance": tolerance,
     }
     external_manifest_path = fixture_dir / "external_manifest.json"
-    old_project_hash = _sha256(fixture_dir / parent_manifest["expected_output"])
+    old_project_hash = sha256(fixture_dir / parent_manifest["expected_output"])
     parent_baseline = dict(parent_manifest.get("numeric_baseline", {}))
     parent_baseline.update(
         {
@@ -756,24 +587,21 @@ def _write_one(name: str, *, accept: bool) -> None:
             "committed_golden": "external_static",
             "fixture": external_manifest_path.name,
             "generator": str(GENERATOR.relative_to(ROOT)),
-            "generator_sha256": _sha256(GENERATOR),
-            "expected_output_sha256": _sha256(output_path),
+            "generator_sha256": sha256(GENERATOR),
+            "expected_output_sha256": sha256(output_path),
             "project_snapshot_sha256": old_project_hash,
         }
     )
     parent_manifest["numeric_baseline"] = parent_baseline
-    if accept:
-        external_manifest_path.write_text(
-            json.dumps(external_manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        parent_manifest_path.write_text(
-            json.dumps(parent_manifest, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        print(f"accepted {name} external static golden: {provider.shape}")
-    else:
-        print(f"verified {name} external static golden: {provider.shape}; pass --accept to write")
+    external_manifest_path.write_text(
+        json.dumps(external_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    parent_manifest_path.write_text(
+        json.dumps(parent_manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"accepted {name} external static golden: {provider.shape}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -785,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("refusing to write external golden without explicit --accept")
     names = (args.descriptor,) if args.descriptor else TARGETS
     for name in names:
-        _write_one(name, accept=True)
+        _write_one(name)
     return 0
 
 

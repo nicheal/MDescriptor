@@ -301,9 +301,9 @@ void copy_block(
 }
 
 void validate_edge_batch_arguments(
-    const Dpa4EdgeVector* edges,
+    const void* edges,
     std::size_t edge_count,
-    const Dpa4Quaternion* output,
+    const void* output,
     int num_threads,
     const char* name) {
     if (edge_count != 0 && (edges == nullptr || output == nullptr)) {
@@ -471,15 +471,8 @@ void Dpa4WignerLowOrder::compute_blocks_batch(
     float* output,
     float eps,
     int num_threads) const {
-    if (edge_count != 0 && (quaternions == nullptr || output == nullptr)) {
-        throw std::invalid_argument("DPA4 Wigner batch buffer is null");
-    }
-    if (num_threads < 0) {
-        throw std::invalid_argument("DPA4 Wigner batch num_threads must be non-negative");
-    }
-    if (edge_count > static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max())) {
-        throw std::invalid_argument("DPA4 Wigner batch edge count is too large");
-    }
+    validate_edge_batch_arguments(
+        quaternions, edge_count, output, num_threads, "DPA4 Wigner batch");
     const std::ptrdiff_t signed_count = static_cast<std::ptrdiff_t>(edge_count);
 
 #ifdef _OPENMP

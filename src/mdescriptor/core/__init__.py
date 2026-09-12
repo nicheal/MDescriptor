@@ -11,7 +11,7 @@ from .errors import (
     ModelLoadError,
     UnsupportedPeriodicityError,
 )
-from .input import StructureBatch, StructureInput, batch_from_ase, coerce_batch
+from .input import StructureBatch, StructureInput, coerce_batch
 from .options import (
     CONFIGURATION_SCHEMA_VERSION,
     DescriptorConfiguration,
@@ -47,7 +47,6 @@ __all__ = [
     "StructureBatch",
     "StructureInput",
     "UnsupportedPeriodicityError",
-    "batch_from_ase",
     "coerce_batch",
     "normalize_species",
     "require_species",

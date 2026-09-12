@@ -21,9 +21,6 @@
 
 namespace mdescriptor::detail {
 
-constexpr double kPi = 3.141592653589793238462643383279502884;
-constexpr double kSqrt2 = 1.414213562373095048801688724209698079;
-
 inline double gamma_value(double x) {
     const double value = std::tgamma(x);
     if (!std::isfinite(value) || value <= 0.0) {
@@ -46,96 +43,6 @@ inline double hyp1f1_series(double a, double b, double x) {
         }
     }
     return sum;
-}
-
-// Direct summation of M(a,b,-x) loses digits through alternating cancellation
-// at the reciprocal-space x values used by LODE. The following ODE evaluates
-// the same function without that cancellation. It is only used for negative
-// arguments; the ordinary SOAP path retains its fast series/asymptotic split.
-inline double hyp1f1_negative_ode(double a, double b, double x) {
-    constexpr double start = 0.01;
-    constexpr double absolute_tolerance = 2e-15;
-    constexpr double relative_tolerance = 2e-13;
-    double y = 1.0;
-    double derivative = 0.0;
-    double term = 1.0;
-    for (int k = 1; k < 80; ++k) {
-        term *= -start * (a + k - 1.0) / ((b + k - 1.0) * k);
-        y += term;
-        derivative += k * term / start;
-        if (std::abs(term) <= std::abs(y) * 2e-18) {
-            break;
-        }
-    }
-    if (x <= start) {
-        return y;
-    }
-
-    auto derivative_at = [a, b](double position, double value, double slope) {
-        return std::array<double, 2>{slope, -((b + position) * slope + a * value) / position};
-    };
-    double position = start;
-    double step = std::min(0.25, x - position);
-    while (position < x) {
-        step = std::min(step, x - position);
-        const auto k1 = derivative_at(position, y, derivative);
-        const auto k2 = derivative_at(
-            position + step * (1.0 / 5.0),
-            y + step * (1.0 / 5.0) * k1[0],
-            derivative + step * (1.0 / 5.0) * k1[1]);
-        const auto k3 = derivative_at(
-            position + step * (3.0 / 10.0),
-            y + step * (3.0 / 40.0 * k1[0] + 9.0 / 40.0 * k2[0]),
-            derivative + step * (3.0 / 40.0 * k1[1] + 9.0 / 40.0 * k2[1]));
-        const auto k4 = derivative_at(
-            position + step * (4.0 / 5.0),
-            y + step * (44.0 / 45.0 * k1[0] - 56.0 / 15.0 * k2[0] + 32.0 / 9.0 * k3[0]),
-            derivative + step * (44.0 / 45.0 * k1[1] - 56.0 / 15.0 * k2[1] + 32.0 / 9.0 * k3[1]));
-        const auto k5 = derivative_at(
-            position + step * (8.0 / 9.0),
-            y + step * (19372.0 / 6561.0 * k1[0] - 25360.0 / 2187.0 * k2[0]
-                + 64448.0 / 6561.0 * k3[0] - 212.0 / 729.0 * k4[0]),
-            derivative + step * (19372.0 / 6561.0 * k1[1] - 25360.0 / 2187.0 * k2[1]
-                + 64448.0 / 6561.0 * k3[1] - 212.0 / 729.0 * k4[1]));
-        const auto k6 = derivative_at(
-            position + step,
-            y + step * (9017.0 / 3168.0 * k1[0] - 355.0 / 33.0 * k2[0]
-                + 46732.0 / 5247.0 * k3[0] + 49.0 / 176.0 * k4[0] - 5103.0 / 18656.0 * k5[0]),
-            derivative + step * (9017.0 / 3168.0 * k1[1] - 355.0 / 33.0 * k2[1]
-                + 46732.0 / 5247.0 * k3[1] + 49.0 / 176.0 * k4[1] - 5103.0 / 18656.0 * k5[1]));
-        const auto k7 = derivative_at(
-            position + step,
-            y + step * (35.0 / 384.0 * k1[0] + 500.0 / 1113.0 * k3[0]
-                + 125.0 / 192.0 * k4[0] - 2187.0 / 6784.0 * k5[0] + 11.0 / 84.0 * k6[0]),
-            derivative + step * (35.0 / 384.0 * k1[1] + 500.0 / 1113.0 * k3[1]
-                + 125.0 / 192.0 * k4[1] - 2187.0 / 6784.0 * k5[1] + 11.0 / 84.0 * k6[1]));
-
-        const double next_y = y + step * (35.0 / 384.0 * k1[0] + 500.0 / 1113.0 * k3[0]
-            + 125.0 / 192.0 * k4[0] - 2187.0 / 6784.0 * k5[0] + 11.0 / 84.0 * k6[0]);
-        const double next_derivative = derivative + step * (35.0 / 384.0 * k1[1]
-            + 500.0 / 1113.0 * k3[1] + 125.0 / 192.0 * k4[1]
-            - 2187.0 / 6784.0 * k5[1] + 11.0 / 84.0 * k6[1]);
-        const double fourth_y = y + step * (5179.0 / 57600.0 * k1[0] + 7571.0 / 16695.0 * k3[0]
-            + 393.0 / 640.0 * k4[0] - 92097.0 / 339200.0 * k5[0]
-            + 187.0 / 2100.0 * k6[0] + 1.0 / 40.0 * k7[0]);
-        const double fourth_derivative = derivative + step * (5179.0 / 57600.0 * k1[1]
-            + 7571.0 / 16695.0 * k3[1] + 393.0 / 640.0 * k4[1]
-            - 92097.0 / 339200.0 * k5[1] + 187.0 / 2100.0 * k6[1] + 1.0 / 40.0 * k7[1]);
-        const double error = std::max(
-            std::abs(next_y - fourth_y) / (absolute_tolerance + relative_tolerance * std::abs(next_y)),
-            std::abs(next_derivative - fourth_derivative)
-                / (absolute_tolerance + relative_tolerance * std::abs(next_derivative)));
-        if (error <= 1.0 || step <= 1e-9) {
-            position += step;
-            y = next_y;
-            derivative = next_derivative;
-            const double scale = error == 0.0 ? 5.0 : std::min(5.0, std::max(0.2, 0.9 * std::pow(error, -0.2)));
-            step *= scale;
-        } else {
-            step *= std::max(0.1, 0.9 * std::pow(error, -0.2));
-        }
-    }
-    return y;
 }
 
 inline double hyp1f1(double a, double b, double x) {
@@ -445,61 +352,6 @@ struct GtoRadialBasis {
         }
     }
 
-    void radial_integral_into(double distance, int angular, double density_width, std::vector<double>& result) const {
-        std::vector<double> raw;
-        radial_integral_into(distance, angular, density_width, result, raw);
-    }
-
-    void radial_integral_into(
-        double distance, int angular, double density_width,
-        std::vector<double>& result, std::vector<double>& raw) const {
-        result.resize(static_cast<std::size_t>(size));
-        std::fill(result.begin(), result.end(), 0.0);
-        raw.resize(static_cast<std::size_t>(size));
-        const double density_width2 = density_width * density_width;
-        const double density_constant = 1.0 / (2.0 * density_width2);
-        const double global_factor = std::pow(kPi / density_width2, 0.75);
-        const double c_r = density_constant * distance;
-        const double factor = global_factor * std::exp(-distance * c_r) * std::pow(c_r, angular);
-        for (int n = 0; n < size; ++n) {
-            const double gto_constant = gto_constants[static_cast<std::size_t>(n)];
-            const double z = c_r * c_r / (density_constant + gto_constant);
-            const double a = 0.5 * (n + angular + 3.0);
-            const double b = angular + 1.5;
-            if (z > 30.0) {
-                const double asymptotic = regularized_hyp1f1_positive(a, b, z);
-                const double logarithm = std::log(global_factor) - distance * c_r
-                    + static_cast<double>(angular) * std::log(c_r)
-                    - a * std::log(density_constant + gto_constant)
-                    + z + (a - b) * std::log(z);
-                raw[static_cast<std::size_t>(n)] = std::exp(logarithm) * asymptotic;
-            } else {
-                const double gamma_a_value = angular == angular_channel
-                    ? gamma_a[static_cast<std::size_t>(n)] : gamma_value(a);
-                const double gamma_b_value = angular == angular_channel ? gamma_b : gamma_value(b);
-                raw[static_cast<std::size_t>(n)] = gamma_a_value / gamma_b_value * hyp1f1(a, b, z)
-                    * std::pow(density_constant + gto_constant, -a) * factor;
-            }
-        }
-        for (int target = 0; target < size; ++target) {
-            for (int n = 0; n < size; ++n) {
-                result[static_cast<std::size_t>(target)] += raw[static_cast<std::size_t>(n)]
-                    * orthonormalization[static_cast<std::size_t>(n)][static_cast<std::size_t>(target)];
-            }
-        }
-    }
-
-    std::vector<double> radial_integral(double distance, int angular, double density_width) const {
-        std::vector<double> result;
-        radial_integral_into(distance, angular, density_width, result);
-        return result;
-    }
-
-    void lode_radial_integral_into(double k_norm, int angular, std::vector<double>& result) const {
-        std::vector<double> raw;
-        lode_radial_integral_into(k_norm, angular, result, raw);
-    }
-
     void lode_radial_integral_into(
         double k_norm, int angular, std::vector<double>& result,
         std::vector<double>& raw) const {
@@ -537,11 +389,6 @@ struct GtoRadialBasis {
         }
     }
 
-    std::vector<double> lode_radial_integral(double k_norm, int angular) const {
-        std::vector<double> result;
-        lode_radial_integral_into(k_norm, angular, result);
-        return result;
-    }
 };
 
 struct RadialBasisSet {
@@ -652,11 +499,6 @@ inline void real_spherical_harmonics_into(
             output[static_cast<std::size_t>(l * l + l - m)] = legendre_at(l, m) * sin_m;
         }
     }
-}
-
-inline void real_spherical_harmonics(const std::array<double, 3>& vector, int max_angular, std::vector<double>& output) {
-    std::vector<double> legendre;
-    real_spherical_harmonics_into(vector, max_angular, output, legendre);
 }
 
 inline double cutoff_value(double distance, double cutoff) {

@@ -12,47 +12,10 @@ from pathlib import Path
 CUDA_RUNTIME_LIBRARY_NAMES = ("libcudart",)
 CUDA_FORBIDDEN_LIBRARY_NAMES = ("libcublas", "libcublasLt")
 
-
-def _restore_paths(value, package_root=None):
-    if isinstance(value, str):
-        if package_root is not None and value.startswith("${PACKAGE_ROOT}/"):
-            return str(package_root / value.removeprefix("${PACKAGE_ROOT}/"))
-        if value.startswith("${PROJECT_ROOT}/"):
-            return str(Path(__file__).resolve().parents[1] / value.removeprefix("${PROJECT_ROOT}/"))
-    if isinstance(value, dict):
-        return {key: _restore_paths(item, package_root) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_restore_paths(item, package_root) for item in value]
-    return value
-
-
-def _batch(mdescriptor, path: Path, ids: tuple[str, ...]):
-    import numpy as np
-
-    with np.load(path) as arrays:
-        return mdescriptor.StructureBatch(
-            np.asarray(arrays["numbers"], dtype=np.int32),
-            np.asarray(arrays["positions"], dtype=np.float64),
-            np.asarray(arrays["cells"], dtype=np.float64),
-            np.asarray(arrays["pbc"], dtype=np.int32),
-            np.asarray(arrays["offsets"], dtype=np.int64),
-            ids,
-        )
-
-
-def _single_structure(mdescriptor, batch, index: int):
-    import numpy as np
-
-    begin = int(batch.offsets[index])
-    end = int(batch.offsets[index + 1])
-    return mdescriptor.StructureBatch(
-        batch.numbers[begin:end],
-        batch.positions[begin:end],
-        batch.cells[index : index + 1],
-        batch.pbc[index : index + 1],
-        np.asarray([0, end - begin], dtype=np.int64),
-        (batch.ids[index],),
-    )
+try:  # ``python scripts/verify_wheel.py`` has ``scripts`` on sys.path.
+    from external_reference import _batch_from_npz, _restore_paths, _single_structure
+except ImportError:  # imported as ``scripts.verify_wheel`` by the repository test suite
+    from scripts.external_reference import _batch_from_npz, _restore_paths, _single_structure
 
 
 def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
@@ -67,9 +30,9 @@ def _verify_golden_fixtures(mdescriptor, golden_dir: Path) -> None:
         )
         descriptor = mdescriptor.create_descriptor(configuration)
         try:
-            batch = _batch(mdescriptor, fixture_dir / case["input"], tuple(case["input_ids"]))
+            batch = _batch_from_npz(fixture_dir / case["input"], tuple(case["input_ids"]))
             compute_batch = (
-                _single_structure(mdescriptor, batch, 0)
+                _single_structure(batch, 0)
                 if case["nonperiodic"]["mode"] != "output"
                 else batch
             )

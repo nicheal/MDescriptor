@@ -1,5 +1,6 @@
 #include "mdescriptor/descriptor.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -22,8 +23,6 @@ using namespace detail;
 
 namespace {
 
-constexpr double kSoapPi = 3.141592653589793238462643383279502884;
-constexpr double kSoapSqrt2 = 1.414213562373095048801688724209698079;
 using Complex = std::complex<double>;
 
 std::string lower_copy(std::string value) {
@@ -182,7 +181,7 @@ std::vector<double> gaussian_overlap_column(const RadialBasis& basis) {
     double integral_n = 0.0;
     double norm_n = 1.0;
     double norm_np1 = radial_normalization(-2);
-    double integral_np1 = std::sqrt(kSoapPi / 2.0) * basis.sigma
+    double integral_np1 = std::sqrt(kPi / 2.0) * basis.sigma
         * std::erf(1.0 / (std::sqrt(2.0) * basis.sigma)) / norm_np1;
     double correction = sigma2;
     for (int n = -1; n <= basis.size - 1; ++n) {
@@ -191,7 +190,7 @@ std::vector<double> gaussian_overlap_column(const RadialBasis& basis) {
             + norm_np1 / norm_np2 * integral_np1 - correction / norm_np2;
         if (n > 0) {
             result[static_cast<std::size_t>(n - 1)] = integral_np2
-                * kSoapSqrt2 / std::sqrt(basis.sigma) / std::pow(kSoapPi, 0.25);
+                * kSqrt2 / std::sqrt(basis.sigma) / std::pow(kPi, 0.25);
         }
         correction *= 1.0;
         norm_n = norm_np1;
@@ -275,9 +274,9 @@ void radial_coefficients(
         amplitude *= options.central_weight[type];
     }
     if (options.radial_enhancement == 1) {
-        amplitude *= rj + std::sqrt(2.0 / kSoapPi) * atom_sigma_scaled;
+        amplitude *= rj + std::sqrt(2.0 / kPi) * atom_sigma_scaled;
     } else if (options.radial_enhancement == 2) {
-        amplitude *= rj * rj + sigma2 + std::sqrt(8.0 / kSoapPi) * atom_sigma_scaled * rj;
+        amplitude *= rj * rj + sigma2 + std::sqrt(8.0 / kPi) * atom_sigma_scaled * rj;
     }
     if (amplitude == 0.0) {
         return;
@@ -289,7 +288,7 @@ void radial_coefficients(
     double integral_n = 0.0;
     double norm_n = 1.0;
     double norm_np1 = radial_normalization(-2);
-    double integral_np1 = std::sqrt(kSoapPi / 2.0) * atom_sigma_scaled
+    double integral_np1 = std::sqrt(kPi / 2.0) * atom_sigma_scaled
         * (std::erf((soft - rj) / (std::sqrt(2.0) * atom_sigma_scaled))
             - std::erf(-rj / (std::sqrt(2.0) * atom_sigma_scaled))) / norm_np1;
     double correction_soft = hard == soft ? 0.0
@@ -322,7 +321,7 @@ void radial_coefficients(
         integral_n = 0.0;
         norm_n = 1.0;
         norm_np1 = radial_normalization(-2);
-        integral_np1 = std::sqrt(kSoapPi / 2.0) * filtered_sigma
+        integral_np1 = std::sqrt(kPi / 2.0) * filtered_sigma
             * (std::erf((hard - filtered_center) / (std::sqrt(2.0) * filtered_sigma))
                 - std::erf((soft - filtered_center) / (std::sqrt(2.0) * filtered_sigma))) / norm_np1;
         double filtered_correction = filtered_sigma2 / dr
@@ -347,10 +346,10 @@ void radial_coefficients(
         const double sigma_star = std::sqrt(basis.sigma * basis.sigma + sigma2);
         primitive[static_cast<std::size_t>(basis.size - 1)] = std::exp(
             -0.5 * rj * rj / (sigma_star * sigma_star))
-            * std::sqrt(kSoapPi / 2.0) * atom_sigma_scaled * basis.sigma / sigma_star
+            * std::sqrt(kPi / 2.0) * atom_sigma_scaled * basis.sigma / sigma_star
             * (1.0 + std::erf(basis.sigma / atom_sigma_scaled * rj
                 / (std::sqrt(2.0) * sigma_star)))
-            * std::sqrt(2.0 / basis.sigma) / std::pow(kSoapPi, 0.25);
+            * std::sqrt(2.0 / basis.sigma) / std::pow(kPi, 0.25);
     }
 
     for (int index = 0; index < basis.size; ++index) {
@@ -417,7 +416,7 @@ std::vector<AngularTerm> make_angular_terms(int l_max) {
             result.push_back({
                 l,
                 m,
-                std::sqrt((2.0 * l + 1.0) / (4.0 * kSoapPi)
+                std::sqrt((2.0 * l + 1.0) / (4.0 * kPi)
                     * factorial_l_minus_m / factorial_l_plus_m),
             });
         }
@@ -578,7 +577,7 @@ CompressionMap make_compression_map(const SoapTurboOptions& options) {
                         * (options.l_max + 1) / 2
                         + (second_compressed - first_compressed) * (options.l_max + 1) + l;
                     add(index, dense,
-                        first != second && first_compressed == second_compressed ? kSoapSqrt2 : 1.0);
+                        first != second && first_compressed == second_compressed ? kSqrt2 : 1.0);
                 } else {
                     const int index = (compressed_first * s2 * n2 + compressed_second)
                         * (options.l_max + 1) + l;
@@ -589,63 +588,16 @@ CompressionMap make_compression_map(const SoapTurboOptions& options) {
                     if (first == second) {
                         add(index, dense, 1.0);
                     } else if (index == swapped_index) {
-                        add(index, dense, kSoapSqrt2);
+                        add(index, dense, kSqrt2);
                     } else {
-                        add(index, dense, 1.0 / kSoapSqrt2);
-                        add(swapped_index, dense, 1.0 / kSoapSqrt2);
+                        add(index, dense, 1.0 / kSqrt2);
+                        add(swapped_index, dense, 1.0 / kSqrt2);
                     }
                 }
             }
         }
     }
     return result;
-}
-
-int effective_thread_count(std::int64_t structures, int requested_threads) {
-    int available = requested_threads;
-    if (available <= 0) {
-#ifdef _OPENMP
-        available = omp_get_max_threads();
-#else
-        available = 1;
-#endif
-    }
-    return std::max(1, static_cast<int>(std::min<std::int64_t>(structures, available)));
-}
-
-template <typename Function>
-void run_structures(
-    std::int64_t structures,
-    int requested_threads,
-    const std::shared_ptr<ComputeControl>& control,
-    Function&& function) {
-    const int threads = effective_thread_count(structures, requested_threads);
-    if (threads == 1) {
-        for (std::int64_t structure = 0; structure < structures; ++structure) {
-            if (control && control->cancelled()) {
-                continue;
-            }
-            function(structure);
-            mark_completed(control);
-        }
-        if (control && control->cancelled()) {
-            throw CancelledError();
-        }
-        return;
-    }
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(threads)
-#endif
-    for (std::int64_t structure = 0; structure < structures; ++structure) {
-        if (control && control->cancelled()) {
-            continue;
-        }
-        function(structure);
-        mark_completed(control);
-    }
-    if (control && control->cancelled()) {
-        throw CancelledError();
-    }
 }
 
 } // namespace
@@ -731,7 +683,7 @@ void compute_soap_turbo(
     const int threads = effective_thread_count(batch.structures, options.num_threads);
     const auto graph = build_neighbor_graph(batch, options.rcut_hard, control, threads);
 
-    run_structures(batch.structures, threads, control, [&](std::int64_t structure) {
+    run_parallel_structures(batch.structures, threads, control, [&](std::int64_t structure) {
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
         std::vector<Complex> coefficients(channel_count * static_cast<std::size_t>(packed_count));
@@ -764,7 +716,7 @@ void compute_soap_turbo(
                 for (int n = 0; n < options.alpha_max[type]; ++n) {
                     for (int k = 0; k < packed_count; ++k) {
                         coefficients[(offset + static_cast<std::size_t>(n)) * packed_count
-                            + static_cast<std::size_t>(k)] += 4.0 * kSoapPi
+                            + static_cast<std::size_t>(k)] += 4.0 * kPi
                             * radial[static_cast<std::size_t>(n)]
                             * angular[static_cast<std::size_t>(k)];
                     }
@@ -792,11 +744,11 @@ void compute_soap_turbo(
                 const double sigma_r = options.atom_sigma_r[center_type];
                 const double sigma_t = options.atom_sigma_t[center_type];
                 const double enhancement = options.radial_enhancement == 1
-                    ? std::sqrt(2.0 / kSoapPi) * sigma_r / options.rcut_hard
+                    ? std::sqrt(2.0 / kPi) * sigma_r / options.rcut_hard
                     : options.radial_enhancement == 2
                         ? sigma_r * sigma_r / (options.rcut_hard * options.rcut_hard) : 1.0;
                 const double prefactor = enhancement * options.central_weight[center_type]
-                    * std::sqrt(4.0 * kSoapPi) * std::pow(kSoapPi, 0.25)
+                    * std::sqrt(4.0 * kPi) * std::pow(kPi, 0.25)
                     * std::sqrt(sigma_r / 2.0) * std::pow(options.rcut_hard, 3.0)
                     / (sigma_t * sigma_t * sigma_r);
                 for (int n = 0; n < basis.size; ++n) {
@@ -819,7 +771,7 @@ void compute_soap_turbo(
                         double value = 0.0;
                         const int packed_offset = l * (l + 1) / 2;
                         for (int m = 0; m <= l; ++m) {
-                            const double multiplicity = (first != second ? kSoapSqrt2 : 1.0)
+                            const double multiplicity = (first != second ? kSqrt2 : 1.0)
                                 * (m > 0 ? 2.0 : 1.0);
                             const auto first_value = coefficients[first * packed_count
                                 + static_cast<std::size_t>(packed_offset + m)];

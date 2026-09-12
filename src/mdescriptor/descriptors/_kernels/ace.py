@@ -20,16 +20,10 @@ from ...core.adapter import DescriptorAdapter
 from ...core.errors import DescriptorConfigError
 from ...core.result import DescriptorResult
 from ...core.species import validate_batch_species
+from ..model_backed.graph import _ATOMIC_SYMBOLS
 from .core import StructureBatch, _as_batch, _cpp
 
-_PERIODIC_SYMBOLS = (
-    "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn "
-    "Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La "
-    "Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po "
-    "At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr Rf Db Sg Bh Hs Mt Ds Rg "
-    "Cn Nh Fl Mc Lv Ts Og"
-).split()
-_SYMBOL_TO_NUMBER = {symbol: index for index, symbol in enumerate(_PERIODIC_SYMBOLS, 1)}
+_SYMBOL_TO_NUMBER = {symbol: number for number, symbol in _ATOMIC_SYMBOLS.items()}
 
 
 def _ace_path(name: str) -> list[str] | None:
@@ -475,4 +469,4 @@ class _AceAdapterMixin(DescriptorAdapter):
         DescriptorAdapter._initialize(self, normalize_ace_options(options))
 
 
-__all__ = ["AceKernel", "normalize_ace_options", "normalize_ace_species"]
+__all__ = ["AceKernel"]

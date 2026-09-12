@@ -8,7 +8,11 @@ from copy import copy
 from os import PathLike, fspath
 from typing import Any, ClassVar, cast
 
-from ..registry.info import LEGACY_PARAMETER_ALIASES, validate_descriptor_parameters
+from ..registry.info import (
+    LEGACY_PARAMETER_ALIASES,
+    _validate_parameter_value,
+    validate_descriptor_parameters,
+)
 from .backends import BackendKernel, CpuBackend, CudaBackend
 from .control import ComputeControl
 from .descriptor import Descriptor, _input_error_path
@@ -18,13 +22,14 @@ from .errors import (
     UnsupportedPeriodicityError,
 )
 from .input import StructureBatch
+from .json_value import JSON_UNHANDLED, json_safe_value
 from .options import (
     CONFIGURATION_SCHEMA_VERSION,
     DescriptorConfiguration,
     ExecutionOptions,
     OutputOptions,
 )
-from .result import DescriptorResult, _json_safe, format_values
+from .result import DescriptorResult, _json_safe, _metadata_v1, format_values
 
 # The registry is the canonical declaration of constructor options.  The
 # aliases below are only a Python compatibility layer; they are not exposed
@@ -49,18 +54,11 @@ _IMPLEMENTATION_ONLY_OPTIONS = frozenset(
 def adapt_result(result: Any) -> DescriptorResult:
     """Convert a kernel result into the one public result schema."""
 
-    if isinstance(result, DescriptorResult):
-        return result
-    return DescriptorResult(
-        result.values,
-        result.level,
-        result.structure_ids,
-        result.row_offsets,
-        result.labels,
-        result.metadata,
-        getattr(result, "samples", None),
-        _atom_row_offsets=getattr(result, "_atom_row_offsets", None),
-    )
+    if not isinstance(result, DescriptorResult):
+        raise TypeError(
+            f"kernel compute must return DescriptorResult, got {type(result).__name__}"
+        )
+    return result
 
 
 def _coerce_options(value: Any, option_type: type[Any], name: str) -> Any:
@@ -85,8 +83,8 @@ def _constructor_parameters(kernel_type: type[Any]) -> dict[str, inspect.Paramet
     }
 
 
-def _builtin_parameter_names(name: str) -> frozenset[str] | None:
-    """Read canonical constructor names without importing a descriptor class."""
+def _builtin_info_field(name: str, attr: str) -> Mapping[str, Any] | None:
+    """Read one static info field from the registry without importing kernels."""
 
     try:
         # Import lazily: the registry must not import descriptor implementations
@@ -98,49 +96,16 @@ def _builtin_parameter_names(name: str) -> frozenset[str] | None:
         return None
     if spec.info is None:
         return None
-    return frozenset(str(option) for option in spec.info.parameters)
+    return getattr(spec.info, attr)
 
 
-def _builtin_parameter_schemas(name: str) -> Mapping[str, Any] | None:
-    """Read canonical parameter schemas without importing descriptor classes."""
+def _builtin_parameter_names(name: str) -> frozenset[str] | None:
+    """Read canonical constructor names without importing a descriptor class."""
 
-    try:
-        from ..registry.builtins import builtin_registry
-
-        spec = builtin_registry.get(name)
-    except (ImportError, KeyError):
+    parameters = _builtin_info_field(name, "parameters")
+    if parameters is None:
         return None
-    if spec.info is None:
-        return None
-    return spec.info.parameters
-
-
-def _builtin_input_capabilities(name: str) -> Mapping[str, Any] | None:
-    """Read input capabilities from the registry without importing kernels."""
-
-    try:
-        from ..registry.builtins import builtin_registry
-
-        spec = builtin_registry.get(name)
-    except (ImportError, KeyError):
-        return None
-    if spec.info is None:
-        return None
-    return spec.info.input
-
-
-def _builtin_execution_capabilities(name: str) -> Mapping[str, Any] | None:
-    """Read execution capabilities from the registry without loading kernels."""
-
-    try:
-        from ..registry.builtins import builtin_registry
-
-        spec = builtin_registry.get(name)
-    except (ImportError, KeyError):
-        return None
-    if spec.info is None:
-        return None
-    return spec.info.execution
+    return frozenset(str(option) for option in parameters)
 
 
 def _unsupported_input(
@@ -211,77 +176,37 @@ def _legacy_parameter_names(name: str) -> frozenset[str]:
     return frozenset(LEGACY_PARAMETER_ALIASES.get(name, {}))
 
 
-def _schema_value(value: Any) -> Any:
-    """Convert common direct-Python values to the JSON schema value shape."""
+def _schema_value_converter(value: Any) -> Any:
+    """Normalize live objects that a direct-Python parameter may carry."""
 
-    if isinstance(value, Mapping):
-        return {str(key): _schema_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_schema_value(item) for item in value]
     if isinstance(value, PathLike):
         raw = fspath(value)
         return raw.decode() if isinstance(raw, bytes) else str(raw)
     to_dict = getattr(value, "to_dict", None)
     if callable(to_dict):
-        return _schema_value(to_dict())
+        return to_dict()
     to_list = getattr(value, "tolist", None)
     if callable(to_list):
-        return _schema_value(to_list())
-    return value
+        return to_list()
+    return JSON_UNHANDLED
 
 
-def _validate_direct_parameter_type(
-    value: Any, schema: Mapping[str, Any], path: list[str]
-) -> None:
-    """Validate only types that Python kernels otherwise coerce silently.
+def _schema_value(value: Any) -> Any:
+    """Convert common direct-Python values to the JSON schema value shape.
 
-    Direct constructors retain a few historical, richer Python forms that are
-    intentionally represented by a simpler JSON schema (for example ACSF
-    parameter arrays).  Kernel validation remains responsible for those forms
-    and for semantic ranges, while this guard protects integer, boolean, and
-    numeric options from lossy conversion before configuration is snapshotted.
+    Values without a JSON representation (non-finite floats, live objects)
+    pass through unchanged; the schema ladders and the kernels own them.
     """
 
-    schema_type = schema.get("type")
-    if schema_type == "integer":
-        valid = (isinstance(value, int) and not isinstance(value, bool)) or (
-            isinstance(value, float) and value.is_integer()
+    try:
+        return json_safe_value(
+            value,
+            context="descriptor parameter",
+            scalar_keys=True,
+            converter=_schema_value_converter,
         )
-    elif schema_type == "number":
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
-    elif schema_type == "boolean":
-        valid = isinstance(value, bool)
-    elif schema_type == "string":
-        valid = isinstance(value, str)
-    elif schema_type == "species":
-        valid = isinstance(value, (list, tuple)) and all(
-            isinstance(item, int) and not isinstance(item, bool) for item in value
-        )
-    elif schema_type == "model":
-        valid = isinstance(value, str) or (
-            isinstance(value, Mapping) and value.get("__type__") == "ModelResource"
-        )
-    elif schema_type == "array":
-        item_values = value if isinstance(value, (list, tuple)) else (value,)
-        valid = isinstance(value, (list, tuple)) or (
-            isinstance(value, (int, float)) and not isinstance(value, bool)
-        )
-        item_schema = schema.get("items")
-        if valid and isinstance(item_schema, Mapping):
-            for index, item in enumerate(item_values):
-                _validate_direct_parameter_type(item, item_schema, [*path, str(index)])
-            return
-    else:
-        # ``object`` and ``enum`` have established direct-Python forms whose
-        # semantic validation belongs to the concrete kernel.
-        return
-
-    if not valid:
-        raise DescriptorConfigError(
-            f"descriptor parameter value does not match type {schema_type!r}",
-            code="invalid_parameter",
-            path=path,
-        )
+    except TypeError:
+        return value
 
 
 def _configuration_validation_path(
@@ -289,7 +214,7 @@ def _configuration_validation_path(
 ) -> list[str | int] | None:
     """Return the typed path of the first schema-invalid option, if any."""
 
-    schemas = _builtin_parameter_schemas(descriptor)
+    schemas = _builtin_info_field(descriptor, "parameters")
     if schemas is None:
         return None
     try:
@@ -407,7 +332,7 @@ class DescriptorAdapter(Descriptor):
             self, "_registry_execution_capabilities", None
         )
         if execution_capabilities is None:
-            execution_capabilities = _builtin_execution_capabilities(self.name)
+            execution_capabilities = _builtin_info_field(self.name, "execution")
         if execution_capabilities is not None:
             declared_devices = execution_capabilities.get("devices", ("cpu",))
         else:
@@ -594,7 +519,7 @@ class DescriptorAdapter(Descriptor):
     def _validate_public_parameters(self, options: Mapping[str, Any]) -> None:
         """Reject direct values that the kernel would silently coerce."""
 
-        schemas = _builtin_parameter_schemas(self.name)
+        schemas = _builtin_info_field(self.name, "parameters")
         if schemas is None:
             return
         parameters = {
@@ -605,8 +530,11 @@ class DescriptorAdapter(Descriptor):
         for name, schema in schemas.items():
             if name not in parameters or parameters[name] is None:
                 continue
-            _validate_direct_parameter_type(
-                _schema_value(parameters[name]), schema, ["parameters", name]
+            _validate_parameter_value(
+                _schema_value(parameters[name]),
+                schema,
+                ["parameters", name],
+                direct=True,
             )
 
     def _validate_public_call(self, kwargs: Mapping[str, Any]) -> None:
@@ -651,6 +579,16 @@ class DescriptorAdapter(Descriptor):
                 path=["species"],
             )
         self._initialize(options)
+
+    def __init__(self, **kwargs: Any) -> None:
+        # Public constructors are a keyword-only contract (see the per-class
+        # ``__signature__``).  Binding here keeps unknown and positional
+        # arguments failing at Python's boundary, before any kernel state
+        # exists, while one shared implementation serves every adapter.
+        signature = getattr(type(self), "__signature__", None)
+        if signature is not None:
+            signature.bind(**kwargs)
+        self._initialize_public(kwargs)
 
     @property
     def feature_count(self) -> int | None:
@@ -763,21 +701,31 @@ class DescriptorAdapter(Descriptor):
         Native metadata is often assembled lazily by ``compute``.  Closing a
         descriptor before its first call must nevertheless leave a useful,
         schema-valid snapshot, so the wrapper supplies the fixed fields here
-        and keeps backend-specific values under ``details``.
+        and keeps backend-specific values under ``details``.  The envelope
+        shape and validation stay with the shared result normalizer.
         """
 
         raw = dict(candidate)
-        descriptor = raw.pop("descriptor", self.name)
-        backend = raw.pop("backend", "unknown")
+        # The wrapper owns the representation fields; discard whatever the
+        # backend reported so the resolved options below win.
         level = raw.pop("level", None)
-        raw.pop("schema_version", None)
-        raw.pop("feature_count", None)
-        raw.pop("output", None)
-        raw.pop("execution", None)
-        raw.pop("dtype", None)
-        raw.pop("sparse", None)
-        raw.pop("device", None)
-        raw.pop("num_threads", None)
+        for name in (
+            "schema_version",
+            "output",
+            "execution",
+            "dtype",
+            "sparse",
+            "device",
+            "num_threads",
+        ):
+            raw.pop(name, None)
+        if level is None:
+            try:
+                from ..registry.builtins import builtin_registry
+
+                level = builtin_registry.get(self.name).level
+            except (ImportError, KeyError):  # pragma: no cover - direct private use
+                level = "unknown"
         model = raw.pop("model", None)
         resource = getattr(self, "model_resource", None)
         if resource is not None:
@@ -791,38 +739,17 @@ class DescriptorAdapter(Descriptor):
                 "digest": resolved.digest,
                 "source": resolved.source,
             }
-        if level is None:
-            try:
-                from ..registry.builtins import builtin_registry
-
-                level = builtin_registry.get(self.name).level
-            except (ImportError, KeyError):  # pragma: no cover - direct private use
-                level = "unknown"
-        details = raw.pop("details", None)
-        if details is not None and not isinstance(details, Mapping):
-            raise TypeError("metadata details must be a JSON object")
-        details_value = dict(details or {})
-        details_value.update(raw)
-        normalized: dict[str, Any] = {
-            "schema_version": 1,
-            "descriptor": descriptor,
-            "backend": backend,
-            "level": level,
-            "feature_count": self.feature_count,
-            "output": {
-                "dtype": self._output_options.dtype,
-                "sparse": self._output_options.sparse,
-            },
-            "execution": {
-                "device": self._execution_options.device,
-                "num_threads": self._execution_options.num_threads,
-            },
-        }
         if model is not None:
-            normalized["model"] = model
-        if details_value:
-            normalized["details"] = details_value
-        return _json_safe(normalized)
+            raw["model"] = model
+        raw["output"] = {
+            "dtype": self._output_options.dtype,
+            "sparse": self._output_options.sparse,
+        }
+        raw["execution"] = {
+            "device": self._execution_options.device,
+            "num_threads": self._execution_options.num_threads,
+        }
+        return _metadata_v1(raw, level, self.feature_count)
 
     def _compute_batch(
         self,
@@ -858,40 +785,6 @@ def _public_signature(
     """Expose a useful constructor signature without forwarding old names."""
 
     parameters = list(_constructor_parameters(kernel_type).values())
-    if any(parameter.kind is inspect.Parameter.VAR_POSITIONAL for parameter in parameters):
-        # A few older kernel subclasses used ``*args`` only to forward the
-        # parent constructor. Reconstruct that parent signature so the public class
-        # does not advertise an unbounded positional escape hatch.
-        own_parameters = [
-            parameter
-            for parameter in parameters
-            if parameter.kind
-            not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
-        ]
-        for parent in kernel_type.__mro__[1:]:
-            if parent is object:
-                break
-            parent_parameters = list(_constructor_parameters(parent).values())
-            if not any(
-                parameter.kind is inspect.Parameter.VAR_POSITIONAL
-                for parameter in parent_parameters
-            ):
-                parent_parameters = [
-                    parameter
-                    for parameter in parent_parameters
-                    if parameter.kind is not inspect.Parameter.VAR_KEYWORD
-                ]
-                names = {parameter.name for parameter in parent_parameters}
-                parameters = [
-                    *parent_parameters,
-                    *[parameter for parameter in own_parameters if parameter.name not in names],
-                    *[
-                        parameter
-                        for parameter in _constructor_parameters(kernel_type).values()
-                        if parameter.kind is inspect.Parameter.VAR_KEYWORD
-                    ],
-                ]
-                break
     model_backed = hasattr(base, "model_keyword")
     visible_options = set(allowed_options or ())
     if model_backed:
@@ -981,7 +874,7 @@ def adapter_class(
         if requires_species is None
         else bool(requires_species)
     )
-    declared_execution = _builtin_execution_capabilities(name)
+    declared_execution = _builtin_info_field(name, "execution")
     declared_devices = (
         declared_execution.get("devices", ("cpu",))
         if declared_execution is not None
@@ -1000,26 +893,12 @@ def adapter_class(
     resolved_input_capabilities = (
         input_capabilities
         if input_capabilities is not None
-        else _builtin_input_capabilities(name)
+        else _builtin_info_field(name, "input")
     )
 
-    # Generate a real keyword-only ``__init__`` rather than relying solely on
-    # ``__signature__``.  This makes positional calls and unknown options fail
-    # at Python's boundary before they can reach a private kernel.
-    parameter_names = [parameter.name for parameter in signature.parameters.values()]
-    source = "def __init__(self, *, " + ", ".join(parameter_names) + "):\n"
-    source += "    self._initialize_public({" + ", ".join(
-        f"{name!r}: {name}" for name in parameter_names
-    ) + "})\n"
-    namespace: dict[str, Any] = {}
-    exec(compile(source, f"<{module}.{name}.__init__>", "exec"), namespace)
-    public_init = namespace["__init__"]
-    public_init.__kwdefaults__ = {
-        parameter.name: parameter.default
-        for parameter in signature.parameters.values()
-        if parameter.default is not inspect.Parameter.empty
-    }
-
+    # ``__signature__`` plus the shared keyword-only ``DescriptorAdapter``
+    # ``__init__`` make positional calls and unknown options fail at Python's
+    # boundary before they can reach a private kernel.
     return type(
         name,
         (base,),
@@ -1035,6 +914,5 @@ def adapter_class(
             "__module__": module,
             "__doc__": kernel_type.__doc__ or f"{name} descriptor.",
             "__signature__": signature,
-            "__init__": public_init,
         },
     )

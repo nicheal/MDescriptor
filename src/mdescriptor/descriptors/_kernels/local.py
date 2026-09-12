@@ -12,36 +12,19 @@ from typing import Any
 import numpy as np
 
 from ...core.result import pair_samples
-from ...core.species import require_species, validate_batch_species
+from ._base import _AtomKernel, _cpp_metadata, _threads
 from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
-
-
-class _AtomKernel:
-    name = "descriptor"
-
-    def __init__(self, species: Iterable[int] | None = None, num_threads: int | None = None):
-        self.species = require_species(species, descriptor=self.__class__.name)
-        self.num_threads = 0 if num_threads is None else int(num_threads)
-        if self.num_threads < 0:
-            raise ValueError("num_threads must be non-negative")
-
-    def _species_for(self, batch: StructureBatch) -> tuple[int, ...]:
-        return validate_batch_species(batch, self.species, descriptor=self.name)
-
-    @property
-    def feature_count(self) -> int:
-        return int(getattr(self, "_feature_count", 0))
 
 
 def _atom_result(values: np.ndarray, batch: StructureBatch, name: str, species: tuple[int, ...], *, level: str = "atom", offsets: np.ndarray | None = None, metadata: dict[str, Any] | None = None) -> DescriptorResult:
     values = np.asarray(values, dtype=np.float64)
-    details = {"backend": "mdescriptor-cpp", "descriptor": name, "species": species}
+    details = _cpp_metadata(name, species=species)
     if metadata:
         details.update(metadata)
     return DescriptorResult(values, level, batch.ids, offsets, tuple(f"{name}:{index}" for index in range(values.shape[1])), details)
 
 
-class AtomicCompositionKernel:
+class AtomicCompositionKernel(_AtomKernel):
     name = "AtomicComposition"
 
     def __init__(
@@ -50,11 +33,8 @@ class AtomicCompositionKernel:
         per_system: bool = True,
         num_threads: int | None = None,
     ):
-        self.species = require_species(species, descriptor=self.name)
+        super().__init__(species, num_threads)
         self.per_system = bool(per_system)
-        self.num_threads = 0 if num_threads is None else int(num_threads)
-        if self.num_threads < 0:
-            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -62,7 +42,7 @@ class AtomicCompositionKernel:
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
-        species = validate_batch_species(batch, self.species, descriptor=self.name)
+        species = self._species_for(batch)
         self.species = species
         values = _cpp.compute_atomic_composition(
             batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
@@ -102,11 +82,9 @@ class NeighborListKernel:
         num_threads: int | None = None,
     ):
         self.cutoff, self.full_neighbor_list, self.self_pairs = float(cutoff), bool(full_neighbor_list), bool(self_pairs)
-        self.num_threads = 0 if num_threads is None else int(num_threads)
+        self.num_threads = _threads(num_threads)
         if self.cutoff <= 0.0:
             raise ValueError("cutoff must be positive")
-        if self.num_threads < 0:
-            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -129,15 +107,10 @@ class NeighborListKernel:
             batch.ids,
             offsets,
             self._feature_labels,
-            {"backend": "mdescriptor-cpp", "descriptor": self.name},
+            _cpp_metadata(self.name),
             samples=pair_samples(records, offsets, batch.offsets),
             _atom_row_offsets=batch.offsets.copy(),
         )
-
-    def pairs(self, value: StructureBatch | Sequence[Any] | Any) -> list[np.ndarray]:
-        batch = _as_batch(value)
-        values, offsets = self._raw(batch)
-        return [values[int(offsets[index]):int(offsets[index + 1])] for index in range(batch.structures)]
 
 
 class SphericalExpansionKernel(_AtomKernel):
@@ -238,7 +211,7 @@ class SphericalExpansionByPairKernel(SphericalExpansionKernel):
             batch.ids,
             offsets,
             tuple(f"{self.name}:{i}" for i in range(values.shape[1])),
-            {"backend": "mdescriptor-cpp", "descriptor": self.name, "species": species},
+            _cpp_metadata(self.name, species=species),
             samples=pair_samples(identifiers[:, :5], offsets, batch.offsets),
             _atom_row_offsets=batch.offsets.copy(),
         )

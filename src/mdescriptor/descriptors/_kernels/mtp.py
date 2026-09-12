@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
 
-from ...core.result import format_values
 from ...core.species import require_species, validate_batch_species
+from ._base import _cpp_metadata, _Kernel, _optional_threads, _validate_dtype
 from .core import (
-    DescriptorResult,
     StructureBatch,
-    _as_batch,
     _cpp,
 )
 
 
-class MtpKernel:
+class MtpKernel(_Kernel):
     """Rotationally invariant moment-tensor basis for periodic structures.
 
     The radial channels use cutoff-squared Chebyshev functions.  Each channel
@@ -40,14 +38,9 @@ class MtpKernel:
         model_digest: str | None = None,
         min_dist: float = 0.0,
         max_dist: float | None = None,
-        r_cut: float | None = None,
-        cutoff: float | None = None,
         radial_basis_size: int = 4,
         radial_funcs_count: int = 1,
         max_rank: int | None = None,
-        l_max: int | None = None,
-        max_level: int | None = None,
-        level: int | None = None,
         radial_basis_type: str = "RBChebyshev",
         dtype: str = "float64",
         sparse: bool = False,
@@ -60,26 +53,14 @@ class MtpKernel:
             raise ValueError("model must not be empty")
         self._official = self.model_path is not None
         self.min_dist = float(min_dist)
-        max_dist = max_dist if max_dist is not None else (r_cut if r_cut is not None else (cutoff if cutoff is not None else 5.0))
-        self.max_dist = float(max_dist)
+        self.max_dist = float(max_dist if max_dist is not None else 5.0)
         self.radial_basis_size = int(radial_basis_size)
         self.radial_funcs_count = int(radial_funcs_count)
-        rank = max_rank if max_rank is not None else l_max
-        if rank is None:
-            level_value = max_level if max_level is not None else level
-            rank = (
-                2
-                if level_value is None
-                else min(5, max(0, int(level_value) - 2))
-            )
-        assert rank is not None
-        self.max_rank = int(rank)
+        self.max_rank = int(2 if max_rank is None else max_rank)
         self.radial_basis_type = str(radial_basis_type)
-        self.dtype = str(dtype)
+        self.dtype = _validate_dtype(dtype)
         self.sparse = bool(sparse)
-        self.num_threads = num_threads
-        if self.dtype not in {"float32", "float64"}:
-            raise ValueError("dtype must be 'float32' or 'float64'")
+        self.num_threads = _optional_threads(num_threads)
         if not self._official and self.radial_basis_type not in {"RBChebyshev", "Chebyshev", "polynomial"}:
             raise ValueError("unsupported MTP radial_basis_type")
         if not self._official and (self.min_dist < 0.0 or self.max_dist <= self.min_dist):
@@ -88,8 +69,6 @@ class MtpKernel:
             raise ValueError("MTP radial basis sizes must be positive")
         if not self._official and (self.max_rank < 0 or self.max_rank > 5):
             raise ValueError("MTP max_rank must be between 0 and 5")
-        if self.num_threads is not None and int(self.num_threads) <= 0:
-            raise ValueError("num_threads must be a positive integer or None")
         self._native: Any = None
         self._closed = False
         self._feature_count = 0
@@ -178,27 +157,6 @@ class MtpKernel:
         self.species = validate_batch_species(batch, self.species, descriptor=self.name)
         self._create_native()
 
-    def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
-        batch = _as_batch(value)
-        self._ensure_native(batch)
-        values = self._native.compute(
-            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, control
-        )
-        values = format_values(np.asarray(values), dtype=self.dtype, sparse=self.sparse)
-        return DescriptorResult(
-            values,
-            "atom",
-            batch.ids,
-            batch.offsets.copy(),
-            self._labels(),
-            self._metadata(),
-        )
-
-    def close(self) -> None:
-        self._closed = True
-        if self._native is not None:
-            self._native.close()
-
     def _labels(self) -> tuple[str, ...]:
         if not self.species:
             return ()
@@ -248,24 +206,23 @@ class MtpKernel:
         if self._official and self._native is not None:
             official_format = str(getattr(self._native, "official_format", "MLIP-2"))
             official_mlip4 = bool(getattr(self._native, "official_mlip4", False))
-        return {
-            "backend": "mdescriptor-cpp",
-            "descriptor": self.name,
-            "species": self.species,
-            "model_path": self.model_path,
-            "official_model": self._official,
-            "official_format": official_format,
-            "official_mlip4": official_mlip4,
-            "feature_count": self.feature_count,
-            "min_dist": min_dist,
-            "max_dist": max_dist,
-            "radial_basis_type": radial_basis_type,
-            "radial_basis_size": radial_basis_size,
-            "radial_funcs_count": radial_funcs_count,
-            "max_rank": self.max_rank,
-            "dtype": self.dtype,
-            "sparse": self.sparse,
-        }
+        return _cpp_metadata(
+            self.name,
+            species=self.species,
+            model_path=self.model_path,
+            official_model=self._official,
+            official_format=official_format,
+            official_mlip4=official_mlip4,
+            feature_count=self.feature_count,
+            min_dist=min_dist,
+            max_dist=max_dist,
+            radial_basis_type=radial_basis_type,
+            radial_basis_size=radial_basis_size,
+            radial_funcs_count=radial_funcs_count,
+            max_rank=self.max_rank,
+            dtype=self.dtype,
+            sparse=self.sparse,
+        )
 
 
 __all__ = ["MtpKernel"]

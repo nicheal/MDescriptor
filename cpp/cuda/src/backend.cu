@@ -300,7 +300,7 @@ __global__ void write_neighbor_records(
         const std::int32_t shift_x = graph_shifts[index * 3 + 0];
         const std::int32_t shift_y = graph_shifts[index * 3 + 1];
         const std::int32_t shift_z = graph_shifts[index * 3 + 2];
-        if (!self_pairs && atom == center && shift_x == 0 && shift_y == 0 && shift_z == 0) {
+        if (!self_pairs && exact_self_edge(center, atom, shift_x, shift_y, shift_z)) {
             continue;
         }
         if (!full_neighbor_list && !detail::keep_half_neighbor(
@@ -340,8 +340,7 @@ __global__ void count_filtered_neighbor_records(
     for (std::int64_t index = begin; index < end; ++index) {
         const std::int32_t atom = graph_atoms[index];
         const std::int32_t* shift = graph_shifts + index * 3;
-        if (!self_pairs && atom == center
-            && shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
+        if (!self_pairs && exact_self_edge(center, atom, graph_shifts, index)) {
             continue;
         }
         if (!full_neighbor_list && !detail::keep_half_neighbor(

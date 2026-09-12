@@ -1,8 +1,40 @@
+from math import sqrt
+from typing import Any
+
 import numpy as np
 
 from mdescriptor.descriptors._kernels.core import _build_neighbor_graph
-from mdescriptor.descriptors._kernels.extra import _periodic_neighbors
 from tests._public import NeighborList, StructureBatch
+
+
+def _periodic_neighbors(
+    batch: StructureBatch,
+    structure: int,
+    cutoff: float,
+    *,
+    include_self: bool = False,
+) -> list[list[tuple[int, np.ndarray, float, tuple[int, int, int]]]]:
+    start, stop = int(batch.offsets[structure]), int(batch.offsets[structure + 1])
+    offsets, atoms, shifts, displacements, distance2 = _build_neighbor_graph(
+        batch.numbers[start:stop], batch.positions[start:stop], batch.cells[structure], batch.pbc[structure], float(cutoff)
+    )
+    result: list[list[tuple[int, np.ndarray[Any, Any], float, tuple[int, int, int]]]] = []
+    for center in range(stop - start):
+        neighbors = []
+        for index in range(int(offsets[center]), int(offsets[center + 1])):
+            shift: tuple[int, int, int] = tuple(int(value) for value in shifts[index])  # type: ignore[assignment]
+            atom = int(atoms[index])
+            if not include_self and atom == center and shift == (0, 0, 0):
+                continue
+            neighbors.append((
+                atom,
+                np.asarray(displacements[index], dtype=np.float64),
+                sqrt(max(float(distance2[index]), 0.0)),
+                shift,
+            ))
+        result.append(neighbors)
+    return result
+
 
 
 def test_native_neighbor_graph_matches_bruteforce_periodic_images():

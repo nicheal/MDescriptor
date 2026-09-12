@@ -490,13 +490,27 @@ def validate_descriptor_parameters(
             )
 
 
-def _validate_parameter_value(value: Any, schema: Mapping[str, Any], path: list[str]) -> None:
-    """Validate one JSON value using the restricted descriptor schema dialect."""
+def _validate_parameter_value(
+    value: Any,
+    schema: Mapping[str, Any],
+    path: list[str],
+    *,
+    direct: bool = False,
+) -> None:
+    """Validate one JSON value using the restricted descriptor schema dialect.
+
+    ``direct=True`` narrows the check to the lossy-conversion guard used by
+    the direct Python constructors: ``object``/``enum`` forms keep their
+    richer Python shapes, and enum membership, bounds, and nesting stay with
+    the kernel and configuration validation.
+    """
 
     # ``None`` is the canonical JSON spelling for an omitted optional value.
     # Several kernels intentionally use it to request their own derived
     # default, so it is legal even when the semantic type is otherwise scalar.
-    if value is None:
+    # Direct constructors never receive ``None`` at the top level, and a
+    # ``None`` inside a direct array remains a type error.
+    if value is None and not direct:
         if schema.get("required", False):
             raise DescriptorConfigError(
                 "required descriptor parameter cannot be null",
@@ -506,16 +520,20 @@ def _validate_parameter_value(value: Any, schema: Mapping[str, Any], path: list[
         return
 
     schema_type = schema["type"]
+    if direct and schema_type in {"object", "enum"}:
+        return
     valid = True
     if schema_type == "integer":
         valid = (isinstance(value, int) and not isinstance(value, bool)) or (
-            isinstance(value, float) and math.isfinite(value) and value.is_integer()
+            isinstance(value, float) and value.is_integer()
         )
     elif schema_type == "number":
         valid = (
             isinstance(value, (int, float))
             and not isinstance(value, bool)
-            and (not isinstance(value, float) or math.isfinite(value))
+            # Direct constructors let non-finite numbers through so the kernel
+            # keeps its established, more specific diagnostic.
+            and (direct or not isinstance(value, float) or math.isfinite(value))
         )
     elif schema_type == "boolean":
         valid = isinstance(value, bool)
@@ -531,7 +549,7 @@ def _validate_parameter_value(value: Any, schema: Mapping[str, Any], path: list[
             and value.get("__type__") == "ModelResource"
         ):
             valid = True
-        else:
+        elif not direct:
             raise DescriptorConfigError(
                 "serialized model must be a path string or a ModelResource object",
                 code="invalid_parameter",
@@ -553,6 +571,17 @@ def _validate_parameter_value(value: Any, schema: Mapping[str, Any], path: list[
             code="invalid_parameter",
             path=path,
         )
+
+    if direct:
+        if schema_type == "array":
+            item_schema = schema.get("items")
+            if isinstance(item_schema, Mapping):
+                item_values = value if isinstance(value, (list, tuple)) else (value,)
+                for index, item in enumerate(item_values):
+                    _validate_parameter_value(
+                        item, item_schema, [*path, str(index)], direct=True
+                    )
+        return
 
     enum_values = schema.get("enum")
     if enum_values is not None and value not in enum_values:

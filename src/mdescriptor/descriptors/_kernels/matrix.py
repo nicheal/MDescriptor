@@ -34,6 +34,13 @@ def _complete_empty_batch(control: Any, structures: int) -> None:
 
 class _MatrixKernel(_StructureKernel):
     kind = "sine"
+    # Ewald-only parameters; the base classes declare the contract the shared
+    # compute() reads so no getattr probing is needed.
+    accuracy: float = 1e-5
+    w: float = 1.0
+    r_cut: float | None = None
+    g_cut: float | None = None
+    a: float | None = None
 
     def __init__(
         self,
@@ -66,10 +73,10 @@ class _MatrixKernel(_StructureKernel):
             values = _cpp.compute_matrix(
                 batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets,
                 max_atoms, self.permutation, self.exponent, _MATRIX_KINDS[self.kind],
-                getattr(self, "accuracy", 1e-5), getattr(self, "w", 1.0),
-                float(getattr(self, "r_cut", 0.0) or 0.0),
-                float(getattr(self, "g_cut", 0.0) or 0.0),
-                float(getattr(self, "a", 0.0) or 0.0), self.num_threads, control,
+                self.accuracy, self.w,
+                float(self.r_cut or 0.0),
+                float(self.g_cut or 0.0),
+                float(self.a or 0.0), self.num_threads, control,
             )
         self._feature_count = int(values.shape[1])
         return DescriptorResult(

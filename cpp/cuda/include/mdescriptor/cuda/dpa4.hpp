@@ -26,7 +26,6 @@ public:
     DeviceDpa4Model& operator=(const DeviceDpa4Model&) = delete;
     ~DeviceDpa4Model() noexcept;
 
-    std::int64_t feature_count() const noexcept;
     double cutoff() const noexcept;
 
     std::vector<double> compute(

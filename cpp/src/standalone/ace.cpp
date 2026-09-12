@@ -43,7 +43,7 @@ constexpr int kLapackRowMajor = 101;
 using detail::StructureBatchView;
 using detail::Vec3;
 
-constexpr double kPi = 3.141592653589793238462643383279502884;
+using detail::kPi;
 constexpr int kQuadraturePoints = 1000;
 constexpr double kRankTolerance = 1e-7;
 

@@ -241,15 +241,3 @@ BASELINES: Final[dict[str, dict[str, str]]] = {
 STATIC_GOLDEN_KINDS: Final[frozenset[str]] = frozenset(
     {"ace1_julia_source", "licensed_external_mlff_source", "deepmd_kit", "external_upstream"}
 )
-
-
-def external_runtime_baselines() -> dict[str, dict[str, str]]:
-    """Return descriptors with a pinned provider smoke test."""
-
-    return {name: dict(data) for name, data in BASELINES.items() if "marker" in data}
-
-
-def external_static_baselines() -> dict[str, dict[str, str]]:
-    """Return the committed external-golden subset."""
-
-    return {name: dict(data) for name, data in BASELINES.items() if data["kind"] == "external_static"}

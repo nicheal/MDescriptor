@@ -442,8 +442,8 @@ __device__ std::int64_t enumerate_dpa_candidates(
                 }
                 for (std::int64_t neighbor = begin + thread;
                      neighbor < end; neighbor += blockDim.x) {
-                    if (!include_exact_self && neighbor == center
-                        && sx == 0 && sy == 0 && sz == 0) {
+                    if (!include_exact_self
+                        && exact_self_edge(center, neighbor, sx, sy, sz)) {
                         continue;
                     }
                     const double raw_dx = normalized[neighbor * 3 + 0] + tx - cx;
@@ -501,13 +501,6 @@ __device__ std::int64_t enumerate_dpa_candidates(
         }
     }
     return count;
-}
-
-template <typename Value>
-__device__ void swap_dpa_value(Value& left, Value& right) {
-    const Value saved = left;
-    left = right;
-    right = saved;
 }
 
 __device__ bool dpa_edge_precedes(
@@ -700,8 +693,8 @@ __device__ std::int64_t enumerate_canonical_graph_candidates(
                     const std::int32_t entry = cell_atoms[offset];
                     const std::int32_t atom = extended_atoms[entry];
                     const std::int32_t* shift = extended_shifts + entry * 3;
-                    if (!include_exact_self && atom == center
-                        && shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
+                    if (!include_exact_self
+                        && exact_self_edge(center, atom, extended_shifts, entry)) {
                         continue;
                     }
                     const double* neighbor = extended_positions + entry * 3;
@@ -908,13 +901,13 @@ __global__ void sort_dpa_neighbors_kernel(
         while (current > begin && dpa_edge_precedes(
             current, current - 1, graph_atoms, graph_shifts,
             graph_distance2, tie_break_shifts)) {
-            swap_dpa_value(graph_atoms[current], graph_atoms[current - 1]);
-            swap_dpa_value(graph_distance2[current], graph_distance2[current - 1]);
+            thrust::swap(graph_atoms[current], graph_atoms[current - 1]);
+            thrust::swap(graph_distance2[current], graph_distance2[current - 1]);
             for (int axis = 0; axis < 3; ++axis) {
-                swap_dpa_value(
+                thrust::swap(
                     graph_shifts[current * 3 + axis],
                     graph_shifts[(current - 1) * 3 + axis]);
-                swap_dpa_value(
+                thrust::swap(
                     graph_displacements[current * 3 + axis],
                     graph_displacements[(current - 1) * 3 + axis]);
             }
@@ -959,11 +952,6 @@ void DeviceNeighborGraph::upload(
         throw;
     }
     pairs_ = atoms.size();
-    max_neighbors_ = 0;
-    for (std::size_t center = 0; center + 1 < offsets.size(); ++center) {
-        max_neighbors_ = std::max(
-            max_neighbors_, offsets[center + 1] - offsets[center]);
-    }
     slot_major_ = false;
     neighbor_stride_ = 0;
 }
@@ -1160,9 +1148,6 @@ void DeviceNeighborGraph::build_canonical_graph(
         "could not clear CUDA canonical graph offset zero");
     thrust::inclusive_scan(
         execution_policy, neighbor_counts_, neighbor_counts_ + atom_count, offsets_ + 1);
-    const std::int32_t host_max_neighbors = thrust::reduce(
-        execution_policy, neighbor_counts_, neighbor_counts_ + atom_count,
-        std::int32_t{0}, thrust::maximum<std::int32_t>());
     std::int64_t host_pairs = 0;
     std::int32_t host_overflow = 0;
     check_cuda(
@@ -1201,7 +1186,6 @@ void DeviceNeighborGraph::build_canonical_graph(
         check_cuda(cudaGetLastError(), "CUDA canonical graph neighbor fill failed");
     }
     pairs_ = pairs;
-    max_neighbors_ = static_cast<std::int64_t>(host_max_neighbors);
     slot_major_ = false;
     neighbor_stride_ = 0;
 }
@@ -1232,7 +1216,6 @@ void DeviceNeighborGraph::build_dpa(
         throw CudaOutOfMemory("CUDA DPA batch is too large for graph index types");
     }
     pairs_ = 0;
-    max_neighbors_ = 0;
     slot_major_ = false;
     neighbor_stride_ = 0;
     if (host_batch.atoms == 0) return;
@@ -1420,9 +1403,6 @@ void DeviceNeighborGraph::build_dpa(
     const auto execution_policy = thrust::cuda::par.on(stream);
     thrust::inclusive_scan(
         execution_policy, neighbor_counts_, neighbor_counts_ + atom_count, offsets_ + 1);
-    const std::int32_t host_max_neighbors = thrust::reduce(
-        execution_policy, neighbor_counts_, neighbor_counts_ + atom_count,
-        std::int32_t{0}, thrust::maximum<std::int32_t>());
     std::int64_t host_pairs = 0;
     std::int32_t host_overflow = 0;
     check_cuda(
@@ -1463,7 +1443,6 @@ void DeviceNeighborGraph::build_dpa(
         displacements_, distance2_, tie_break_shifts, neighbor_overflow_);
     check_cuda(cudaGetLastError(), "CUDA DPA graph ordering failed");
     pairs_ = pairs;
-    max_neighbors_ = static_cast<std::int64_t>(host_max_neighbors);
 }
 
 template <typename Value>
@@ -1766,7 +1745,6 @@ void DeviceNeighborGraph::clear() noexcept {
     release(canonical_extended_shifts_);
     release(canonical_extended_positions_);
     pairs_ = 0;
-    max_neighbors_ = 0;
     slot_major_ = false;
     neighbor_stride_ = 0;
     offsets_capacity_ = 0;

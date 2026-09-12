@@ -336,7 +336,6 @@ def test_descriptor_info_does_not_leak_registry_only_optional_fields():
         mdescriptor.AssetPolicy.NONE,
         "cpp",
         "structure",
-        optional_extra="test-only",
         info=info,
     )
     registry = DescriptorRegistry([spec])

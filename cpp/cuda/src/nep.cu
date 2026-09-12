@@ -10,6 +10,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -446,45 +447,13 @@ __device__ __forceinline__ void write_angular_channels(
     const float* scalers,
     double* row) {
     int channel = 0;
-    if (l_max >= 1) {
+    // find_q_one dispatches any angular order; model validation caps l_max<=8.
+    for (int angular = 1; angular <= l_max; ++angular) {
         const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(1, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 2) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(2, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 3) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(3, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 4) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(4, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 5) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(5, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 6) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(6, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 7) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(7, s))
-            * static_cast<double>(scalers[index]);
-    }
-    if (l_max >= 8) {
-        const int index = radial_count + channel++ * angular_count + n;
-        if (index < dimension) row[index] = static_cast<double>(find_q_one(8, s))
-            * static_cast<double>(scalers[index]);
+        if (index < dimension) {
+            row[index] = static_cast<double>(find_q_one(angular, s))
+                * static_cast<double>(scalers[index]);
+        }
     }
     if (has_q_222) {
         const int index = radial_count + channel++ * angular_count + n;
@@ -770,11 +739,11 @@ __global__ void reduce_expanded_nep_kernel(
 DeviceNepModel::DeviceNepModel(
     CudaExecutionContext& context,
     const mdescriptor::NepDescriptorParameters& parameters)
-    : version_(parameters.version), num_types_(parameters.num_types),
+    : num_types_(parameters.num_types),
       n_max_radial_(parameters.n_max_radial), n_max_angular_(parameters.n_max_angular),
       basis_size_radial_(parameters.basis_size_radial),
       basis_size_angular_(parameters.basis_size_angular), l_max_(parameters.l_max),
-      num_l_(parameters.num_l), dimension_(parameters.dimension),
+      dimension_(parameters.dimension),
       radial_cutoff_max_(parameters.radial_cutoff_max),
       angular_cutoff_max_(parameters.angular_cutoff_max),
       has_q_222_(parameters.has_q_222), has_q_1111_(parameters.has_q_1111),
@@ -787,7 +756,8 @@ DeviceNepModel::DeviceNepModel(
     if (n_max_radial_ < 0 || n_max_radial_ > 12 || n_max_angular_ < 0 || n_max_angular_ > 8
         || basis_size_radial_ < 0 || basis_size_radial_ > 16
         || basis_size_angular_ < 0 || basis_size_angular_ > 16
-        || l_max_ < 0 || l_max_ > 8 || num_l_ < 0 || num_l_ > 14) {
+        || l_max_ < 0 || l_max_ > 8
+        || parameters.num_l < 0 || parameters.num_l > 14) {
         throw std::invalid_argument("unsupported NEP descriptor model dimensions");
     }
     const std::size_t type_pairs = static_cast<std::size_t>(num_types_) * num_types_;
@@ -889,28 +859,24 @@ std::vector<double> compute_nep(
     constexpr unsigned int block_size = 128;
     const auto blocks = static_cast<unsigned int>(
         (expanded_atoms + block_size - 1) / block_size);
+    // One launch site; the bool only selects the kernel's compile-time radial
+    // accumulation strategy.
+    auto launch_compute_nep = [&](auto reference_radial) {
+        compute_nep_kernel<decltype(reference_radial)::value><<<blocks, block_size, 0, context.stream()>>>(
+            batch.numbers(), graph.offsets(),
+            graph.slot_major() ? graph.neighbor_counts() : nullptr,
+            graph.neighbor_stride(), graph.atoms(), graph.displacements(),
+            model.type_lookup(), model.num_types(), model.n_max_radial(), model.n_max_angular(),
+            model.basis_size_radial(), model.basis_size_angular(), model.l_max(),
+            model.has_q_222(), model.has_q_1111(), model.has_q_112(), model.has_q_123(),
+            model.has_q_233(), model.has_q_134(), model.dimension(), model.radial_cutoff_pair(),
+            model.angular_cutoff_pair(), model.radial_pair_coefficients(),
+            model.angular_pair_coefficients(), model.scalers(), batch.atoms(), output);
+    };
     if (reference_radial_accumulation) {
-        compute_nep_kernel<true><<<blocks, block_size, 0, context.stream()>>>(
-            batch.numbers(), graph.offsets(),
-            graph.slot_major() ? graph.neighbor_counts() : nullptr,
-            graph.neighbor_stride(), graph.atoms(), graph.displacements(),
-            model.type_lookup(), model.num_types(), model.n_max_radial(), model.n_max_angular(),
-            model.basis_size_radial(), model.basis_size_angular(), model.l_max(),
-            model.has_q_222(), model.has_q_1111(), model.has_q_112(), model.has_q_123(),
-            model.has_q_233(), model.has_q_134(), model.dimension(), model.radial_cutoff_pair(),
-            model.angular_cutoff_pair(), model.radial_pair_coefficients(),
-            model.angular_pair_coefficients(), model.scalers(), batch.atoms(), output);
+        launch_compute_nep(std::true_type{});
     } else {
-        compute_nep_kernel<false><<<blocks, block_size, 0, context.stream()>>>(
-            batch.numbers(), graph.offsets(),
-            graph.slot_major() ? graph.neighbor_counts() : nullptr,
-            graph.neighbor_stride(), graph.atoms(), graph.displacements(),
-            model.type_lookup(), model.num_types(), model.n_max_radial(), model.n_max_angular(),
-            model.basis_size_radial(), model.basis_size_angular(), model.l_max(),
-            model.has_q_222(), model.has_q_1111(), model.has_q_112(), model.has_q_123(),
-            model.has_q_233(), model.has_q_134(), model.dimension(), model.radial_cutoff_pair(),
-            model.angular_cutoff_pair(), model.radial_pair_coefficients(),
-            model.angular_pair_coefficients(), model.scalers(), batch.atoms(), output);
+        launch_compute_nep(std::false_type{});
     }
     check_cuda(cudaGetLastError(), "CUDA NEP descriptor kernel launch failed");
     if (!batch.expanded()) {

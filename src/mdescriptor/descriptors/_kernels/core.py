@@ -15,6 +15,7 @@ import numpy as np
 from ...core.input import StructureBatch, coerce_batch
 from ...core.result import DescriptorResult, format_values
 from ...core.species import require_species, validate_batch_species
+from ._base import _cpp_metadata, _Kernel, _optional_threads, _validate_dtype
 
 # MinGW builds need their runtime DLL directory registered before importing the
 # extension. Release MSVC wheels do not enter this branch.
@@ -48,9 +49,6 @@ _compute_spherical_expansion_by_pair = _cpp.compute_spherical_expansion_by_pair
 
 
 _as_batch = coerce_batch
-
-
-batch_from_ase = StructureBatch.from_ase
 
 
 class _KernelValueError(ValueError):
@@ -157,7 +155,7 @@ def _soap_weighting_config(
     return weighting, resolved
 
 
-class SoapKernel:
+class SoapKernel(_Kernel):
     """Stateful periodic SOAP calculator backed by the C++ batch kernel."""
 
     name = "SOAP"
@@ -182,10 +180,8 @@ class SoapKernel:
         self.l_max = int(l_max)
         self.sigma = float(sigma)
         self.average = str(average)
-        self.dtype = str(dtype)
+        self.dtype = _validate_dtype(dtype)
         self.sparse = bool(sparse)
-        if self.dtype not in {"float32", "float64"}:
-            raise ValueError("dtype must be 'float32' or 'float64'")
         self.weighting, self.r_cut = _soap_weighting_config(weighting, r_cut)
         compression = compression or {"mode": "off", "species_weighting": None}
         if not isinstance(compression, dict):
@@ -194,9 +190,7 @@ class SoapKernel:
         self.compression_mode = str(self.compression.get("mode", "off"))
         if self.compression_mode not in {"off", "mu2", "mu1nu1", "crossover"}:
             raise ValueError("invalid SOAP compression mode")
-        self.num_threads = num_threads
-        if self.num_threads is not None and int(self.num_threads) <= 0:
-            raise ValueError("num_threads must be a positive integer or None")
+        self.num_threads = _optional_threads(num_threads)
         if self.rbf not in {"gto", "polynomial"}:
             raise ValueError("rbf must be 'gto' or 'polynomial'")
         invalid_path: list[str] | None = None
@@ -312,11 +306,6 @@ class SoapKernel:
             return DescriptorResult(values, "structure", batch.ids, None, self._labels(), self._metadata())
         return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), self._labels(), self._metadata())
 
-    def close(self) -> None:
-        self._closed = True
-        if self._native is not None:
-            self._native.close()
-
     def _labels(self) -> tuple[str, ...]:
         labels = []
         if self.compression_mode == "mu2":
@@ -369,16 +358,23 @@ class SoapKernel:
         }
 
     def _metadata(self) -> dict[str, Any]:
-        return {
-            "backend": "mdescriptor-cpp", "descriptor": "SOAP", "species": self.species,
-            "average": self.average, "r_cut": self.r_cut, "n_max": self.n_max,
-            "l_max": self.l_max, "sigma": self.sigma, "rbf": self.rbf,
-            "weighting": dict(self.weighting), "compression": dict(self.compression),
-            "dtype": self.dtype, "sparse": self.sparse,
-        }
+        return _cpp_metadata(
+            self.name,
+            species=self.species,
+            average=self.average,
+            r_cut=self.r_cut,
+            n_max=self.n_max,
+            l_max=self.l_max,
+            sigma=self.sigma,
+            rbf=self.rbf,
+            weighting=dict(self.weighting),
+            compression=dict(self.compression),
+            dtype=self.dtype,
+            sparse=self.sparse,
+        )
 
 
-class AcsfKernel:
+class AcsfKernel(_Kernel):
     """Stateful periodic ACSF calculator supporting G1, G2, G3, G4 and G5."""
 
     name = "ACSF"
@@ -391,31 +387,19 @@ class AcsfKernel:
         sparse: bool = False,
         num_threads: int | None = None,
         g2_params: Any = None,
-        G2: Any = None,
-        g2: Any = None,
         g3_params: Any = None,
-        G3: Any = None,
-        g3: Any = None,
         g4_params: Any = None,
-        G4: Any = None,
-        g4: Any = None,
         g5_params: Any = None,
-        G5: Any = None,
-        g5: Any = None,
     ):
         self.r_cut = float(r_cut)
-        self.dtype = str(dtype)
+        self.dtype = _validate_dtype(dtype)
         self.sparse = bool(sparse)
-        if self.dtype not in {"float32", "float64"}:
-            raise ValueError("dtype must be 'float32' or 'float64'")
-        self.num_threads = num_threads
-        if self.num_threads is not None and int(self.num_threads) <= 0:
-            raise ValueError("num_threads must be a positive integer or None")
+        self.num_threads = _optional_threads(num_threads)
         self.species = require_species(species, descriptor=self.name)
-        self.g2_params = self._parse_g2(g2_params if g2_params is not None else (G2 if G2 is not None else g2))
-        self.g3_params = self._parse_g3(g3_params if g3_params is not None else (G3 if G3 is not None else g3))
-        self.g4_params = self._parse_g4(g4_params if g4_params is not None else (G4 if G4 is not None else g4))
-        self.g5_params = self._parse_g5(g5_params if g5_params is not None else (G5 if G5 is not None else g5))
+        self.g2_params = self._parse_g2(g2_params)
+        self.g3_params = self._parse_g3(g3_params)
+        self.g4_params = self._parse_pair_params(g4_params, label="g4_params")
+        self.g5_params = self._parse_pair_params(g5_params, label="g5_params")
         if self.r_cut <= 0 or not np.isfinite(self.r_cut):
             raise ValueError("r_cut must be positive")
         self._native: Any = None
@@ -449,23 +433,9 @@ class AcsfKernel:
         return array
 
     @staticmethod
-    def _parse_g4(value: Any) -> np.ndarray:
-        if value is None:
-            return np.empty((0, 3), dtype=np.float64)
-        if isinstance(value, dict):
-            eta = np.asarray(value.get("eta", []), dtype=np.float64).ravel()
-            zeta = np.asarray(value.get("zeta", []), dtype=np.float64).ravel()
-            lambdas = np.asarray(value.get("lambda", value.get("lambdas", [])), dtype=np.float64).ravel()
-            value = [(float(e), float(z), float(lam)) for e in eta for z in zeta for lam in lambdas]
-        array = np.asarray(value, dtype=np.float64)
-        if array.size == 0:
-            return np.empty((0, 3), dtype=np.float64)
-        if array.ndim != 2 or array.shape[1] != 3 or not np.isfinite(array).all() or np.any(array[:, 0] <= 0) or np.any(array[:, 1] <= 0):
-            raise ValueError("g4_params must be an (n, 3) array of (eta, zeta, lambda)")
-        return array
+    def _parse_pair_params(value: Any, *, label: str) -> np.ndarray:
+        """Parse one (eta, zeta, lambda) G4/G5 parameter table."""
 
-    @staticmethod
-    def _parse_g5(value: Any) -> np.ndarray:
         if value is None:
             return np.empty((0, 3), dtype=np.float64)
         if isinstance(value, dict):
@@ -477,7 +447,7 @@ class AcsfKernel:
         if array.size == 0:
             return np.empty((0, 3), dtype=np.float64)
         if array.ndim != 2 or array.shape[1] != 3 or not np.isfinite(array).all() or np.any(array[:, 0] <= 0) or np.any(array[:, 1] <= 0):
-            raise ValueError("g5_params must be an (n, 3) array of (eta, zeta, lambda)")
+            raise ValueError(f"{label} must be an (n, 3) array of (eta, zeta, lambda)")
         return array
 
     def _ensure_native(self, batch: StructureBatch) -> None:
@@ -509,18 +479,6 @@ class AcsfKernel:
                 + (len(self.g4_params) + len(self.g5_params)) * types * (types + 1) // 2
                 if self.species else 0)
 
-    def compute(self, batch: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
-        batch = _as_batch(batch)
-        self._ensure_native(batch)
-        values = self._native.compute(batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, control)
-        values = format_values(values, dtype=self.dtype, sparse=self.sparse)
-        return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), self._labels(), self._metadata())
-
-    def close(self) -> None:
-        self._closed = True
-        if self._native is not None:
-            self._native.close()
-
     def _labels(self) -> tuple[str, ...]:
         labels = []
         for species in self.species:
@@ -534,4 +492,14 @@ class AcsfKernel:
         return tuple(labels)
 
     def _metadata(self) -> dict[str, Any]:
-        return {"backend": "mdescriptor-cpp", "descriptor": "ACSF", "species": self.species, "r_cut": self.r_cut, "g2_params": self.g2_params.copy(), "g3_params": self.g3_params.copy(), "g4_params": self.g4_params.copy(), "g5_params": self.g5_params.copy(), "dtype": self.dtype, "sparse": self.sparse}
+        return _cpp_metadata(
+            self.name,
+            species=self.species,
+            r_cut=self.r_cut,
+            g2_params=self.g2_params.copy(),
+            g3_params=self.g3_params.copy(),
+            g4_params=self.g4_params.copy(),
+            g5_params=self.g5_params.copy(),
+            dtype=self.dtype,
+            sparse=self.sparse,
+        )

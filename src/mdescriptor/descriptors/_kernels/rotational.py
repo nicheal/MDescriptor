@@ -11,15 +11,8 @@ from typing import Any
 
 import numpy as np
 
+from ._base import _AtomKernel, _cpp_metadata, _threads
 from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
-
-
-class _AtomKernel:
-    name = "descriptor"
-
-    @property
-    def feature_count(self) -> int:
-        return int(getattr(self, "_feature_count", 0))
 
 
 class EadKernel(_AtomKernel):
@@ -37,11 +30,9 @@ class EadKernel(_AtomKernel):
         self.eta = np.asarray(parameters.get("eta", [0.05]), dtype=np.float64).ravel()
         self.Rs = np.asarray(parameters.get("Rs", [0.0]), dtype=np.float64).ravel()
         self.Rc = float(Rc)
-        self.num_threads = 0 if num_threads is None else int(num_threads)
+        self.num_threads = _threads(num_threads)
         if cutoff != "cosine" or self.L < 0 or self.Rc <= 0.0 or np.any(self.eta < 0.0):
             raise ValueError("invalid EAD parameters")
-        if self.num_threads < 0:
-            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -59,7 +50,7 @@ class EadKernel(_AtomKernel):
         return DescriptorResult(
             values, "atom", batch.ids, batch.offsets.copy(),
             tuple(f"{self.name}:{index}" for index in range(values.shape[1])),
-            {"backend": "mdescriptor-cpp", "descriptor": self.name},
+            _cpp_metadata(self.name),
         )
 
 
@@ -77,11 +68,9 @@ class So3Kernel(_AtomKernel):
     ):
         self.nmax, self.lmax, self.rcut = int(nmax), int(lmax), float(rcut)
         self.alpha, self.weight_on = float(alpha), bool(weight_on)
-        self.num_threads = 0 if num_threads is None else int(num_threads)
+        self.num_threads = _threads(num_threads)
         if self.nmax < 1 or self.lmax < 0 or self.rcut <= 0.0 or self.alpha <= 0.0:
             raise ValueError("invalid SO3 parameters")
-        if self.num_threads < 0:
-            raise ValueError("num_threads must be non-negative")
 
     @property
     def feature_count(self) -> int:
@@ -94,7 +83,7 @@ class So3Kernel(_AtomKernel):
             0, self.nmax, self.lmax, self.rcut, self.alpha, self.weight_on,
             False, 1.0, 3, 3, self.num_threads, control, 1.0,
         ), dtype=np.float64)
-        return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), {"backend": "mdescriptor-cpp", "descriptor": self.name})
+        return DescriptorResult(values, "atom", batch.ids, batch.offsets.copy(), tuple(f"{self.name}:{i}" for i in range(values.shape[1])), _cpp_metadata(self.name))
 
 
 class _BispectrumKernel(_AtomKernel):
@@ -104,19 +93,17 @@ class _BispectrumKernel(_AtomKernel):
 
     def __init__(
         self,
-        lmax: int,
-        rcut: float,
-        normalize_U: bool,
+        lmax: int = 3,
+        rcut: float = 3.5,
+        normalize_U: bool = False,
         weights: dict[Any, float] | None = None,
         num_threads: int | None = None,
     ):
         self.lmax, self.rcut, self.normalize_U = int(lmax), float(rcut), bool(normalize_U)
         self.weights = weights or {}
-        self.num_threads = 0 if num_threads is None else int(num_threads)
+        self.num_threads = _threads(num_threads)
         if self.lmax < 0 or self.rcut <= 0.0:
             raise ValueError(f"invalid {self.name} parameters")
-        if self.num_threads < 0:
-            raise ValueError("num_threads must be non-negative")
 
     def _neighbor_weights(self, batch: StructureBatch) -> list[float]:
         if not self.weights:
@@ -191,22 +178,13 @@ class _BispectrumKernel(_AtomKernel):
         return DescriptorResult(
             values, "atom", batch.ids, batch.offsets.copy(),
             tuple(f"{self.name}:{i}" for i in range(values.shape[1])),
-            {"backend": "mdescriptor-cpp", "descriptor": self.name},
+            _cpp_metadata(self.name),
         )
 
 
 class So4Kernel(_BispectrumKernel):
     name = "SO4"
     _kind = 1
-
-    def __init__(
-        self,
-        lmax: int = 3,
-        rcut: float = 3.5,
-        normalize_U: bool = False,
-        num_threads: int | None = None,
-    ):
-        super().__init__(lmax, rcut, normalize_U, num_threads=num_threads)
 
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         return self._compute_bispectrum(value, control, rfac0=1.0)

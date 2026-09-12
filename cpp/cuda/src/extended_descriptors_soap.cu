@@ -1,9 +1,5 @@
 #include "extended_descriptors_common.cuh"
 
-
-
-} // namespace
-
 py::dict compute_extended_soap(
     CudaExecutionContext& context,
     DeviceBatch& batch,

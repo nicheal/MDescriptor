@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mdescriptor/detail/math3.hpp"
+
 #include <cmath>
 #include <cstdint>
 
@@ -10,8 +12,6 @@
 #endif
 
 namespace mdescriptor::detail::mbtr {
-
-constexpr double kPi = 3.141592653589793238462643383279502884;
 // Contributions outside this window are already discarded by the existing
 // MBTR cutoff policy.  Applying the same policy to individual bins avoids
 // evaluating Gaussian tails that are below the descriptor's retained

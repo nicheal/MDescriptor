@@ -334,6 +334,46 @@ std::shared_ptr<ComputeControl> control_or_default(const std::shared_ptr<Compute
     return control ? control : std::make_shared<ComputeControl>();
 }
 
+// Shared body of the per-structure descriptor bindings: build the batch view,
+// allocate a {rows, feature_count} output, and run the calculator with the GIL
+// released.  rows_are_structures selects structure rows for averaged output.
+template <typename Calculator>
+py::array compute_batch_array(
+    const Calculator& calculator,
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const std::shared_ptr<ComputeControl>& control,
+    bool rows_are_structures
+) {
+    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
+    const auto rows = rows_are_structures ? batch.structures : batch.atoms;
+    py::array_t<double> output({rows, calculator.feature_count()});
+    auto ctrl = control_or_default(control);
+    {
+        py::gil_scoped_release release;
+        calculator.compute(batch, output.mutable_data(), ctrl);
+    }
+    return output;
+}
+
+// Bindable per-atom entry point shared by the descriptor calculators.
+template <typename Calculator>
+py::array compute_atoms_array(
+    const Calculator& calculator,
+    const I32Array& numbers,
+    const F64Array& positions,
+    const F64Array& cells,
+    const I32Array& pbc,
+    const I64Array& offsets,
+    const std::shared_ptr<ComputeControl>& control
+) {
+    return compute_batch_array(
+        calculator, numbers, positions, cells, pbc, offsets, control, false);
+}
+
 py::array compute_soap_array(
     const SoapCalculator& calculator,
     const I32Array& numbers,
@@ -346,134 +386,10 @@ py::array compute_soap_array(
     bool inner_average,
     bool outer_average
 ) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    const auto rows = (inner_average || outer_average) ? batch.structures : batch.atoms;
-    py::array_t<double> output({rows, calculator.feature_count()});
-    auto output_info = output.request();
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        (void)num_threads;
-        calculator.compute(batch, static_cast<double*>(output_info.ptr), ctrl);
-    }
-    return output;
-}
-
-py::array compute_soap_turbo_array(
-    const SoapTurboCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto output_info = output.request();
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, static_cast<double*>(output_info.ptr), ctrl);
-    }
-    return output;
-}
-
-py::array compute_acsf_array(
-    const AcsfCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto output_info = output.request();
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, static_cast<double*>(output_info.ptr), ctrl);
-    }
-    return output;
-}
-
-py::array compute_c00ps_mlff_array(
-    const C00PSMlffCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, output.mutable_data(), ctrl);
-    }
-    return output;
-}
-
-py::array compute_mtp_array(
-    const MtpCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, output.mutable_data(), ctrl);
-    }
-    return output;
-}
-
-py::array compute_ace_array(
-    const AceCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, output.mutable_data(), ctrl);
-    }
-    return output;
-}
-
-py::array compute_nep_array(
-    const NepCalculator& calculator,
-    const I32Array& numbers,
-    const F64Array& positions,
-    const F64Array& cells,
-    const I32Array& pbc,
-    const I64Array& offsets,
-    const std::shared_ptr<ComputeControl>& control
-) {
-    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
-    py::array_t<double> output({batch.atoms, calculator.feature_count()});
-    auto output_info = output.request();
-    auto ctrl = control_or_default(control);
-    {
-        py::gil_scoped_release release;
-        calculator.compute(batch, static_cast<double*>(output_info.ptr), ctrl);
-    }
-    return output;
+    (void)num_threads;
+    return compute_batch_array(
+        calculator, numbers, positions, cells, pbc, offsets, control,
+        inner_average || outer_average);
 }
 
 template <typename Calculator>
@@ -1083,7 +999,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("dense_feature_count", &SoapTurboCalculator::dense_feature_count)
         .def("close", &SoapTurboCalculator::close)
         .def("closed", &SoapTurboCalculator::closed)
-        .def("compute", &compute_soap_turbo_array,
+        .def("compute", &compute_atoms_array<SoapTurboCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
@@ -1093,7 +1009,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("species", &AcsfCalculator::species)
         .def("close", &AcsfCalculator::close)
         .def("closed", &AcsfCalculator::closed)
-        .def("compute", &compute_acsf_array,
+        .def("compute", &compute_atoms_array<AcsfCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
@@ -1107,7 +1023,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("basis_values", &C00PSMlffCalculator::basis_values)
         .def("close", &C00PSMlffCalculator::close)
         .def("closed", &C00PSMlffCalculator::closed)
-        .def("compute", &compute_c00ps_mlff_array,
+        .def("compute", &compute_atoms_array<C00PSMlffCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
@@ -1151,7 +1067,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("official_scalar_output_ids", &MtpCalculator::official_scalar_output_ids)
         .def("close", &MtpCalculator::close)
         .def("closed", &MtpCalculator::closed)
-        .def("compute", &compute_mtp_array,
+        .def("compute", &compute_atoms_array<MtpCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
@@ -1180,7 +1096,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("term_coefficients", &AceCalculator::term_coefficients)
         .def("close", &AceCalculator::close)
         .def("closed", &AceCalculator::closed)
-        .def("compute", &compute_ace_array,
+        .def("compute", &compute_atoms_array<AceCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
@@ -1196,7 +1112,7 @@ PYBIND11_MODULE(_native, module) {
         .def_property_readonly("l_max", &NepCalculator::l_max)
         .def("close", &NepCalculator::close)
         .def("closed", &NepCalculator::closed)
-        .def("compute", &compute_nep_array,
+        .def("compute", &compute_atoms_array<NepCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 

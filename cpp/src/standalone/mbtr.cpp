@@ -2,6 +2,7 @@
 #include "mdescriptor/detail/mbtr.hpp"
 #include "mdescriptor/neighbor.hpp"
 #include "extra_common.hpp"
+#include "descriptor_common.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -34,30 +35,6 @@ static_assert(static_cast<int>(MBTRNormalization::NAtoms) == detail::mbtr::kNorm
 static_assert(static_cast<int>(MBTRNormalization::ValleOganov) == detail::mbtr::kNormalizationValleOganov);
 
 namespace {
-int available_num_threads(const MBTROptions& options) noexcept {
-#ifdef _OPENMP
-    return options.num_threads > 0 ? options.num_threads : omp_get_max_threads();
-#else
-    (void)options;
-    return 1;
-#endif
-}
-
-int effective_num_threads(const MBTROptions& options, std::int64_t work_items) noexcept {
-#ifdef _OPENMP
-    if (work_items <= 1) {
-        return 1;
-    }
-    const int available = available_num_threads(options);
-    const auto bounded_work_items = std::min<std::int64_t>(
-        work_items, std::numeric_limits<int>::max());
-    return std::max(1, std::min(available, static_cast<int>(bounded_work_items)));
-#else
-    (void)options;
-    (void)work_items;
-    return 1;
-#endif
-}
 
 void add_histogram(double* target, double value, double weight, const MBTROptions& options) {
     detail::mbtr::add_histogram(
@@ -189,7 +166,7 @@ void accumulate_nonlocal_center(
                     / (2.0 * first_distance * second_distance),
                 -1.0, 1.0);
             const double value = options.geometry == MBTRGeometry::Cosine
-                ? cosine : std::acos(cosine) * 180.0 / detail::mbtr::kPi;
+                ? cosine : std::acos(cosine) * 180.0 / detail::kPi;
             const double weight = mbtr_weight(options, first_distance, second_distance, third_distance);
             const int second_type = atom_types[static_cast<std::size_t>(second_atom)];
             const int channel = center_type * pair_count + detail::mbtr::pair_channel(first_type, second_type, species_count);
@@ -235,7 +212,7 @@ void accumulate_local_center(
                 -1.0, 1.0)
             : 1.0;
         const double value = options.geometry == MBTRGeometry::Cosine
-            ? cosine : std::acos(cosine) * 180.0 / detail::mbtr::kPi;
+            ? cosine : std::acos(cosine) * 180.0 / detail::kPi;
         add_histogram(target + channel * options.grid_n, value, weight, options);
     };
     for (std::size_t first_index = 0; first_index < neighbors.size; ++first_index) {
@@ -384,7 +361,7 @@ void compute_mbtr(
     if (requested_threads < 0) {
         throw std::invalid_argument("invalid MBTR thread count");
     }
-    const auto mapping = type_map(options.species);
+    const auto mapping = make_type_map(options.species);
     const auto atom_types = make_atom_types(batch, mapping);
     const std::int64_t features = mbtr_feature_count(options);
     const std::int64_t rows = options.local ? batch.atoms : batch.structures;
@@ -415,10 +392,7 @@ void compute_mbtr(
     if (options.geometry == MBTRGeometry::AtomicNumber) {
         if (options.local) {
             const auto structure_for_atom = structure_for_atoms(batch);
-            const int workers = effective_num_threads(options, batch.atoms);
-#ifndef _OPENMP
-            (void)workers;
-#endif
+            const int workers = effective_thread_count(batch.atoms, options.num_threads);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(workers)
 #endif
@@ -443,10 +417,7 @@ void compute_mbtr(
             return;
         }
 
-        const int workers = effective_num_threads(options, batch.structures);
-#ifndef _OPENMP
-        (void)workers;
-#endif
+        const int workers = effective_thread_count(batch.structures, options.num_threads);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(workers)
 #endif
@@ -478,10 +449,7 @@ void compute_mbtr(
 
     if (options.local) {
         const auto structure_for_atom = structure_for_atoms(batch);
-        const int workers = effective_num_threads(options, batch.atoms);
-#ifndef _OPENMP
-        (void)workers;
-#endif
+        const int workers = effective_thread_count(batch.atoms, options.num_threads);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(workers)
 #endif
@@ -512,11 +480,8 @@ void compute_mbtr(
         maximum_atom_count = std::max(
             maximum_atom_count, batch.offsets[structure + 1] - batch.offsets[structure]);
     }
-    const int available_workers = available_num_threads(options);
-    const int structure_workers = effective_num_threads(options, batch.structures);
-#ifndef _OPENMP
-    (void)structure_workers;
-#endif
+    const int available_workers = resolved_thread_count(options.num_threads);
+    const int structure_workers = effective_thread_count(batch.structures, options.num_threads);
     if (batch.structures > 1 && batch.structures >= available_workers) {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(structure_workers)
@@ -540,7 +505,7 @@ void compute_mbtr(
             }
         }
     } else {
-        const int environment_workers = effective_num_threads(options, maximum_atom_count);
+        const int environment_workers = effective_thread_count(maximum_atom_count, options.num_threads);
         for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
             if (cancelled(control)) {
                 break;

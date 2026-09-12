@@ -72,6 +72,42 @@ class CancelledError(MDescriptorError, RuntimeError):
     default_code = "cancelled"
 
 
+def translate_backend_error(
+    exc: Exception,
+    *,
+    unavailable_message: str,
+    failure_message: str,
+    path: tuple[str, ...] | None = ("execution", "device"),
+    unavailable_details: bool = True,
+) -> MDescriptorError:
+    """Map one native-backend exception onto the public error schema.
+
+    The lazy CUDA plugin load and the CUDA compute seam translate the same
+    exception families; only the phase messages, the optional result path,
+    and whether the unavailable error carries details differ.
+    """
+
+    if isinstance(exc, MemoryError):
+        return MDescriptorError(
+            "CUDA backend ran out of memory",
+            code="backend_out_of_memory",
+            path=path,
+        )
+    if isinstance(exc, (ImportError, OSError)):
+        return MDescriptorError(
+            unavailable_message,
+            code="device_unavailable",
+            path=path,
+            details={"exception": type(exc).__name__} if unavailable_details else None,
+        )
+    return MDescriptorError(
+        failure_message,
+        code="backend_error",
+        path=path,
+        details={"exception": type(exc).__name__},
+    )
+
+
 def is_native_cancelled_error(value: BaseException) -> bool:
     """Return whether ``value`` is the native cancellation exception.
 
@@ -110,6 +146,3 @@ def _json_safe_details(value: Mapping[str, Any]) -> dict[str, Any]:
         raise TypeError("error details must be a mapping")
     return json_safe_value(value, context="error detail")
 
-
-def _json_safe_value(value: Any) -> Any:
-    return json_safe_value(value, context="error detail")

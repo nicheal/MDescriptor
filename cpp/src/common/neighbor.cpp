@@ -1,5 +1,6 @@
 #include "mdescriptor/neighbor.hpp"
 #include "mdescriptor/detail/math3.hpp"
+#include "extra_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,22 +17,8 @@ namespace {
 
 using detail::Mat3;
 using detail::Vec3;
-
-Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
-    Mat3 result;
-    const double* source = batch.cells + structure * 9;
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            result.a[i][j] = source[i * 3 + j];
-        }
-    }
-    return result;
-}
-
-Vec3 position(const StructureBatchView& batch, std::int64_t atom) {
-    const double* source = batch.positions + atom * 3;
-    return {source[0], source[1], source[2]};
-}
+using detail::load_cell;
+using detail::position;
 
 Vec3 fractional_position(Vec3 value, const Mat3& inverse_cell) {
     return {
@@ -476,6 +463,25 @@ LocalGraph build_structure_graph(
     const auto within_cutoff = [cutoff2, include_boundary](double distance2) {
         return include_boundary ? distance2 <= cutoff2 : distance2 < cutoff2;
     };
+    // One 3x3x3 cell-list traversal per center serves the serial append,
+    // count, and fill passes below, like the compact periodic path above.
+    auto visit_candidates = [&](const Vec3& center_position, auto&& visit) {
+        const int ix = grid.coordinate(center_position.x, 0);
+        const int iy = grid.coordinate(center_position.y, 1);
+        const int iz = grid.coordinate(center_position.z, 2);
+        for (int z = std::max(0, iz - 1); z <= std::min(grid.dimensions[2] - 1, iz + 1); ++z) {
+            for (int y = std::max(0, iy - 1); y <= std::min(grid.dimensions[1] - 1, iy + 1); ++y) {
+                for (int x = std::max(0, ix - 1); x <= std::min(grid.dimensions[0] - 1, ix + 1); ++x) {
+                    const int cell_index = grid.index(x, y, z);
+                    for (std::int32_t offset = grid.offsets[cell_index];
+                         offset < grid.offsets[cell_index + 1]; ++offset) {
+                        const ExtendedAtom& neighbor = extended[static_cast<std::size_t>(grid.atoms[offset])];
+                        visit(neighbor, neighbor.position - center_position);
+                    }
+                }
+            }
+        }
+    };
     LocalGraph result;
     // reference implementation consumes one cell-list query per center. For the serial SOAP
     // path, do the same and append neighbors directly; the old count-then-fill
@@ -486,37 +492,23 @@ LocalGraph build_structure_graph(
             if (control && control->cancelled()) {
                 continue;
             }
-            const std::int64_t center = begin + local;
-            const Vec3 center_position = position(batch, center);
-            const int ix = grid.coordinate(center_position.x, 0);
-            const int iy = grid.coordinate(center_position.y, 1);
-            const int iz = grid.coordinate(center_position.z, 2);
             result.counts[static_cast<std::size_t>(local)] = static_cast<std::int64_t>(result.atoms.size());
-            for (int z = std::max(0, iz - 1); z <= std::min(grid.dimensions[2] - 1, iz + 1); ++z) {
-                for (int y = std::max(0, iy - 1); y <= std::min(grid.dimensions[1] - 1, iy + 1); ++y) {
-                    for (int x = std::max(0, ix - 1); x <= std::min(grid.dimensions[0] - 1, ix + 1); ++x) {
-                        const int cell_index = grid.index(x, y, z);
-                        for (std::int32_t offset = grid.offsets[cell_index]; offset < grid.offsets[cell_index + 1]; ++offset) {
-                            const ExtendedAtom& neighbor = extended[static_cast<std::size_t>(grid.atoms[offset])];
-                            const Vec3 displacement = neighbor.position - center_position;
-                            const double distance2 = norm2(displacement);
-                            if (!within_cutoff(distance2)) {
-                                continue;
-                            }
-                            result.atoms.push_back(neighbor.atom);
-                            if (store_shifts) {
-                                result.shifts.push_back(neighbor.shift[0]);
-                                result.shifts.push_back(neighbor.shift[1]);
-                                result.shifts.push_back(neighbor.shift[2]);
-                            }
-                            result.displacements.push_back(displacement.x);
-                            result.displacements.push_back(displacement.y);
-                            result.displacements.push_back(displacement.z);
-                            result.distance2.push_back(distance2);
-                        }
-                    }
+            visit_candidates(position(batch, begin + local), [&](const ExtendedAtom& neighbor, const Vec3& displacement) {
+                const double distance2 = norm2(displacement);
+                if (!within_cutoff(distance2)) {
+                    return;
                 }
-            }
+                result.atoms.push_back(neighbor.atom);
+                if (store_shifts) {
+                    result.shifts.push_back(neighbor.shift[0]);
+                    result.shifts.push_back(neighbor.shift[1]);
+                    result.shifts.push_back(neighbor.shift[2]);
+                }
+                result.displacements.push_back(displacement.x);
+                result.displacements.push_back(displacement.y);
+                result.displacements.push_back(displacement.z);
+                result.distance2.push_back(distance2);
+            });
             result.counts[static_cast<std::size_t>(local + 1)] = static_cast<std::int64_t>(result.atoms.size());
         }
         if (control && control->cancelled()) {
@@ -527,24 +519,12 @@ LocalGraph build_structure_graph(
     result.counts.resize(static_cast<std::size_t>(atom_count), 0);
 
     auto count_center = [&](std::int64_t center) {
-        const Vec3 center_position = position(batch, center);
-        const int ix = grid.coordinate(center_position.x, 0);
-        const int iy = grid.coordinate(center_position.y, 1);
-        const int iz = grid.coordinate(center_position.z, 2);
         std::int64_t count = 0;
-        for (int z = std::max(0, iz - 1); z <= std::min(grid.dimensions[2] - 1, iz + 1); ++z) {
-            for (int y = std::max(0, iy - 1); y <= std::min(grid.dimensions[1] - 1, iy + 1); ++y) {
-                for (int x = std::max(0, ix - 1); x <= std::min(grid.dimensions[0] - 1, ix + 1); ++x) {
-                    const int cell_index = grid.index(x, y, z);
-                    for (std::int32_t offset = grid.offsets[cell_index]; offset < grid.offsets[cell_index + 1]; ++offset) {
-                        const ExtendedAtom& neighbor = extended[static_cast<std::size_t>(grid.atoms[offset])];
-                        if (within_cutoff(norm2(neighbor.position - center_position))) {
-                            ++count;
-                        }
-                    }
-                }
+        visit_candidates(position(batch, center), [&](const ExtendedAtom&, const Vec3& displacement) {
+            if (within_cutoff(norm2(displacement))) {
+                ++count;
             }
-        }
+        });
         return count;
     };
 
@@ -572,37 +552,24 @@ LocalGraph build_structure_graph(
     result.distance2.resize(total);
 
     auto fill_center = [&](std::int64_t center, std::int64_t local) {
-        const Vec3 center_position = position(batch, center);
-        const int ix = grid.coordinate(center_position.x, 0);
-        const int iy = grid.coordinate(center_position.y, 1);
-        const int iz = grid.coordinate(center_position.z, 2);
         std::int64_t output = offsets[static_cast<std::size_t>(local)];
-        for (int z = std::max(0, iz - 1); z <= std::min(grid.dimensions[2] - 1, iz + 1); ++z) {
-            for (int y = std::max(0, iy - 1); y <= std::min(grid.dimensions[1] - 1, iy + 1); ++y) {
-                for (int x = std::max(0, ix - 1); x <= std::min(grid.dimensions[0] - 1, ix + 1); ++x) {
-                    const int cell_index = grid.index(x, y, z);
-                    for (std::int32_t offset = grid.offsets[cell_index]; offset < grid.offsets[cell_index + 1]; ++offset) {
-                        const ExtendedAtom& neighbor = extended[static_cast<std::size_t>(grid.atoms[offset])];
-                        const Vec3 displacement = neighbor.position - center_position;
-                        const double distance2 = norm2(displacement);
-                        if (!within_cutoff(distance2)) {
-                            continue;
-                        }
-                        result.atoms[static_cast<std::size_t>(output)] = neighbor.atom;
-                        if (store_shifts) {
-                            result.shifts[static_cast<std::size_t>(output) * 3 + 0] = neighbor.shift[0];
-                            result.shifts[static_cast<std::size_t>(output) * 3 + 1] = neighbor.shift[1];
-                            result.shifts[static_cast<std::size_t>(output) * 3 + 2] = neighbor.shift[2];
-                        }
-                        result.displacements[static_cast<std::size_t>(output) * 3 + 0] = displacement.x;
-                        result.displacements[static_cast<std::size_t>(output) * 3 + 1] = displacement.y;
-                        result.displacements[static_cast<std::size_t>(output) * 3 + 2] = displacement.z;
-                        result.distance2[static_cast<std::size_t>(output)] = distance2;
-                        ++output;
-                    }
-                }
+        visit_candidates(position(batch, center), [&](const ExtendedAtom& neighbor, const Vec3& displacement) {
+            const double distance2 = norm2(displacement);
+            if (!within_cutoff(distance2)) {
+                return;
             }
-        }
+            result.atoms[static_cast<std::size_t>(output)] = neighbor.atom;
+            if (store_shifts) {
+                result.shifts[static_cast<std::size_t>(output) * 3 + 0] = neighbor.shift[0];
+                result.shifts[static_cast<std::size_t>(output) * 3 + 1] = neighbor.shift[1];
+                result.shifts[static_cast<std::size_t>(output) * 3 + 2] = neighbor.shift[2];
+            }
+            result.displacements[static_cast<std::size_t>(output) * 3 + 0] = displacement.x;
+            result.displacements[static_cast<std::size_t>(output) * 3 + 1] = displacement.y;
+            result.displacements[static_cast<std::size_t>(output) * 3 + 2] = displacement.z;
+            result.distance2[static_cast<std::size_t>(output)] = distance2;
+            ++output;
+        });
     };
 
 #ifdef _OPENMP

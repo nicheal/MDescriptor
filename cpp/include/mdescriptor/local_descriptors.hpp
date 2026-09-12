@@ -9,7 +9,6 @@ namespace mdescriptor {
 
 enum class LocalDescriptorKind : std::int32_t {
     SphericalExpansion = 0,
-    SphericalExpansionByPair = 1,
     SoapRadialSpectrum = 2,
     SoapPowerSpectrum = 3,
     LodeSphericalExpansion = 4,

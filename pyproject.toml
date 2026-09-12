@@ -105,9 +105,17 @@ test-sources = [
     "benchmarks/_legacy_oracles/lbispectrum",
     "benchmarks/_legacy_oracles/mtp",
 ]
-test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py"
+# Linux/Windows wheels bundle the CUDA backend; macOS wheels are CPU-only
+# (no CUDA toolkit on the runners).  The expected flavor is verified inside
+# each cibuildwheel container, so no separate verification CI jobs are needed.
+[tool.cibuildwheel.linux]
+test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py --expect-cuda"
+
+[tool.cibuildwheel.macos]
+test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py --expect-cpu-only"
 
 [tool.cibuildwheel.windows]
+test-command = "python -m pytest --import-mode=importlib -m \"not reference\" tests && python scripts/verify_wheel.py --expect-cuda"
 # OpenBLAS is already installed beside _native.pyd, where the Windows loader
 # can resolve it.  Avoid asking delvewheel to vendor the same DLL a second time.
 repair-wheel-command = "delvewheel repair --ignore-existing -w {dest_dir} -v {wheel}"

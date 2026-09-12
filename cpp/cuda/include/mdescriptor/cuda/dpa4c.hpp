@@ -64,7 +64,6 @@ private:
     std::vector<int> degree_channels_;
     std::vector<int> bispectrum_ranks_;
     std::vector<std::int64_t> degree_offsets_;
-    std::vector<std::int64_t> gram_offsets_;
     std::vector<std::int32_t> gram_index_;
     std::vector<float> gram_scale_;
     std::vector<std::int32_t> type_numbers_;
@@ -95,6 +94,10 @@ private:
     std::unique_ptr<DeviceArray> probe_scale_;
     std::unique_ptr<DeviceArray> output_mean_;
     std::unique_ptr<DeviceArray> output_stddev_;
+    // The compact gram metadata is constant per model; it is uploaded once at
+    // construction instead of being copied into the workspace tail per call.
+    std::unique_ptr<DeviceArray> gram_index_device_;
+    std::unique_ptr<DeviceArray> gram_scale_device_;
 };
 
 } // namespace mdescriptor::cuda

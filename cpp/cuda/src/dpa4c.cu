@@ -1,6 +1,7 @@
 #include "mdescriptor/cuda/dpa4c.hpp"
 #include "mdescriptor/cuda/error.hpp"
 
+#include "dpa4_common.cuh"
 #include "mdescriptor/dpa4c.hpp"
 
 #include <cuda_runtime.h>
@@ -23,11 +24,7 @@ namespace py = pybind11;
 
 namespace mdescriptor::cuda {
 
-struct DeviceDpa4cModel::DeviceArray {
-    void* pointer = nullptr;
-    std::size_t bytes = 0;
-    ~DeviceArray() noexcept { if (pointer != nullptr) (void)cudaFree(pointer); }
-};
+struct DeviceDpa4cModel::DeviceArray : dpa4_common::DeviceArray {};
 
 namespace {
 
@@ -40,20 +37,12 @@ constexpr float kNormFloor = 0.25F;
 
 template <typename Value>
 std::vector<Value> payload_array(py::handle value, const char* name) {
-    using Array = py::array_t<Value, py::array::c_style | py::array::forcecast>;
-    const Array array = Array::ensure(value);
-    if (!array) throw std::invalid_argument(std::string("DPA4C ") + name + " must be a numeric array");
-    const auto info = array.request();
-    if (info.size == 0) return {};
-    const auto* data = static_cast<const Value*>(info.ptr);
-    return std::vector<Value>(data, data + info.size);
+    const std::string error = std::string("DPA4C ") + name + " must be a numeric array";
+    return dpa4_common::payload_array<Value>(value, name, error.c_str(), false);
 }
 
 py::handle required(const py::dict& payload, const char* name) {
-    if (!payload.contains(name)) {
-        throw std::invalid_argument(std::string("DPA4C CUDA payload is missing ") + name);
-    }
-    return payload[name];
+    return dpa4_common::required(payload, name, "DPA4C");
 }
 
 template <typename Value>
@@ -266,32 +255,19 @@ struct Dpa4cCudaLayout {
     std::int64_t matrices = 0;
 };
 
-std::size_t align_bytes(std::size_t value, std::size_t alignment) {
-    return (value + alignment - 1) / alignment * alignment;
-}
+using dpa4_common::align_bytes;
 
 template <typename Value>
 std::unique_ptr<DeviceDpa4cModel::DeviceArray> upload_array(
     CudaExecutionContext& context, const std::vector<Value>& values, const char* operation) {
-    auto result = std::make_unique<DeviceDpa4cModel::DeviceArray>();
-    result->bytes = values.size() * sizeof(Value);
-    if (values.empty()) return result;
-    check_cuda(cudaSetDevice(context.device()), "could not select the CUDA device for DPA4C");
-    try {
-        check_cuda(cudaMalloc(&result->pointer, result->bytes), operation);
-        check_cuda(cudaMemcpyAsync(
-            result->pointer, values.data(), result->bytes,
-            cudaMemcpyHostToDevice, context.stream()), operation);
-    } catch (...) {
-        result.reset();
-        throw;
-    }
-    return result;
+    return dpa4_common::upload_array<DeviceDpa4cModel::DeviceArray>(
+        context, values, operation, "could not select the CUDA device for DPA4C",
+        false);
 }
 
 template <typename Value>
 Value* device_data(const std::unique_ptr<DeviceDpa4cModel::DeviceArray>& value) {
-    return value == nullptr ? nullptr : static_cast<Value*>(value->pointer);
+    return dpa4_common::device_data<Value>(value);
 }
 
 struct KernelModel {
@@ -431,8 +407,7 @@ __global__ void dpa4c_kernel(
     // tie-break order.
     for (std::int64_t edge = begin; edge < end; ++edge) {
         const std::int32_t neighbor = graph_atoms[edge];
-        if (neighbor == center && graph_shifts != nullptr
-            && graph_shifts[edge * 3] == 0 && graph_shifts[edge * 3 + 1] == 0 && graph_shifts[edge * 3 + 2] == 0) continue;
+        if (exact_self_edge(center, neighbor, graph_shifts, edge)) continue;
         const int neighbor_type = type_indices[neighbor];
         const float dx = static_cast<float>(displacements[edge * 3]);
         const float dy = static_cast<float>(displacements[edge * 3 + 1]);
@@ -642,13 +617,11 @@ DeviceDpa4cModel::DeviceDpa4cModel(CudaExecutionContext& context, py::dict paylo
     degree_offsets_.assign(static_cast<std::size_t>(lmax_ + 2), 0);
     for (int degree = 0; degree <= lmax_; ++degree) degree_offsets_[degree + 1] = degree_offsets_[degree] + (2 * degree + 1) * degree_channels_[degree];
     moment_count_ = degree_offsets_.back();
-    gram_offsets_.push_back(0);
     for (int degree = 1; degree <= lmax_; ++degree) {
         const int width = degree_channels_[degree];
         for (int row = 0; row < width; ++row) for (int column = row; column < width; ++column) {
             gram_index_.push_back(row * width + column); gram_scale_.push_back(row == column ? 1.0F : kSqrt2);
         }
-        gram_offsets_.push_back(static_cast<std::int64_t>(gram_index_.size()));
     }
     feature_count_ = static_cast<std::int64_t>(p.output_mean.size()); triple_count_ = static_cast<std::int64_t>(p.degree_triples.size() / 3);
     std::int64_t max_full = 0, projected_count = 0, max_block = 0;
@@ -717,6 +690,8 @@ DeviceDpa4cModel::DeviceDpa4cModel(CudaExecutionContext& context, py::dict paylo
         probe_scale_ = upload_array(context, p.probe_scale, "could not upload DPA4C probe scales");
         output_mean_ = upload_array(context, p.output_mean, "could not upload DPA4C output means");
         output_stddev_ = upload_array(context, p.output_stddev, "could not upload DPA4C output standard deviations");
+        gram_index_device_ = upload_array(context, gram_index_, "could not upload DPA4C gram indices");
+        gram_scale_device_ = upload_array(context, gram_scale_, "could not upload DPA4C gram scales");
     } catch (...) { release(); throw; }
 }
 
@@ -727,6 +702,7 @@ void DeviceDpa4cModel::release() noexcept {
     pair_scale_.reset(); pair_shift_.reset(); pair_mixing_.reset(); alignment_.reset(); alignment_offsets_.reset();
     projections_.reset(); projection_offsets_.reset(); coupling_.reset(); coupling_offsets_.reset(); degree_triples_.reset();
     probe_offsets_.reset(); probe_index_.reset(); probe_scale_.reset(); output_mean_.reset(); output_stddev_.reset();
+    gram_index_device_.reset(); gram_scale_device_.reset();
     layout_.reset();
 }
 
@@ -772,20 +748,12 @@ std::vector<double> DeviceDpa4cModel::compute(
         device_data<float>(output_mean_), device_data<float>(output_stddev_), nullptr, nullptr,
         device_data<int>(degree_channels_device_), device_data<int>(bispectrum_ranks_device_)};
     model.rcut = rcut_;
-    // The compact gram metadata is copied for this launch through the context
-    // workspace tail; it is small and avoids another model-owned allocation.
-    std::vector<std::int32_t> gram_index = gram_index_;
-    std::vector<float> gram_scale = gram_scale_;
-    const std::size_t metadata_bytes = gram_index.size() * sizeof(std::int32_t) + gram_scale.size() * sizeof(float);
-    if (metadata_bytes > std::numeric_limits<std::size_t>::max() - stride * static_cast<std::size_t>(batch.atoms()))
-        throw CudaOutOfMemory("DPA4C CUDA metadata is too large");
+    // The compact gram metadata is constant per model and was uploaded once
+    // at construction; no per-call workspace tail is needed.
+    model.gram_index = device_data<std::int32_t>(gram_index_device_);
+    model.gram_scale = device_data<float>(gram_scale_device_);
     auto* workspace = static_cast<unsigned char*>(context.workspace_buffer(
-        stride * static_cast<std::size_t>(batch.atoms()) + metadata_bytes));
-    auto* device_gram_index = reinterpret_cast<std::int32_t*>(workspace + stride * static_cast<std::size_t>(batch.atoms()));
-    auto* device_gram_scale = reinterpret_cast<float*>(reinterpret_cast<unsigned char*>(device_gram_index) + gram_index.size() * sizeof(std::int32_t));
-    check_cuda(cudaMemcpyAsync(device_gram_index, gram_index.data(), gram_index.size() * sizeof(std::int32_t), cudaMemcpyHostToDevice, context.stream()), "could not upload DPA4C gram indices");
-    check_cuda(cudaMemcpyAsync(device_gram_scale, gram_scale.data(), gram_scale.size() * sizeof(float), cudaMemcpyHostToDevice, context.stream()), "could not upload DPA4C gram scales");
-    model.gram_index = device_gram_index; model.gram_scale = device_gram_scale;
+        stride * static_cast<std::size_t>(batch.atoms())));
     const auto blocks = static_cast<unsigned int>((static_cast<std::size_t>(batch.atoms()) + 127) / 128);
     dpa4c_kernel<<<blocks, 128, 0, context.stream()>>>(
         graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(), device_types,

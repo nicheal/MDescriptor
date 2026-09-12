@@ -7,12 +7,11 @@ from typing import Any
 import numpy as np
 
 from ...core.errors import DescriptorConfigError
-from ...core.result import DescriptorLevel, format_values, normalize_metadata
+from ...core.result import DescriptorLevel, normalize_metadata
 from ...core.species import normalize_species, require_species, validate_batch_species
+from ._base import _cpp_metadata, _Kernel, _optional_threads, _validate_dtype
 from .core import (
-    DescriptorResult,
     StructureBatch,
-    _as_batch,
     _cpp,
 )
 
@@ -42,13 +41,7 @@ def _per_species(value: Any, count: int, name: str, default: float, *, integer: 
     return [float(item) for item in numeric]
 
 
-def _coerce_scalar_species(value: Any) -> int:
-    """Convert the scalar branch of ``np.isscalar`` to an atomic number."""
-
-    return int(value)
-
-
-class SoapTurboKernel:
+class SoapTurboKernel(_Kernel):
     """Batch-first native core of the soap_turbo atomic power spectrum.
 
     Values follow the upstream SOAPTurbo radial/angular conventions and are
@@ -69,7 +62,6 @@ class SoapTurboKernel:
         radial_enhancement: int = 0,
         basis: str = "poly3",
         compression: str | None = None,
-        compress_mode: str | None = None,
         dtype: str = "float64",
         sparse: bool = False,
         num_threads: int | None = None,
@@ -89,36 +81,30 @@ class SoapTurboKernel:
         self.nf = float(nf)
         self.radial_enhancement = int(radial_enhancement)
         self.basis = str(basis).lower()
-        compression = compression if compression is not None else compress_mode
         self.compression = "" if compression is None else str(compression).lower()
         if self.compression in {"none", "off"}:
             self.compression = ""
-        self.dtype = str(dtype)
+        self.dtype = _validate_dtype(dtype)
         self.sparse = bool(sparse)
-        self.num_threads = num_threads
+        self.num_threads = _optional_threads(num_threads)
         self._atom_sigma_r_config = atom_sigma_r
         self._atom_sigma_r_scaling_config = atom_sigma_r_scaling
         self._atom_sigma_t_config = atom_sigma_t
         self._atom_sigma_t_scaling_config = atom_sigma_t_scaling
         self._amplitude_scaling_config = amplitude_scaling
         self._central_weight_config = central_weight
-        central_species = central_species
         if central_species is None:
             self.central_species = None
         elif np.isscalar(central_species):
-            self.central_species = normalize_species([_coerce_scalar_species(central_species)])
+            self.central_species = normalize_species([int(central_species)])
         else:
             self.central_species = normalize_species(central_species)
-        if self.dtype not in {"float32", "float64"}:
-            raise ValueError("dtype must be 'float32' or 'float64'")
         if self.l_max < 0 or self.l_max > 20 or self.rcut_hard <= 0 or self.rcut_soft <= 0:
             raise ValueError("invalid SOAPTurbo cutoff or angular parameters")
         if self.rcut_soft > self.rcut_hard or self.nf <= 0 or self.radial_enhancement not in {0, 1, 2}:
             raise ValueError("invalid SOAPTurbo cutoff smoothing parameters")
         if self.basis not in {"poly3", "poly3gauss"}:
             raise ValueError("basis must be 'poly3' or 'poly3gauss'")
-        if self.num_threads is not None and int(self.num_threads) <= 0:
-            raise ValueError("num_threads must be a positive integer or None")
         self._alpha_max: list[int] | None = None
         self._atom_sigma_r: list[float] | None = None
         self._atom_sigma_r_scaling: list[float] | None = None
@@ -128,12 +114,8 @@ class SoapTurboKernel:
         self._central_weight: list[float] | None = None
         self._native: Any = None
         self._labels_cache: tuple[str, ...] | None = None
-        self._metadata_template: Any = None
-        self._closed = False
 
     def _initialize_native(self) -> None:
-        if self._closed:
-            raise RuntimeError("SOAPTurbo calculator is closed")
         if self._native is not None:
             return
         if self.species is None:
@@ -217,26 +199,6 @@ class SoapTurboKernel:
             return channels * (channels + 1) // 2 * (self.l_max + 1)
         return n1 * s1 * n2 * s2 * (self.l_max + 1)
 
-    def compute(self, batch: StructureBatch | Any, control: Any = None) -> DescriptorResult:
-        batch = _as_batch(batch)
-        self._ensure_native(batch)
-        values = self._native.compute(
-            batch.numbers, batch.positions, batch.cells, batch.pbc, batch.offsets, control)
-        values = format_values(values, dtype=self.dtype, sparse=self.sparse)
-        return DescriptorResult(
-            values,
-            "atom",
-            batch.ids,
-            batch.offsets.copy(),
-            self._labels(),
-            self._metadata_template if self._metadata_template is not None else self._metadata(),
-        )
-
-    def close(self) -> None:
-        self._closed = True
-        if self._native is not None:
-            self._native.close()
-
     def _labels(self) -> tuple[str, ...]:
         if self._labels_cache is not None:
             return self._labels_cache
@@ -283,21 +245,20 @@ class SoapTurboKernel:
         }
 
     def _metadata(self) -> dict[str, Any]:
-        return {
-            "backend": "mdescriptor-cpp",
-            "descriptor": self.name,
-            "species": self.species,
-            "alpha_max": tuple(self._alpha_max or ()),
-            "l_max": self.l_max,
-            "rcut_hard": self.rcut_hard,
-            "rcut_soft": self.rcut_soft,
-            "basis": self.basis,
-            "compression": self.compression or None,
-            "central_species": self.central_species,
-            "radial_enhancement": self.radial_enhancement,
-            "dtype": self.dtype,
-            "sparse": self.sparse,
-        }
+        return _cpp_metadata(
+            self.name,
+            species=self.species,
+            alpha_max=tuple(self._alpha_max or ()),
+            l_max=self.l_max,
+            rcut_hard=self.rcut_hard,
+            rcut_soft=self.rcut_soft,
+            basis=self.basis,
+            compression=self.compression or None,
+            central_species=self.central_species,
+            radial_enhancement=self.radial_enhancement,
+            dtype=self.dtype,
+            sparse=self.sparse,
+        )
 
     def _canonical_configuration(self, options: dict[str, Any]) -> dict[str, Any]:
         """Persist per-species broadcasts in their canonical array form."""

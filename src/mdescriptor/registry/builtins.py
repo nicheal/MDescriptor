@@ -229,6 +229,7 @@ _DESCRIPTOR_INFO = {
                 default={"mode": "off", "species_weighting": None},
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SOAPTurbo": _info(
         "SOAP Turbo",
@@ -329,6 +330,7 @@ _DESCRIPTOR_INFO = {
                 description="Optional atomic numbers for which central-atom environments are generated.",
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "ACSF": _info(
         "ACSF",
@@ -366,6 +368,7 @@ _DESCRIPTOR_INFO = {
                 default={},
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "ACE": _info(
         "ACE",
@@ -522,6 +525,7 @@ _DESCRIPTOR_INFO = {
                 default=False,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "CoulombMatrix": _info(
         "Coulomb Matrix",
@@ -547,6 +551,7 @@ _DESCRIPTOR_INFO = {
                 default=2.4,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SineMatrix": _info(
         "Sine Matrix",
@@ -573,6 +578,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         periodicity=_PERIODIC_ONLY,
+        devices=("cpu", "cuda"),
     ),
     "EwaldSumMatrix": _info(
         "Ewald Sum Matrix",
@@ -628,6 +634,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         periodicity=_PERIODIC_ONLY,
+        devices=("cpu", "cuda"),
     ),
     "MBTR": _info(
         "MBTR",
@@ -671,6 +678,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         periodicity=_PERIODIC_ONLY,
+        devices=("cpu", "cuda"),
     ),
     "LMBTR": _info(
         "Local MBTR",
@@ -714,6 +722,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         periodicity=_PERIODIC_ONLY,
+        devices=("cpu", "cuda"),
     ),
     "ValleOganov": _info(
         "Valle–Oganov",
@@ -782,6 +791,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         periodicity=_PERIODIC_ONLY,
+        devices=("cpu", "cuda"),
     ),
     "AtomicComposition": _info(
         "Atomic Composition",
@@ -796,6 +806,7 @@ _DESCRIPTOR_INFO = {
                 default=True,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "NeighborList": _info(
         "Neighbor List",
@@ -853,6 +864,7 @@ _DESCRIPTOR_INFO = {
                 default=True,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SphericalExpansion": _info(
         "Spherical Expansion",
@@ -930,6 +942,7 @@ _DESCRIPTOR_INFO = {
                 minimum=0,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SoapRadialSpectrum": _info(
         "SOAP Radial Spectrum",
@@ -1069,6 +1082,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         periodicity=_PERIODIC_ONLY,
+        devices=("cpu", "cuda"),
     ),
     "EAD": _info(
         "EAD",
@@ -1095,6 +1109,7 @@ _DESCRIPTOR_INFO = {
                 default="cosine",
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SO3": _info(
         "SO3",
@@ -1137,6 +1152,7 @@ _DESCRIPTOR_INFO = {
                 default=False,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SO4": _info(
         "SO4",
@@ -1165,6 +1181,7 @@ _DESCRIPTOR_INFO = {
                 default=False,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "SNAP": _info(
         "SNAP",
@@ -1198,6 +1215,7 @@ _DESCRIPTOR_INFO = {
                 default=False,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "LBispectrum": _info(
         "L-Bispectrum",
@@ -1268,6 +1286,7 @@ _DESCRIPTOR_INFO = {
                 default=False,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "MTP": _info(
         "MTP",
@@ -1329,6 +1348,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         asset=_asset(AssetPolicy.OPTIONAL, extensions=(".json", ".mtp")),
+        devices=("cpu", "cuda"),
     ),
     "C00PSMLFF": _info(
         "C00PS-MLFF",
@@ -1423,6 +1443,7 @@ _DESCRIPTOR_INFO = {
                 default=True,
             ),
         },
+        devices=("cpu", "cuda"),
     ),
     "NEP": _info(
         "NEP",
@@ -1475,52 +1496,6 @@ _DESCRIPTOR_INFO = {
 }
 
 
-# The CUDA plugin owns the second implementation for the descriptors in this
-# family.  Keep the declaration in one place so the GUI-facing registry and
-# the backend dispatch cannot drift apart while the individual descriptors
-# continue to use their existing CPU kernels.
-_CUDA_EXTENDED_DESCRIPTORS = frozenset(
-    {
-        "SOAP",
-        "SOAPTurbo",
-        "ACSF",
-        "ACE",
-        "CoulombMatrix",
-        "SineMatrix",
-        "EwaldSumMatrix",
-        "MBTR",
-        "LMBTR",
-        "ValleOganov",
-        "AtomicComposition",
-        "SortedDistances",
-        "SphericalExpansionByPair",
-        "LodeSphericalExpansion",
-        "EAD",
-        "SO3",
-        "SO4",
-        "SNAP",
-        "LBispectrum",
-        "MTP",
-        "C00PSMLFF",
-    }
-)
-for _name in _CUDA_EXTENDED_DESCRIPTORS:
-    _descriptor_info = _DESCRIPTOR_INFO[_name]
-    _payload = _descriptor_info.to_dict()
-    _execution = dict(_payload["execution"])
-    _execution["devices"] = ["cpu", "cuda"]
-    _DESCRIPTOR_INFO[_name] = DescriptorInfo(
-        _payload["display_name"],
-        _payload["description"],
-        _payload["category"],
-        _payload["parameters"],
-        _execution,
-        _payload["input"],
-        _payload["output"],
-        _payload["asset"],
-    )
-
-
 def _capabilities(info: DescriptorInfo) -> frozenset[str]:
     """Derive runtime capabilities from the GUI-facing metadata record."""
 
@@ -1546,7 +1521,6 @@ def _spec(
     backend: str,
     level: str,
     *,
-    optional_extra: str | None = None,
     descriptor_version: str = "1",
     execution_engine: str | None = None,
 ) -> DescriptorSpec:
@@ -1562,7 +1536,6 @@ def _spec(
         backend,
         level,
         capabilities=_capabilities(info),
-        optional_extra=optional_extra,
         info=info,
         descriptor_version=descriptor_version,
         execution_engine=execution_engine,
@@ -1595,17 +1568,17 @@ _BUILTIN_SPECS = (
     _spec("LBispectrum", _ROTATIONAL + "LBispectrum", "cpp", "atom"),
     _spec("MTP", _STANDALONE + "mtp:MTP", "cpp", "atom"),
     _spec("C00PSMLFF", _STANDALONE + "c00ps_mlff:C00PSMLFF", "cpp", "atom"),
-    _spec("NEP", _MODEL + "nep.descriptor:NEP", "cpp", "atom"),
+    _spec("NEP", _MODEL + "nep:NEP", "cpp", "atom"),
     _spec(
         "DPA4",
-        _MODEL + "dpa4.descriptor:DPA4",
+        _MODEL + "dpa4:DPA4",
         "numpy",
         "atom",
         execution_engine=_DPA_EXECUTION_ENGINE,
     ),
     _spec(
         "DPA4C",
-        _MODEL + "dpa4c.descriptor:DPA4C",
+        _MODEL + "dpa4c:DPA4C",
         "numpy",
         "atom",
         execution_engine=_DPA_EXECUTION_ENGINE,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import sys
@@ -13,12 +12,8 @@ from typing import Any
 import numpy as np
 
 import mdescriptor
+from external_reference import sha256
 from mdescriptor import StructureBatch, get_descriptor
-from mdescriptor.descriptors.model_backed.dpa import (
-    _ATOMIC_SYMBOLS,
-    load_dpa_checkpoint,
-    new_runtime,
-)
 from mdescriptor.models import ModelResource
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,28 +175,6 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def _portable(value: Any) -> Any:
-    """Replace checkout-specific absolute paths in the manifest."""
-
-    if isinstance(value, str):
-        package_root = str(PACKAGE_ROOT)
-        if value == package_root:
-            return "${PACKAGE_ROOT}"
-        if value.startswith(package_root + "/"):
-            return "${PACKAGE_ROOT}/" + value[len(package_root) + 1 :]
-        root = str(ROOT)
-        if value == root:
-            return "${PROJECT_ROOT}"
-        if value.startswith(root + "/"):
-            return "${PROJECT_ROOT}/" + value[len(root) + 1 :]
-        return value
-    if isinstance(value, dict):
-        return {key: _portable(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_portable(item) for item in value]
-    return value
-
-
 def _batch_json(batch: StructureBatch) -> dict[str, Any]:
     return {
         "numbers": batch.numbers.tolist(),
@@ -318,14 +291,6 @@ def _reference_result(
         return _normalize_reference(raw, arrays["values"], batch)
 
 
-def _digest(path: Path) -> str:
-    checksum = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            checksum.update(chunk)
-    return checksum.hexdigest()
-
-
 def _current_result(
     name: str,
     parameters: dict[str, Any],
@@ -344,59 +309,10 @@ def _current_result(
             }
         elif isinstance(parameters.get("model"), Path):
             model = {
-                "digest": _digest(parameters["model"]),
+                "digest": sha256(parameters["model"]),
                 "source": "explicit",
                 "path": str(parameters["model"]),
             }
         return result, {"configuration": descriptor.configuration.to_dict(), "model": model}
     finally:
         descriptor.close()
-
-
-def _dpa_reference_values(
-    name: str,
-    model_path: Path,
-    batch: StructureBatch,
-    calibrate: Any,
-) -> np.ndarray:
-    """Evaluate DPA through the bundled evaluator for legacy diagnostics.
-
-    Golden generation uses :mod:`scripts.deepmd_reference` instead, so the
-    committed DPA fixtures do not fall back to project-owned output rows.
-    """
-
-    _info, checkpoint = load_dpa_checkpoint(
-        model_path,
-        expected_descriptor="DPA4" if name == "DPA4" else "DPA4C",
-    )
-    evaluator = new_runtime(model_path, checkpoint)
-    if name == "DPA4C":
-        evaluator.descriptor._calibrate_output = True if calibrate is None else bool(calibrate)
-
-    rows: list[np.ndarray] = []
-    for frame in range(batch.structures):
-        begin = int(batch.offsets[frame])
-        end = int(batch.offsets[frame + 1])
-        symbols = [_ATOMIC_SYMBOLS[int(number)] for number in batch.numbers[begin:end]]
-        atype = evaluator.symbols_to_atype(symbols)
-        values = evaluator.compute(
-            batch.positions[begin:end],
-            atype,
-            batch.cells[frame],
-        )
-        rows.append(np.asarray(values)[0])
-    if not rows:
-        return np.empty((0, int(evaluator.dim_out)), dtype=np.float64)
-    return np.concatenate(rows, axis=0).astype(np.float64, copy=False)
-
-
-def _reference_package_digest() -> str:
-    """Hash the bundled evaluator used by legacy/manual DPA diagnostics."""
-
-    package = ROOT / "src" / "mdescriptor" / "descriptors" / "model_backed" / "_vendor" / "dpa4desc"
-    checksum = hashlib.sha256()
-    for path in sorted(package.rglob("*")):
-        if path.is_file() and "__pycache__" not in path.parts:
-            checksum.update(str(path.relative_to(package)).encode("utf-8"))
-            checksum.update(path.read_bytes())
-    return checksum.hexdigest()

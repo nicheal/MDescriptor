@@ -5,6 +5,9 @@
 
 namespace mdescriptor::detail {
 
+constexpr double kPi = 3.141592653589793238462643383279502884;
+constexpr double kSqrt2 = 1.414213562373095048801688724209698079;
+
 // The descriptor kernels use this tiny value type instead of pulling a
 // general-purpose linear algebra dependency into the extension.
 struct Vec3 {

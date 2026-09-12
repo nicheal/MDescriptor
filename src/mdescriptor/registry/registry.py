@@ -36,12 +36,6 @@ class DescriptorRegistry:
             raise ValueError(f"descriptor name {spec.name!r} is already registered")
         self._specs[spec.name] = spec
 
-    @property
-    def frozen(self) -> bool:
-        """Whether this registry rejects further registrations."""
-
-        return self._frozen
-
     def get(self, name: str) -> DescriptorSpec:
         if name in self._specs:
             return self._specs[name]

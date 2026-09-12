@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mdescriptor/detail/math3.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -14,8 +16,6 @@ namespace mdescriptor::detail::rotational {
 #else
 #define MDESCRIPTOR_ROTATIONAL_HD
 #endif
-
-constexpr double kPi = 3.141592653589793238462643383279502884;
 
 inline int expansion_order(int kind, int lmax, int twojmax) noexcept {
     return kind == 3 ? std::max(0, twojmax) : 2 * lmax;

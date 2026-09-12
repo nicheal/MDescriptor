@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeAlias
 
 import numpy as np
+
+# Per-frame fields handed to the shared packer: ``(numbers, positions, cell,
+# pbc, id, spins, charge_spin)``.  ``None`` marks an absent optional spin field.
+_FrameFields = tuple[Any, Any, Any, Any, Any, Any, Any]
 
 
 @dataclass(frozen=True)
@@ -124,60 +128,45 @@ class StructureBatch:
         if ids is not None and len(ids) != len(structures):
             raise ValueError("ids must have one entry per structure")
 
-        number_parts: list[np.ndarray] = []
-        position_parts: list[np.ndarray] = []
-        cell_parts: list[np.ndarray] = []
-        pbc_parts: list[np.ndarray] = []
-        spin_parts: list[np.ndarray] = []
-        frame_charge_spin: list[np.ndarray] = []
-        have_spins = False
-        have_charge_spin = False
-        offsets = [0]
-        generated_ids: list[str] = []
-        for index, atoms in enumerate(structures):
+        def read_ase_frame(atoms: Any, index: int) -> _FrameFields:
             if not isinstance(atoms, Atoms):
                 raise TypeError("structures must contain ASE Atoms objects")
-            number_parts.append(np.asarray(atoms.get_atomic_numbers(), dtype=np.int32))
-            position_parts.append(np.asarray(atoms.get_positions(), dtype=np.float64))
-            cell_parts.append(np.asarray(atoms.cell.array, dtype=np.float64))
-            pbc_parts.append(np.asarray(atoms.get_pbc(), dtype=np.int32))
             atom_spin = atoms.arrays.get("spin", atoms.arrays.get("spins"))
             if atom_spin is None:
                 atom_spin = atoms.info.get("spin", atoms.info.get("spins"))
-            if atom_spin is not None:
-                have_spins = True
-                spin_parts.append(np.asarray(atom_spin, dtype=np.float64))
-            else:
-                spin_parts.append(np.zeros((len(atoms), 3), dtype=np.float64))
+            spin = (
+                None
+                if atom_spin is None
+                else np.asarray(atom_spin, dtype=np.float64)
+            )
             frame_state = atoms.info.get("charge_spin")
             if frame_state is None:
                 charge = atoms.info.get("charge")
                 multiplicity = atoms.info.get("spin_multiplicity")
                 if charge is not None or multiplicity is not None:
                     frame_state = (0.0 if charge is None else charge, 0.0 if multiplicity is None else multiplicity)
-            if frame_state is not None:
-                have_charge_spin = True
-                frame_charge_spin.append(np.asarray(frame_state, dtype=np.float64))
-            else:
-                frame_charge_spin.append(np.zeros(2, dtype=np.float64))
-            offsets.append(offsets[-1] + len(atoms))
+            charge_spin = (
+                None
+                if frame_state is None
+                else np.asarray(frame_state, dtype=np.float64)
+            )
             if ids is not None:
-                generated_ids.append(str(ids[index]))
+                identifier: Any = str(ids[index])
             else:
                 source = atoms.info.get("source_path", atoms.info.get("_source_path"))
                 frame = atoms.info.get("frame", index)
-                generated_ids.append(f"{Path(source).resolve()}#{frame}" if source else str(index))
+                identifier = f"{Path(source).resolve()}#{frame}" if source else str(index)
+            return (
+                np.asarray(atoms.get_atomic_numbers(), dtype=np.int32),
+                np.asarray(atoms.get_positions(), dtype=np.float64),
+                np.asarray(atoms.cell.array, dtype=np.float64),
+                np.asarray(atoms.get_pbc(), dtype=np.int32),
+                identifier,
+                spin,
+                charge_spin,
+            )
 
-        return cls(
-            np.concatenate(number_parts) if number_parts else np.empty(0, dtype=np.int32),
-            np.concatenate(position_parts, axis=0) if position_parts else np.empty((0, 3), dtype=np.float64),
-            np.stack(cell_parts) if cell_parts else np.empty((0, 3, 3), dtype=np.float64),
-            np.stack(pbc_parts) if pbc_parts else np.empty((0, 3), dtype=np.int32),
-            np.asarray(offsets),
-            tuple(generated_ids),
-            np.concatenate(spin_parts, axis=0) if have_spins else None,
-            np.stack(frame_charge_spin) if have_charge_spin else None,
-        )
+        return _pack_frames(structures, read_ase_frame)
 
     @classmethod
     def from_frames(cls, frames: Iterable[Any] | Any) -> StructureBatch:
@@ -195,67 +184,82 @@ class StructureBatch:
         else:
             frame_values = list(frames)
 
-        number_parts: list[np.ndarray] = []
-        position_parts: list[np.ndarray] = []
-        cell_parts: list[np.ndarray] = []
-        pbc_parts: list[np.ndarray] = []
-        spin_parts: list[np.ndarray] = []
-        frame_charge_spin: list[np.ndarray] = []
-        have_spins = False
-        have_charge_spin = False
-        offsets = [0]
-        generated_ids: list[Any] = []
-
-        for index, frame in enumerate(frame_values):
+        def read_frame_frame(frame: Any, index: int) -> _FrameFields:
             numbers = np.asarray(_frame_field(frame, "numbers", index=index))
             try:
-                atom_count = len(numbers)
+                len(numbers)
             except TypeError as exc:
                 raise ValueError(f"frame {index} numbers must be one-dimensional") from exc
-            number_parts.append(numbers)
-            position_parts.append(
-                np.asarray(_frame_field(frame, "positions", index=index))
-            )
-            cell_parts.append(
-                np.asarray(_frame_field(frame, "cell", aliases=("cells",), index=index))
-            )
-            pbc_parts.append(np.asarray(_frame_field(frame, "pbc", index=index)))
-            generated_ids.append(_frame_field(frame, "id", index=index))
-
             spin = _frame_field(frame, "spins", aliases=("spin",), default=None)
-            if spin is not None:
-                have_spins = True
-                spin_parts.append(np.asarray(spin))
-            else:
-                spin_parts.append(np.zeros((atom_count, 3), dtype=np.float64))
-
             charge_spin = _frame_field(frame, "charge_spin", default=None)
-            if charge_spin is not None:
-                have_charge_spin = True
-                frame_charge_spin.append(np.asarray(charge_spin))
-            else:
-                frame_charge_spin.append(np.zeros(2, dtype=np.float64))
-            offsets.append(offsets[-1] + atom_count)
+            return (
+                numbers,
+                np.asarray(_frame_field(frame, "positions", index=index)),
+                np.asarray(_frame_field(frame, "cell", aliases=("cells",), index=index)),
+                np.asarray(_frame_field(frame, "pbc", index=index)),
+                _frame_field(frame, "id", index=index),
+                None if spin is None else np.asarray(spin),
+                None if charge_spin is None else np.asarray(charge_spin),
+            )
 
-        return cls(
-            np.concatenate(number_parts) if number_parts else np.empty(0),
-            np.concatenate(position_parts, axis=0)
-            if position_parts
-            else np.empty((0, 3), dtype=np.float64),
-            np.stack(cell_parts)
-            if cell_parts
-            else np.empty((0, 3, 3), dtype=np.float64),
-            np.stack(pbc_parts)
-            if pbc_parts
-            else np.empty((0, 3), dtype=np.int32),
-            np.asarray(offsets),
-            tuple(generated_ids),
-            np.concatenate(spin_parts, axis=0) if have_spins else None,
-            np.stack(frame_charge_spin) if have_charge_spin else None,
+        return _pack_frames(frame_values, read_frame_frame)
+
+
+def _pack_frames(
+    frames: Iterable[Any],
+    read_frame: Callable[[Any, int], _FrameFields],
+) -> StructureBatch:
+    """Assemble per-frame fields into one validated batch.
+
+    ``read_frame`` extracts one frame's fields; this builder owns the shared
+    concatenation, cumulative atom offsets, absent-spin placeholders, and
+    empty-batch fallbacks so ASE and GUI frame inputs pack identically.
+    """
+
+    number_parts: list[np.ndarray] = []
+    position_parts: list[np.ndarray] = []
+    cell_parts: list[np.ndarray] = []
+    pbc_parts: list[np.ndarray] = []
+    spin_parts: list[np.ndarray] = []
+    frame_charge_spin: list[np.ndarray] = []
+    have_spins = False
+    have_charge_spin = False
+    offsets = [0]
+    generated_ids: list[Any] = []
+
+    for index, frame in enumerate(frames):
+        numbers, positions, cell, pbc, identifier, spin, charge_spin = read_frame(
+            frame, index
         )
+        number_parts.append(np.asarray(numbers))
+        position_parts.append(np.asarray(positions))
+        cell_parts.append(np.asarray(cell))
+        pbc_parts.append(np.asarray(pbc))
+        generated_ids.append(identifier)
+        if spin is None:
+            spin_parts.append(np.zeros((len(numbers), 3), dtype=np.float64))
+        else:
+            have_spins = True
+            spin_parts.append(np.asarray(spin))
+        if charge_spin is None:
+            frame_charge_spin.append(np.zeros(2, dtype=np.float64))
+        else:
+            have_charge_spin = True
+            frame_charge_spin.append(np.asarray(charge_spin))
+        offsets.append(offsets[-1] + len(numbers))
 
-
-batch_from_ase = StructureBatch.from_ase
+    return StructureBatch(
+        np.concatenate(number_parts) if number_parts else np.empty(0, dtype=np.int32),
+        np.concatenate(position_parts, axis=0)
+        if position_parts
+        else np.empty((0, 3), dtype=np.float64),
+        np.stack(cell_parts) if cell_parts else np.empty((0, 3, 3), dtype=np.float64),
+        np.stack(pbc_parts) if pbc_parts else np.empty((0, 3), dtype=np.int32),
+        np.asarray(offsets),
+        tuple(generated_ids),
+        np.concatenate(spin_parts, axis=0) if have_spins else None,
+        np.stack(frame_charge_spin) if have_charge_spin else None,
+    )
 
 
 def coerce_batch(value: StructureInput) -> StructureBatch:
@@ -266,7 +270,10 @@ def coerce_batch(value: StructureInput) -> StructureBatch:
     return StructureBatch.from_ase(value)
 
 
-StructureInput: TypeAlias = StructureBatch | Sequence[Any] | Any
+# Honest alias: ``compute`` accepts an already-built ``StructureBatch`` or any
+# ASE structure/sequence of structures that ``StructureBatch.from_ase`` can
+# adapt; anything else is rejected at the input boundary.
+StructureInput: TypeAlias = Any
 
 
 def _array_snapshot(value: Any, dtype: Any, name: str) -> np.ndarray:
@@ -336,4 +343,4 @@ def _integer_snapshot(
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be an integer array") from exc
 
-__all__ = ["StructureBatch", "StructureInput", "batch_from_ase", "coerce_batch"]
+__all__ = ["StructureBatch", "StructureInput", "coerce_batch"]

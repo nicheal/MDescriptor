@@ -10,17 +10,20 @@ backend calls.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 
 import numpy as np
 
 from .control import ComputeControl, _unwrap_native_control
-from .errors import CancelledError, MDescriptorError
+from .errors import (
+    CancelledError,
+    MDescriptorError,
+    translate_backend_error,
+)
 from .input import StructureBatch
 from .result import DescriptorResult, pair_samples
 
 
-@runtime_checkable
 class BackendKernel(Protocol):
     """The implementation-independent kernel protocol behind an adapter."""
 
@@ -149,46 +152,21 @@ class CudaBackend:
             raise
         except MDescriptorError:
             raise
-        except MemoryError as exc:
-            raise MDescriptorError(
-                "CUDA backend ran out of memory",
-                code="backend_out_of_memory",
-                path=["execution", "device"],
-            ) from exc
-        except ImportError as exc:
-            raise MDescriptorError(
-                "CUDA backend is unavailable",
-                code="device_unavailable",
-                path=["execution", "device"],
-            ) from exc
-        except OSError as exc:
-            raise MDescriptorError(
-                "CUDA backend is unavailable",
-                code="device_unavailable",
-                path=["execution", "device"],
-            ) from exc
-        except ValueError as exc:
-            raise MDescriptorError(
-                "CUDA backend failed",
-                code="backend_error",
-                path=["execution", "device"],
-                details={"exception": type(exc).__name__},
-            ) from exc
-        except RuntimeError as exc:
-            if _looks_cancelled(exc):
+        except (
+            MemoryError,
+            ImportError,
+            OSError,
+            ValueError,
+            RuntimeError,
+            AttributeError,
+        ) as exc:
+            if isinstance(exc, RuntimeError) and _looks_cancelled(exc):
                 raise CancelledError("descriptor computation was cancelled") from exc
-            raise MDescriptorError(
-                "CUDA backend failed",
-                code="backend_error",
-                path=["execution", "device"],
-                details={"exception": type(exc).__name__},
-            ) from exc
-        except AttributeError as exc:
-            raise MDescriptorError(
-                "CUDA backend failed",
-                code="backend_error",
-                path=["execution", "device"],
-                details={"exception": type(exc).__name__},
+            raise translate_backend_error(
+                exc,
+                unavailable_message="CUDA backend is unavailable",
+                failure_message="CUDA backend failed",
+                unavailable_details=False,
             ) from exc
         if control is not None and control.cancelled():
             raise CancelledError("descriptor computation was cancelled")
@@ -197,10 +175,11 @@ class CudaBackend:
         except MDescriptorError:
             raise
         except (TypeError, ValueError, KeyError, IndexError) as exc:
-            raise MDescriptorError(
-                "CUDA backend returned an invalid result",
-                code="backend_error",
-                details={"exception": type(exc).__name__},
+            raise translate_backend_error(
+                exc,
+                unavailable_message="CUDA backend is unavailable",
+                failure_message="CUDA backend returned an invalid result",
+                path=None,
             ) from exc
 
     def _compute_in_structure_blocks(

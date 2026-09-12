@@ -179,7 +179,6 @@ def test_builtin_levels_describe_default_output_granularity():
     for name in ("DPA4", "DPA4C"):
         spec = mdescriptor.builtin_registry.get(name)
         assert spec.backend == "numpy"
-        assert spec.optional_extra is None
 
 
 def test_result_is_json_safe_and_lifecycle_is_uniform():

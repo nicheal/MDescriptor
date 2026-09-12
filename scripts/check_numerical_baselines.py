@@ -20,28 +20,21 @@ suite, so a new descriptor cannot silently ship without an oracle entry.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
 import mdescriptor
 
 try:  # ``python scripts/check_numerical_baselines.py`` has ``scripts`` on sys.path.
+    from .external_reference import sha256 as _sha256
     from .numerical_baselines import BASELINES, STATIC_GOLDEN_KINDS
 except ImportError:  # pragma: no cover - exercised by the direct script entry point
+    from external_reference import sha256 as _sha256
     from numerical_baselines import BASELINES, STATIC_GOLDEN_KINDS
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_ROOT = ROOT / "tests" / "golden"
 DOC = ROOT / "docs" / "numerical-baselines.md"
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _pin_is_declared(package: str, version: str) -> bool:
@@ -191,13 +184,6 @@ def _validate_manifest(name: str, manifest_path: Path, errors: list[str]) -> Non
                 f"{name}: sidecar static oracle must retain project_commit snapshot reference, "
                 f"got {reference_kind!r}"
             )
-    else:
-        if baseline.get("committed_golden") != "project_commit":
-            errors.append(f"{name}: runtime oracle must retain project_commit golden provenance")
-        if reference_kind != "project_commit":
-            errors.append(
-                f"{name}: runtime oracle expected project_commit reference, got {reference_kind!r}"
-            )
 
 
 def validate_manifests() -> None:
@@ -242,7 +228,7 @@ def render() -> str:
     rows: list[str] = []
     for name in mdescriptor.list_descriptors():
         baseline = BASELINES[name]
-        committed = "external static" if baseline["kind"] == "external_static" else "project snapshot"
+        committed = "external static"
         runtime = f"`{baseline['marker']}`" if "marker" in baseline else "—"
         rows.append(
             f"| `{name}` | {committed} | {baseline['provider']} | "

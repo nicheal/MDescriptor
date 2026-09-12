@@ -62,8 +62,6 @@ inline std::vector<std::int32_t> make_atom_types(
     return result;
 }
 
-inline TypeMap type_map(const SpeciesList& species) { return make_type_map(species); }
-
 inline void validate_species(
     const StructureBatchView& batch,
     const SpeciesList& species) {

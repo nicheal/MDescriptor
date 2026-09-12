@@ -1,7 +1,5 @@
 #include "extended_descriptors_common.cuh"
 
-} // namespace
-
 struct RotationalPlanCache::Impl {
     bool prepared = false;
     int expansion_order = -1;
@@ -127,6 +125,5 @@ void RotationalPlanCache::clear() noexcept {
     impl_->projection_z_indices.clear();
     impl_->projection_scales.clear();
 }
-
 
 } // namespace mdescriptor::cuda

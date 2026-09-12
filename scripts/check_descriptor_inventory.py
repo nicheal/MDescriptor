@@ -29,7 +29,6 @@ def render() -> str:
     for spec in specs:
         group = "standalone" if ".standalone." in spec.import_path else "model_backed"
         capabilities = ", ".join(sorted(spec.capabilities)) or "—"
-        extra = spec.optional_extra or "—"
         category = "—" if spec.info is None else spec.info.category
         parameters = (
             "—"
@@ -38,7 +37,7 @@ def render() -> str:
         )
         rows.append(
             f"| {spec.name} | `{group}` | `{category}` | `{spec.asset_policy.value.upper()}` | "
-            f"`{spec.backend}` | `{spec.level}` | {capabilities} | {parameters} | `{extra}` |"
+            f"`{spec.backend}` | `{spec.level}` | {capabilities} | {parameters} |"
         )
     return """# Descriptor inventory / 描述符清单
 
@@ -48,8 +47,8 @@ controlled artifact: run `python scripts/check_descriptor_inventory.py
 
 <!-- registry-names: {names} -->
 
-| Name | Directory group | Category | Asset policy | Backend | Level | Capabilities | Parameters | Extra |
-|---|---|---|---|---|---|---|---|---|
+| Name | Directory group | Category | Asset policy | Backend | Level | Capabilities | Parameters |
+|---|---|---|---|---|---|---|---|
 {rows}
 
 ## Static descriptor metadata

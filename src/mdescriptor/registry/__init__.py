@@ -15,7 +15,7 @@ from .info import (
     validate_descriptor_parameters,
 )
 from .registry import DescriptorRegistry
-from .spec import CAPABILITIES, AssetPolicy, DescriptorSpec
+from .spec import AssetPolicy, DescriptorSpec
 
 
 @overload
@@ -253,7 +253,6 @@ def _restore_option(
 
 __all__ = [
     "AssetPolicy",
-    "CAPABILITIES",
     "DESCRIPTOR_INFO_SCHEMA_VERSION",
     "builtin_registry",
     "DescriptorConfiguration",

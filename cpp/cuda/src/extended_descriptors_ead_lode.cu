@@ -62,7 +62,6 @@ __global__ void ead_kernel(
     }
 }
 
-
 py::dict compute_ead_descriptor(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -106,6 +105,29 @@ py::dict compute_ead_descriptor(
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
 
+// E1(x) via the alternating series for x < 1 and the asymptotic series
+// otherwise; shared by the exponent 3/5/7/9 branches of lode_fourier_device.
+__device__ double expint_e1_device(double x) {
+    double term = 1.0;
+    double series = 0.0;
+    if (x < 1.0) {
+        for (int index = 1; index < 200; ++index) {
+            term *= -x;
+            const double add = term / (index * index);
+            series += add;
+            if (fabs(add) < 2e-16 * fmax(1.0, fabs(series))) break;
+        }
+        return -0.5772156649015329 - log(x) - series;
+    }
+    series = 1.0;
+    for (int index = 1; index < 100; ++index) {
+        term *= -static_cast<double>(index) / x;
+        series += term;
+        if (fabs(term) > fabs(series)) break;
+    }
+    return exp(-x) * series / x;
+}
+
 __device__ double lode_fourier_device(double k_norm, double sigma, int exponent) {
     if (k_norm <= 1e-12) return 0.0;
     const double sigma2 = sigma * sigma;
@@ -119,117 +141,25 @@ __device__ double lode_fourier_device(double k_norm, double sigma, int exponent)
     if (exponent == 2) {
         value = sqrt(kPi / x) * erfc(root_x);
     } else if (exponent == 3) {
-        double term = 1.0;
-        double series = 0.0;
-        if (x < 1.0) {
-            for (int index = 1; index < 200; ++index) {
-                term *= -x;
-                const double add = term / (index * index);
-                series += add;
-                if (fabs(add) < 2e-16 * fmax(1.0, fabs(series))) break;
-            }
-            value = -0.5772156649015329 - log(x) - series;
-        } else {
-            series = 1.0;
-            for (int index = 1; index < 100; ++index) {
-                term *= -static_cast<double>(index) / x;
-                series += term;
-                if (fabs(term) > fabs(series)) break;
-            }
-            value = exp(-x) * series / x;
-        }
+        value = expint_e1_device(x);
     } else if (exponent == 4) {
         value = 2.0 * (exp(-x) - sqrt(kPi * x) * erfc(root_x));
     } else if (exponent == 5) {
-        double e1 = 0.0;
-        double term = 1.0;
-        double series = 0.0;
-        if (x < 1.0) {
-            for (int index = 1; index < 200; ++index) {
-                term *= -x;
-                const double add = term / (index * index);
-                series += add;
-                if (fabs(add) < 2e-16 * fmax(1.0, fabs(series))) break;
-            }
-            e1 = -0.5772156649015329 - log(x) - series;
-        } else {
-            series = 1.0;
-            for (int index = 1; index < 100; ++index) {
-                term *= -static_cast<double>(index) / x;
-                series += term;
-                if (fabs(term) > fabs(series)) break;
-            }
-            e1 = exp(-x) * series / x;
-        }
+        const double e1 = expint_e1_device(x);
         value = exp(-x) - x * e1;
     } else if (exponent == 6) {
-        double term = 1.0;
-        double series = 0.0;
-        if (x < 1.0) {
-            for (int index = 1; index < 200; ++index) {
-                term *= -x;
-                const double add = term / (index * index);
-                series += add;
-                if (fabs(add) < 2e-16 * fmax(1.0, fabs(series))) break;
-            }
-            series = -0.5772156649015329 - log(x) - series;
-        } else {
-            series = 1.0;
-            for (int index = 1; index < 100; ++index) {
-                term *= -static_cast<double>(index) / x;
-                series += term;
-                if (fabs(term) > fabs(series)) break;
-            }
-            series = exp(-x) * series / x;
-        }
         value = ((2.0 - 4.0 * x) * exp(-x)
             + 4.0 * sqrt(kPi) * pow(x, 1.5) * erfc(root_x)) / 3.0;
     } else if (exponent == 7) {
-        double term = 1.0;
-        double series = 0.0;
-        if (x < 1.0) {
-            for (int index = 1; index < 200; ++index) {
-                term *= -x;
-                const double add = term / (index * index);
-                series += add;
-                if (fabs(add) < 2e-16 * fmax(1.0, fabs(series))) break;
-            }
-            series = -0.5772156649015329 - log(x) - series;
-        } else {
-            series = 1.0;
-            for (int index = 1; index < 100; ++index) {
-                term *= -static_cast<double>(index) / x;
-                series += term;
-                if (fabs(term) > fabs(series)) break;
-            }
-            series = exp(-x) * series / x;
-        }
-        value = (1.0 - x) * exp(-x) / 2.0 + x * x * series / 2.0;
+        const double e1 = expint_e1_device(x);
+        value = (1.0 - x) * exp(-x) / 2.0 + x * x * e1 / 2.0;
     } else if (exponent == 8) {
         value = -2.0 / 15.0 * ((-3.0 + 2.0 * x - 4.0 * x * x) * exp(-x)
             + 4.0 * sqrt(kPi) * pow(x, 2.5) * erfc(root_x));
     } else if (exponent == 9) {
-        double term = 1.0;
-        double series = 0.0;
-        if (x < 1.0) {
-            for (int index = 1; index < 200; ++index) {
-                term *= -x;
-                const double add = term / (index * index);
-                series += add;
-                if (fabs(add) < 2e-16 * fmax(1.0, fabs(series))) break;
-            }
-            series = -0.5772156649015329 - log(x) - series;
-        } else {
-            series = 1.0;
-            for (int index = 1; index < 100; ++index) {
-                term *= -static_cast<double>(index) / x;
-                series += term;
-                if (fabs(term) > fabs(series)) break;
-            }
-            series = exp(-x) * series / x;
-        }
+        const double e1 = expint_e1_device(x);
         value = (x * x - x + 2.0) * exp(-x) / 6.0
-            - x * x * x * series / 6.0;
+            - x * x * x * e1 / 6.0;
     }
     return factor * value;
 }
@@ -400,7 +330,6 @@ __global__ void lode_exact_kernel(
     }
 }
 
-
 py::dict compute_lode_descriptor(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -521,8 +450,6 @@ py::dict compute_lode_descriptor(
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
 
-} // namespace
-
 py::dict compute_extended_ead_lode(
     CudaExecutionContext& context,
     DeviceBatch& batch,
@@ -541,4 +468,3 @@ py::dict compute_extended_ead_lode(
 }
 
 } // namespace mdescriptor::cuda
-

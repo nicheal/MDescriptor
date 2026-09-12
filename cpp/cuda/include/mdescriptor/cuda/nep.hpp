@@ -23,14 +23,12 @@ public:
     DeviceNepModel& operator=(const DeviceNepModel&) = delete;
     ~DeviceNepModel() noexcept;
 
-    int version() const noexcept { return version_; }
     int num_types() const noexcept { return num_types_; }
     int n_max_radial() const noexcept { return n_max_radial_; }
     int n_max_angular() const noexcept { return n_max_angular_; }
     int basis_size_radial() const noexcept { return basis_size_radial_; }
     int basis_size_angular() const noexcept { return basis_size_angular_; }
     int l_max() const noexcept { return l_max_; }
-    int num_l() const noexcept { return num_l_; }
     int dimension() const noexcept { return dimension_; }
     double radial_cutoff_max() const noexcept { return radial_cutoff_max_; }
     double angular_cutoff_max() const noexcept { return angular_cutoff_max_; }
@@ -60,14 +58,12 @@ public:
 private:
     void release() noexcept;
 
-    int version_ = 0;
     int num_types_ = 0;
     int n_max_radial_ = 0;
     int n_max_angular_ = 0;
     int basis_size_radial_ = 0;
     int basis_size_angular_ = 0;
     int l_max_ = 0;
-    int num_l_ = 0;
     int dimension_ = 0;
     double radial_cutoff_max_ = 0.0;
     double angular_cutoff_max_ = 0.0;

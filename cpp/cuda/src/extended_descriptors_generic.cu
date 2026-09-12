@@ -414,9 +414,6 @@ py::dict compute_generic_moment_descriptor(
         std::vector<I64>(host_batch.offsets, host_batch.offsets + host_batch.structures + 1));
 }
 
-
-} // namespace
-
 py::dict compute_extended_generic(
     CudaExecutionContext& context,
     DeviceBatch& batch,

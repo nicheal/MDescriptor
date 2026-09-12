@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
 
-from ...core.result import format_values
 from ...core.species import require_species, validate_batch_species
+from ._base import _cpp_metadata, _Kernel, _validate_dtype
 from .core import (
-    DescriptorResult,
     StructureBatch,
-    _as_batch,
     _cpp,
 )
 
 _CUTOFF_FUNCTIONS = {"bp": 0, "mo": 1, "rj": 2, "wmc": 3}
 
 
-class C00PSMlffKernel:
+class C00PSMlffKernel(_Kernel):
     """Native C++ implementation of the C00 + PS MLFF descriptor."""
 
     name = "C00PSMLFF"
@@ -28,9 +26,7 @@ class C00PSMlffKernel:
         self,
         species: Iterable[int] | None = None,
         r_cut: float | None = None,
-        cutoff: float | None = None,
         n_radial: int | None = None,
-        n_max: int | None = None,
         l_max: int = 4,
         cutoff_function: str = "bp",
         radial_sigma: float = 0.5,
@@ -47,8 +43,8 @@ class C00PSMlffKernel:
         sparse: bool = False,
     ) -> None:
         self.species = require_species(species, descriptor=self.name)
-        self.r_cut = float(r_cut if r_cut is not None else (cutoff if cutoff is not None else 6.0))
-        self.n_radial = int(n_radial if n_radial is not None else (n_max if n_max is not None else 8))
+        self.r_cut = float(r_cut if r_cut is not None else 6.0)
+        self.n_radial = int(n_radial if n_radial is not None else 8)
         self.l_max = int(l_max)
         self.cutoff = str(cutoff_function).lower()
         self.radial_sigma = float(radial_sigma)
@@ -61,7 +57,7 @@ class C00PSMlffKernel:
         self.angular_weight = float(angular_weight)
         self.exclude_self_interaction = bool(exclude_self_interaction)
         self.num_threads = int(num_threads)
-        self.dtype = str(dtype)
+        self.dtype = _validate_dtype(dtype)
         self.sparse = bool(sparse)
         if self.r_cut <= 0.0 or self.n_radial <= 0 or self.l_max < 0:
             raise ValueError("C00PSMLFF requires r_cut > 0, n_radial > 0, and l_max >= 0")
@@ -71,8 +67,6 @@ class C00PSMlffKernel:
             raise ValueError("radial_sigma must be non-negative")
         if self.radial_weight < 0.0 or self.angular_weight < 0.0:
             raise ValueError("radial_weight and angular_weight must be non-negative")
-        if self.dtype not in {"float32", "float64"}:
-            raise ValueError("dtype must be 'float32' or 'float64'")
         if not self.include_radial and not self.include_angular:
             raise ValueError("at least one of include_radial/include_angular must be true")
         self._native = self._make_native()
@@ -131,29 +125,8 @@ class C00PSMlffKernel:
             ),
         }
 
-    def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
-        batch = _as_batch(value)
+    def _ensure_native(self, batch: StructureBatch) -> None:
         self.species = validate_batch_species(batch, self.species, descriptor=self.name)
-        assert self._native is not None
-        if control is not None and bool(getattr(control, "cancelled", lambda: False)()):
-            raise _cpp.CancelledError()
-        values = self._native.compute(
-            batch.numbers,
-            batch.positions,
-            batch.cells,
-            batch.pbc,
-            batch.offsets,
-            control,
-        )
-        values = format_values(values, dtype=self.dtype, sparse=self.sparse)
-        return DescriptorResult(
-            values,
-            "atom",
-            batch.ids,
-            batch.offsets.copy(),
-            self._labels(),
-            self._metadata(),
-        )
 
     def _labels(self) -> tuple[str, ...]:
         if not self.species or self._native is None:
@@ -174,28 +147,27 @@ class C00PSMlffKernel:
         return tuple(labels)
 
     def _metadata(self) -> dict[str, Any]:
-        return {
-            "backend": "mdescriptor-cpp",
-            "descriptor": self.name,
-            "source": "C00/PS radial-angular MLFF descriptor core",
-            "species": self.species,
-            "r_cut": self.r_cut,
-            "n_radial": self.n_radial,
-            "l_max": self.l_max,
-            "cutoff_function": self.cutoff,
-            "radial_sigma": self.radial_sigma,
-            "exclude_self_interaction": self.exclude_self_interaction,
-            "radial_weight": self.radial_weight,
-            "angular_weight": self.angular_weight,
-            "include_radial": self.include_radial,
-            "include_angular": self.include_angular,
-            "normalize_radial": self.normalize_radial,
-            "normalize_angular": self.normalize_angular,
-            "super_vector": self.super_vector,
-            "num_threads": self.num_threads,
-            "dtype": self.dtype,
-            "sparse": self.sparse,
-        }
+        return _cpp_metadata(
+            self.name,
+            source="C00/PS radial-angular MLFF descriptor core",
+            species=self.species,
+            r_cut=self.r_cut,
+            n_radial=self.n_radial,
+            l_max=self.l_max,
+            cutoff_function=self.cutoff,
+            radial_sigma=self.radial_sigma,
+            exclude_self_interaction=self.exclude_self_interaction,
+            radial_weight=self.radial_weight,
+            angular_weight=self.angular_weight,
+            include_radial=self.include_radial,
+            include_angular=self.include_angular,
+            normalize_radial=self.normalize_radial,
+            normalize_angular=self.normalize_angular,
+            super_vector=self.super_vector,
+            num_threads=self.num_threads,
+            dtype=self.dtype,
+            sparse=self.sparse,
+        )
 
 
 __all__ = ["C00PSMlffKernel"]

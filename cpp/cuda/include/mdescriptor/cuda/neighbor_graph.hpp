@@ -4,6 +4,8 @@
 #include "mdescriptor/cuda/context.hpp"
 #include "mdescriptor/detail/batch.hpp"
 
+#include <cuda_runtime.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -14,6 +16,30 @@ enum class NeighborGraphOrdering {
     Distance,
     Canonical,
 };
+
+// An edge is the exact self pair when it connects an atom to itself in the
+// home image.  Shifts may be enumerated locally (cell images) or read from a
+// CSR shift array; the array form stays null-safe because graphs built without
+// periodic images carry no shifts.
+__device__ __forceinline__ bool exact_self_edge(
+    std::int64_t center,
+    std::int64_t atom,
+    std::int64_t shift_x,
+    std::int64_t shift_y,
+    std::int64_t shift_z) {
+    return atom == center && shift_x == 0 && shift_y == 0 && shift_z == 0;
+}
+
+__device__ __forceinline__ bool exact_self_edge(
+    std::int64_t center,
+    std::int64_t atom,
+    const std::int32_t* shifts,
+    std::int64_t edge) {
+    return shifts != nullptr
+        && exact_self_edge(
+            center, atom, shifts[edge * 3], shifts[edge * 3 + 1],
+            shifts[edge * 3 + 2]);
+}
 
 // CSR + SoA representation shared by the CUDA descriptor family.  The graph
 // can either be uploaded by an adapter that already owns a host graph or be
@@ -61,7 +87,6 @@ public:
     void clear() noexcept;
 
     std::size_t pairs() const noexcept { return pairs_; }
-    std::int64_t max_neighbors() const noexcept { return max_neighbors_; }
     bool slot_major() const noexcept { return slot_major_; }
     std::int64_t neighbor_stride() const noexcept { return neighbor_stride_; }
     const std::int32_t* neighbor_counts() const noexcept { return neighbor_counts_; }
@@ -92,7 +117,6 @@ private:
     double* displacements_ = nullptr;
     double* distance2_ = nullptr;
     std::size_t pairs_ = 0;
-    std::int64_t max_neighbors_ = 0;
     bool slot_major_ = false;
     std::int64_t neighbor_stride_ = 0;
     std::size_t offsets_capacity_ = 0;

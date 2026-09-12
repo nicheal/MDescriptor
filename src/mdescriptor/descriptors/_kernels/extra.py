@@ -15,41 +15,8 @@ import numpy as np
 
 from ...core.species import require_species, validate_batch_species
 from .core import DescriptorResult, StructureBatch, _as_batch, _cpp
-from .matrix import CoulombMatrixKernel, EwaldSumMatrixKernel, SineMatrixKernel
 from .mbtr_config import resolve_mbtr_config
 from .structure import _StructureKernel
-
-
-def _periodic_neighbors(
-    batch: StructureBatch,
-    structure: int,
-    cutoff: float,
-    *,
-    include_self: bool = False,
-) -> list[list[tuple[int, np.ndarray, float, tuple[int, int, int]]]]:
-    """Compatibility view over the native neighbor graph used by tests/tools."""
-    from math import sqrt
-
-    start, stop = int(batch.offsets[structure]), int(batch.offsets[structure + 1])
-    offsets, atoms, shifts, displacements, distance2 = _cpp.build_neighbor_graph(
-        batch.numbers[start:stop], batch.positions[start:stop], batch.cells[structure], batch.pbc[structure], float(cutoff)
-    )
-    result: list[list[tuple[int, np.ndarray[Any, Any], float, tuple[int, int, int]]]] = []
-    for center in range(stop - start):
-        neighbors = []
-        for index in range(int(offsets[center]), int(offsets[center + 1])):
-            shift: tuple[int, int, int] = tuple(int(value) for value in shifts[index])  # type: ignore[assignment]
-            atom = int(atoms[index])
-            if not include_self and atom == center and shift == (0, 0, 0):
-                continue
-            neighbors.append((
-                atom,
-                np.asarray(displacements[index], dtype=np.float64),
-                sqrt(max(float(distance2[index]), 0.0)),
-                shift,
-            ))
-        result.append(neighbors)
-    return result
 
 
 class MBTRKernel(_StructureKernel):
@@ -161,13 +128,4 @@ class ValleOganovKernel(MBTRKernel):
         )
 
 
-# Keep the old private import path as a compatibility re-export.  The matrix
-# implementation itself lives in ``_kernels.matrix``.
-__all__ = [
-    "CoulombMatrixKernel",
-    "EwaldSumMatrixKernel",
-    "SineMatrixKernel",
-    "MBTRKernel",
-    "LMBTRKernel",
-    "ValleOganovKernel",
-]
+__all__ = ["MBTRKernel", "LMBTRKernel", "ValleOganovKernel"]

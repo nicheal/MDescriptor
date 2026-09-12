@@ -2,6 +2,7 @@
 
 #include "mdescriptor/detail/math3.hpp"
 #include "mdescriptor/neighbor.hpp"
+#include "dpa_common.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -226,80 +227,6 @@ void validate_options(const Dpa4cOptions& options) {
     }
 }
 
-Mat3 load_cell(const StructureBatchView& batch, std::int64_t structure) {
-    Mat3 cell;
-    const double* source = batch.cells + structure * 9;
-    for (int row = 0; row < 3; ++row) {
-        for (int column = 0; column < 3; ++column) {
-            cell.a[row][column] = source[row * 3 + column];
-        }
-    }
-    return cell;
-}
-
-Vec3 load_position(const double* positions, std::int64_t atom) {
-    const double* source = positions + atom * 3;
-    return {source[0], source[1], source[2]};
-}
-
-std::vector<double> normalized_positions(const StructureBatchView& batch) {
-    std::vector<double> positions(
-        static_cast<std::size_t>(batch.atoms) * 3,
-        0.0);
-    if (batch.atoms > 0) {
-        std::copy(
-            batch.positions,
-            batch.positions + static_cast<std::size_t>(batch.atoms) * 3,
-            positions.begin());
-    }
-    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-        bool periodic = true;
-        for (int axis = 0; axis < 3; ++axis) {
-            periodic = periodic && batch.pbc[structure * 3 + axis] == 1;
-        }
-        if (!periodic) {
-            continue;
-        }
-        const Mat3 cell = load_cell(batch, structure);
-        Mat3 inverse;
-        const bool diagonal = cell.a[0][1] == 0.0 && cell.a[0][2] == 0.0
-            && cell.a[1][0] == 0.0 && cell.a[1][2] == 0.0
-            && cell.a[2][0] == 0.0 && cell.a[2][1] == 0.0;
-        if (diagonal) {
-            for (int axis = 0; axis < 3; ++axis) {
-                inverse.a[axis][axis] = 1.0 / cell.a[axis][axis];
-            }
-        } else {
-            inverse = detail::inverse(cell);
-        }
-        const std::int64_t begin = batch.offsets[structure];
-        const std::int64_t end = batch.offsets[structure + 1];
-        for (std::int64_t atom = begin; atom < end; ++atom) {
-            const Vec3 point = load_position(batch.positions, atom);
-            const Vec3 fractional{
-                point.x * inverse.a[0][0] + point.y * inverse.a[1][0]
-                    + point.z * inverse.a[2][0],
-                point.x * inverse.a[0][1] + point.y * inverse.a[1][1]
-                    + point.z * inverse.a[2][1],
-                point.x * inverse.a[0][2] + point.y * inverse.a[1][2]
-                    + point.z * inverse.a[2][2],
-            };
-            const Vec3 wrapped{
-                fractional.x - std::floor(fractional.x),
-                fractional.y - std::floor(fractional.y),
-                fractional.z - std::floor(fractional.z),
-            };
-            const Vec3 cartesian = wrapped.x * detail::row(cell, 0)
-                + wrapped.y * detail::row(cell, 1)
-                + wrapped.z * detail::row(cell, 2);
-            positions[static_cast<std::size_t>(atom * 3 + 0)] = cartesian.x;
-            positions[static_cast<std::size_t>(atom * 3 + 1)] = cartesian.y;
-            positions[static_cast<std::size_t>(atom * 3 + 2)] = cartesian.z;
-        }
-    }
-    return positions;
-}
-
 void angular_basis(const float x, const float y, const float z, int lmax, float* result) {
     const float squared_norm = x * x + y * y + z * z;
     const float x2 = x * x;
@@ -521,7 +448,7 @@ void Dpa4cCalculator::compute(
         return;
     }
 
-    const std::vector<double> wrapped = normalized_positions(batch);
+    const std::vector<double> wrapped = detail::normalized_positions(batch);
     StructureBatchView normalized_batch = batch;
     normalized_batch.positions = wrapped.data();
     const NeighborGraph graph = build_neighbor_graph(

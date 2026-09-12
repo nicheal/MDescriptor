@@ -16,6 +16,7 @@ import math
 import os
 import platform
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -25,12 +26,11 @@ import numpy as np
 from descriptor_reference import (
     _batch_json,
     _current_result,
-    _digest,
     _json_safe,
     _parameters,
-    _portable,
     _reference_result,
 )
+from external_reference import _portable, sha256
 from mdescriptor import StructureBatch, get_descriptor, list_descriptors
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,17 +131,8 @@ def _batches() -> tuple[StructureBatch, StructureBatch, StructureBatch]:
     )
     return periodic, nonperiodic, mixed
 
-
-def _replace_species(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: _replace_species(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_replace_species(item) for item in value]
-    return value
-
-
 def _parameters_for(name: str) -> dict[str, Any]:
-    parameters = _replace_species(_parameters()[name])
+    parameters = dict(_parameters()[name])
     if "species" in parameters:
         parameters["species"] = list(ALL_SPECIES)
     if name == "SOAPTurbo":
@@ -204,7 +195,7 @@ def _reference_for(
             "package": "deepmd-kit",
             "version": "3.2.0",
             "evaluator": "scripts/deepmd_reference.py",
-            "evaluator_sha256": _digest(evaluator),
+            "evaluator_sha256": sha256(evaluator),
             "model_sha256": model["digest"],
             "nonperiodic": {
                 "mode": "cells_none",
@@ -220,33 +211,15 @@ def _reference_for(
             "row_offsets": None if current.row_offsets is None else current.row_offsets.tolist(),
         }
         return reference, reference_kind
-    with tempfile_directory(temporary_root) as case_root:
-        reference = _reference_result(reference_wheel, request, batch, case_root)
+    with tempfile.TemporaryDirectory(
+        prefix="case-", dir=temporary_root, ignore_cleanup_errors=True
+    ) as case_root_str:
+        reference = _reference_result(reference_wheel, request, batch, Path(case_root_str))
     return reference, {
         "kind": "project_commit",
         "source_commit": reference_source_commit,
-        "wheel": {"name": reference_wheel.name, "sha256": _digest(reference_wheel)},
+        "wheel": {"name": reference_wheel.name, "sha256": sha256(reference_wheel)},
     }
-
-
-class tempfile_directory:
-    """Small context manager that keeps all reference extraction under one temp root."""
-
-    def __init__(self, parent: Path):
-        self.parent = parent
-        self.path: Path | None = None
-
-    def __enter__(self) -> Path:
-        import tempfile
-
-        self.path = Path(tempfile.mkdtemp(prefix="case-", dir=self.parent))
-        return self.path
-
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        if self.path is not None:
-            import shutil
-
-            shutil.rmtree(self.path, ignore_errors=True)
 
 
 def _nonperiodic_policy(name: str, parameters: dict[str, Any]) -> dict[str, Any]:
@@ -343,7 +316,10 @@ def main(argv: list[str] | None = None) -> int:
         periodic_only = name in PERIODIC_ONLY
         batch = periodic if periodic_only else mixed
         current, info = _current_result(name, parameters, batch)
-        with tempfile_directory(Path("/tmp")) as reference_temp:
+        with tempfile.TemporaryDirectory(
+            prefix="case-", dir=Path("/tmp"), ignore_cleanup_errors=True
+        ) as reference_temp_str:
+            reference_temp = Path(reference_temp_str)
             reference, reference_info = _reference_for(
                 name,
                 parameters,
