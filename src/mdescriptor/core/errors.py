@@ -145,4 +145,3 @@ def _json_safe_details(value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError("error details must be a mapping")
     return json_safe_value(value, context="error detail")
-
