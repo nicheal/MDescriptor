@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -96,7 +96,7 @@ class SoapTurboKernel(_Kernel):
         if central_species is None:
             self.central_species = None
         elif np.isscalar(central_species):
-            self.central_species = normalize_species([int(central_species)])
+            self.central_species = normalize_species([int(cast(Any, central_species))])
         else:
             self.central_species = normalize_species(central_species)
         if self.l_max < 0 or self.l_max > 20 or self.rcut_hard <= 0 or self.rcut_soft <= 0:

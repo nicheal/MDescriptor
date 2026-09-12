@@ -92,6 +92,12 @@ class _Kernel:
     def _ensure_native(self, batch: StructureBatch) -> None:
         raise NotImplementedError
 
+    def _labels(self) -> tuple[str, ...]:
+        raise NotImplementedError
+
+    def _metadata(self) -> dict[str, Any]:
+        raise NotImplementedError
+
     def _result_metadata(self) -> Any:
         return self._metadata_template if self._metadata_template is not None else self._metadata()
 

@@ -95,7 +95,7 @@ def _readonly_csr(values: Any, scipy_sparse: Any) -> Any:
 
     global _readonly_csr_type
     if _readonly_csr_type is None:
-        class ReadOnlyCSR(scipy_sparse.csr_matrix):  # type: ignore[misc, valid-type]
+        class ReadOnlyCSR(scipy_sparse.csr_matrix):
             _MUTABLE_ATTRIBUTES = frozenset(
                 {
                     "data",
@@ -552,12 +552,15 @@ def _metadata_options(
             )
             return {"dtype": options.dtype, "sparse": options.sparse}
         num_threads = result.get("num_threads")
-        options = ExecutionOptions(
+        execution_options = ExecutionOptions(
             device=result.get("device", "cpu"),
             # Zero is the native kernels' spelling of an omitted thread count.
             num_threads=None if num_threads == 0 else num_threads,
         )
-        return {"device": options.device, "num_threads": options.num_threads}
+        return {
+            "device": execution_options.device,
+            "num_threads": execution_options.num_threads,
+        }
     except DescriptorConfigError as exc:
         raise TypeError(str(exc)) from exc
 
