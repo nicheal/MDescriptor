@@ -10,7 +10,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "MDescriptor"
 dynamic = ["version"]
-description = "Batch-oriented periodic atomic descriptors with C++17 kernels"
+description = "Batch atomic descriptors for isolated and periodic structures with C++17 and optional CUDA backends"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

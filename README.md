@@ -1,140 +1,81 @@
 # MDescriptor
 
-MDescriptor is a batch-oriented periodic atomic-descriptor library. The
-numerical kernels are implemented in C++17 and all Python descriptors share
-one input/result/lifecycle contract.
+MDescriptor is a Python library for computing atomic descriptors over batches
+of isolated and fully periodic structures. It combines one input/result
+contract with C++17/OpenMP kernels, an optional CUDA backend, and explicit
+metadata for applications that need to discover and configure descriptors.
 
-MDescriptor 是面向批量周期结构的原子描述符库。数值核心使用 C++17；所有
-Python 描述符共享统一的输入、结果和生命周期契约。
+MDescriptor 是面向孤立结构和完整周期结构批量计算原子描述符的 Python 库。
+它提供统一的输入/结果契约、C++17/OpenMP 数值核心、可选 CUDA 后端，以及适合
+应用程序发现和配置描述符的显式元数据。
 
-## Layout / 布局
+## Highlights / 特性
 
-The public namespace is intentionally small:
-
-```text
-src/mdescriptor/             installable package
-src/mdescriptor/core/         Descriptor, StructureBatch, DescriptorResult
-src/mdescriptor/descriptors/
-  standalone/                 no model required (ACE, matrices/, many_body/, local/, rotational/)
-  model_backed/               graph seam plus NEP, DPA4, DPA4C
-src/mdescriptor/models/assets/ packaged, hash-verified model resources
-tests/golden/              descriptor-owned, benchmark-independent accuracy fixtures
-docs/numerical-baselines.md  static-golden and external-runtime oracle inventory
-scripts/benchmarking/      controlled local benchmark runners
-benchmarks/                local benchmark snapshots (ignored except for tracked oracles)
-benchmarks/_legacy_oracles/ pinned independent upstream oracle adapters
-```
-
-`standalone` descriptors never require a model file. `model_backed` descriptors
-always resolve a model resource (a packaged default or an explicit `model=`
-path). There are no network downloads or implicit model discovery.
-
-`standalone` 中的描述符不需要模型文件；`model_backed` 中的 NEP、DPA4、DPA4C
-始终解析模型资源（内置默认模型或显式 `model=` 路径）。不会联网下载，也不会
-扫描目录自动发现模型。
+- 28 built-in descriptors covering local, matrix, many-body, rotational, and
+  model-backed families.
+- One validated `StructureBatch` input and one `DescriptorResult` output
+  contract for every descriptor.
+- Atom-, structure-, and pair-level results with stable samples, labels,
+  metadata, and feature counts.
+- Dense NumPy output by default, with optional read-only SciPy CSR output.
+- C++17/OpenMP CPU kernels; published Linux and Windows wheels also include
+  the CUDA backend in the same distribution.
+- Explicit, versioned registry metadata for descriptor discovery, GUI forms,
+  validation, and JSON configuration round-tripping.
+- Bundled, checksum-verified NEP, DPA4, and DPA4C model resources. DPA
+  checkpoints are read without importing or installing Torch, and models are
+  never downloaded implicitly.
+- Uniform lifecycle management and cooperative cancellation across the
+  descriptor API.
 
 ## Installation / 安装
 
-The base package requires Python 3.10+, NumPy and `array-api-compat`. ASE is
-optional and is only needed for `StructureBatch.from_ase` or direct ASE input.
-GUI/native frame records can use `StructureBatch.from_frames` without ASE.
-Sparse output is provided as SciPy CSR by the optional `sparse` extra.
-
-基础包需要 Python 3.10+、NumPy 和 `array-api-compat`。ASE 只在使用
-`StructureBatch.from_ase` 或直接传入 ASE 对象时需要；稀疏输出由可选的
-`sparse` extra 提供。GUI/原生帧记录可使用 `StructureBatch.from_frames`，不依赖 ASE。
+Install the published package with Python 3.10 or newer:
 
 ```bash
-python -m pip install .
-python -m pip install ".[ase]"
-python -m pip install ".[sparse]"
+python -m pip install mdescriptor
 ```
 
-DPA4 and DPA4C also expose CUDA execution. Their official `.pt` checkpoints
-are parsed by the bundled restricted NumPy reader without importing or
-installing Torch; the supported default graphs run through the C++17/OpenMP
-backend or the custom CUDA backend, while specialised configurations retain
-the NumPy fallback. No network model download is performed.
+Optional integrations:
 
-Prebuilt wheels ship one package with both backends built in: the CPU backend
-works everywhere and the CUDA backend activates on demand. All 28 built-in
-descriptors advertise both CPU and CUDA in the registry and never silently
-fall back to CPU; without a usable CUDA driver, a CUDA computation reports the
-structured `device_unavailable` error. The CUDA-capable set includes the
-local, matrix, many-body, rotational, NEP, DPA4, and DPA4C families listed in
-`docs/descriptor-inventory.md`.
+```bash
+python -m pip install "mdescriptor[ase]"     # ASE input conversion
+python -m pip install "mdescriptor[sparse]"   # SciPy CSR output
+```
 
-| Platform | Wheel backends | Runtime requirements |
-| --- | --- | --- |
-| Linux x86_64 | CPU + CUDA | CPU works out of the box; CUDA needs an NVIDIA driver (≥ 525.60.13) and a supported GPU |
-| Windows x86_64 | CPU + CUDA | CPU works out of the box; CUDA needs an NVIDIA driver (≥ 528.33) and a supported GPU |
-| macOS arm64 | CPU | No CUDA backend |
+The base package requires NumPy, `array-api-compat`, and `packaging`. ASE is
+needed only for `StructureBatch.from_ase(...)` or direct ASE input. DPA4 and
+DPA4C do not require Torch at runtime.
 
-The CUDA backend embeds SASS for sm_75 through sm_90; newer architectures
-(Blackwell and later) run through the embedded compute_90 PTX, which the
-driver JIT-compiles on first use. The CUDA user-space runtime is bundled with
-the wheel, so the target machine needs only the NVIDIA driver — no CUDA
-Toolkit.
+### Platform backends / 平台后端
 
-Building from source auto-detects a CUDA toolkit (`CUDACXX`, `CUDA_HOME`, or
-nvcc on `PATH`) and enables the CUDA backend when one is found. Pass
-`-DMDESCRIPTOR_BUILD_CUDA=OFF` to opt out or `-DCMAKE_CUDA_ARCHITECTURES=...`
-to target specific GPUs:
+The CPU backend works on every supported platform. The published wheel layout
+is:
+
+| Platform | CPU | CUDA |
+|---|---:|---:|
+| Linux x86_64 | Yes | Yes |
+| Windows x86_64 | Yes | Yes |
+| macOS arm64 | Yes | No |
+
+Linux and Windows wheels bundle the CUDA user-space runtime; an NVIDIA driver
+and a supported GPU are still required. CUDA is selected explicitly with
+`ExecutionOptions(device="cuda")` and never silently falls back to CPU. If the
+driver or GPU is unavailable, computation reports the structured
+`device_unavailable` error.
+
+When building from source, a CUDA toolkit is detected automatically. Disable
+it explicitly when needed:
 
 ```bash
 python -m pip install . --config-settings=cmake.define.MDESCRIPTOR_BUILD_CUDA=OFF
 ```
 
-预编译 wheel 在同一个包里内置 CPU 与 CUDA 两个后端：CPU 开箱即用，CUDA 按
-需激活。注册表中的 28 个内置描述符全部声明同时支持 CPU 和 CUDA，覆盖
-local、matrix、many-body、rotational、NEP、DPA4 和 DPA4C 家族，完整清单见
-`docs/descriptor-inventory.md`；CUDA 不会静默回退到 CPU，驱动不可用时返回
-结构化的 `device_unavailable` 错误。CUDA 后端预编译 sm_75–sm_90 的 SASS，
-更新的架构通过内嵌的 compute_90 PTX 由驱动首次使用时 JIT 编译；CUDA 用户态
-运行时已随 wheel 捆绑，目标机只需 NVIDIA 驱动，无需完整 CUDA Toolkit。
-
-源码构建会自动探测 CUDA 工具链（`CUDACXX`、`CUDA_HOME` 或 `PATH` 中的
-nvcc），探测到即同时构建 CUDA 后端；用 `-DMDESCRIPTOR_BUILD_CUDA=OFF`
-关闭，或用 `-DCMAKE_CUDA_ARCHITECTURES=...` 指定目标 GPU 架构。
-
-可选的外部数值对照固定使用 `deepmd-kit==3.2.0`：
-
-```bash
-python -m pip install ".[reference-deepmd]"
-python -m pytest -m deepmd tests/external_reference/test_deepmd.py
-```
-
-该对照同时覆盖周期和非周期输入；非周期帧按 DeepMD 的 `cells=None` 语义传入。
-`tests/golden/dpa4*` 的 expected output（包括非周期行）也由该外部 evaluator 生成，
-manifest 记录了 evaluator 脚本、模型 hash 和 `deepmd-kit` 版本；运行时仍只加载已
-提交的 NPZ，不要求安装 DeepMD。
-
-所有 28 个描述符都登记在[数值基线清单](docs/numerical-baselines.md)，并都有外部
-静态 golden：7 个沿用独立上游/source NPZ，另外 21 个在对应目录的
-`external_manifest.json` 中保存固定版本 provider 生成的数值。默认测试只依赖提交的
-fixture；外部 provider 缺失或版本漂移会使 reference job 失败，而不会静默跳过。
-
-性能说明：DPA4 native 路径现在使用固定大小分块的 SGEMM、可复用的计算工作区，
-并只为每条边计算一次 attention logit；DPA4C 的类型对 MLP 采用每个 calculator
-实例独立的惰性缓存。OpenBLAS 仅作为构建依赖，官方 wheel 会内置 prefixed 的
-OpenBLAS 及其运行时闭包和许可文件，安装后不需要 `scipy-openblas32`、Torch
-或其他新增运行时依赖。大批量独立结构按结构分块消费，以控制峰值内存。
-
-本地可复现实测（脚本默认 2 次预热、5 次稳态；基线为提交 `334e159`）可用
-以下命令生成完整 JSON 报告；报告同时记录构造、首次调用、p95、线程扫描、RSS
-和 profiling 构建中的私有阶段计时：
-
-```bash
-python scripts/benchmark_dpa_native.py \
-  --descriptor DPA4 --dataset carbon_dataset_pbc --limit-frames 50 \
-  --threads 1,4,32 --output /tmp/dpa4-native.json
-```
-
-当前 Linux 主机的候选测量中，DPA4 的 41 原子小批 median 约为 0.47 s（1
-线程）和 0.30 s（32 线程）；50 帧/3200 原子单次吞吐约为 57.8 s（1 线程）
-和 21.6 s（32 线程）。这些数字用于同机 A/B 门禁，不代表跨机器性能保证。
-
 ## Input contract / 输入契约
+
+Every descriptor accepts a `StructureBatch`. It can also adapt a single ASE
+`Atoms` object or a sequence of ASE objects when ASE is installed. GUI- or
+application-owned frame records can be packed with `StructureBatch.from_frames`.
 
 ```python
 import numpy as np
@@ -142,201 +83,197 @@ from mdescriptor import StructureBatch
 
 batch = StructureBatch(
     numbers=np.array([1, 8], dtype=np.int32),
-    positions=np.array([[0., 0., 0.], [1., 0., 0.]]),
-    cells=np.eye(3, dtype=np.float64)[None] * 12,
+    positions=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+    cells=np.eye(3, dtype=np.float64)[None] * 12.0,
     pbc=np.ones((1, 3), dtype=np.int32),
     offsets=np.array([0, 2], dtype=np.int64),
     ids=("water-0",),
 )
 ```
 
-`StructureBatch` takes an owned, read-only snapshot of its contiguous arrays
-and validates integer fields before narrowing, finite positions/cells,
-nonsingular cells, positive atomic numbers, monotonic offsets and fully
-periodic `pbc == (1, 1, 1)`. ASE conversion is available through
-`StructureBatch.from_ase(...)`; GUI-style mappings or objects exposing
-`numbers`, `positions`, `cell`, `pbc` and `id` can use
-`StructureBatch.from_frames(...)`.
+For `S` structures and `N` total atoms, the core fields are:
 
-## Descriptor API / 描述符 API
+| Field | Shape | Meaning |
+|---|---|---|
+| `numbers` | `(N,)` | Positive atomic numbers |
+| `positions` | `(N, 3)` | Cartesian coordinates |
+| `cells` | `(S, 3, 3)` | Unit-cell matrices; zero cells are allowed for isolated structures |
+| `pbc` | `(S, 3)` | All zeros for isolated or all ones for fully periodic structures |
+| `offsets` | `(S + 1,)` | Atom boundaries for each structure |
+| `ids` | length `S` | Structure identifiers |
 
-Algorithm classes live under `mdescriptor.descriptors` and use canonical names:
+`StructureBatch` owns read-only snapshots of its arrays and validates shapes,
+finite values, atomic numbers, offsets, cells, and periodicity. A batch may mix
+isolated and fully periodic structures, but partial periodicity within one
+structure is not supported. Optional `spins` and `charge_spin` fields are
+available for model descriptors that declare those capabilities.
+
+## Basic API / 基本 API
+
+Algorithm classes live in the lazy `mdescriptor.descriptors` namespace. The
+root package exposes the stable contracts, errors, and registry functions.
 
 ```python
+from mdescriptor import ExecutionOptions, OutputOptions
 from mdescriptor.descriptors import SOAP
 
-soap = SOAP(species=[1, 8], r_cut=4.5, n_max=4, l_max=3, average="off")
-result = soap.compute(batch)
-
-assert result.level == "atom"
-assert result.values.shape == (batch.atoms, soap.feature_count)
-assert len(result.labels) == result.values.shape[1]
-
-with SOAP(species=[1, 8], r_cut=4.5, n_max=2, l_max=2) as descriptor:
+with SOAP(
+    species=[1, 8],
+    r_cut=4.5,
+    n_max=4,
+    l_max=3,
+    average="off",
+    output=OutputOptions(dtype="float32"),
+    execution=ExecutionOptions(num_threads=4),
+) as descriptor:
     result = descriptor.compute(batch)
+
+print(result.level)                 # DescriptorLevel.ATOM
+print(result.values.shape)          # (number of atoms, feature_count)
+print(result.labels[:2])
+print(result.samples[:2])
 ```
 
-ACE (Atomic Cluster Expansion) is available as a standalone atom-level
-descriptor.  Its public options mirror the standard ACE1.jl
-`Utils.rpi_basis` path and accept atomic numbers or chemical symbols:
+All descriptors provide `compute(...)`, `close()`, `closed`, `configuration`,
+`metadata`, and (when resolved) `feature_count`. Computing after `close()`
+raises `ClosedDescriptorError`. Use `ComputeControl` as the `control=` argument
+to cancel a long-running computation cooperatively.
 
-```python
-from mdescriptor.descriptors import ACE
+## Results / 结果
 
-ace = ACE(species=["H", "O"], N=3, maxdeg=8, rcut=5.0)
-result = ace.compute(batch)
-```
+`DescriptorResult.values` is a two-dimensional dense NumPy array by default.
+With `OutputOptions(sparse=True)`, descriptors return a read-only SciPy CSR
+matrix instead. The common result fields are:
 
-Every descriptor has idempotent `close()`, a `closed` property and synchronous
-context-manager support. Computing after close raises `ClosedDescriptorError`.
-Instances are synchronous and not promised to be thread-safe.
+| Field | Meaning |
+|---|---|
+| `values` | Feature matrix with shape `(rows, features)` |
+| `level` | `atom`, `structure`, or `pair` |
+| `structure_ids` | Identifiers copied from the input batch |
+| `row_offsets` | Structure boundaries for atom- and pair-level rows; `None` for structure-level output |
+| `samples` | Stable row identities for the selected output level |
+| `labels` | One stable label per feature column |
+| `metadata` | JSON-safe descriptor, execution, output, and model metadata |
+| `feature_count` | Number of feature columns |
 
-每个描述符都提供幂等 `close()`、`closed` 属性和同步上下文管理器；关闭后计算
-会抛出 `ClosedDescriptorError`。实例是同步的，不承诺线程安全。
+The sample layouts are:
 
-`DescriptorResult` contains `values`, `level` (`atom`, `structure`, or `pair`),
-`structure_ids`, row offsets, stable `labels`, JSON-safe `metadata`, per-row
-`samples`, and `feature_count`. The descriptor itself also retains the latest
-JSON-safe `metadata` and its `configuration` after `close()`. The standard shapes are `(N, F)`, `(S, F)`,
-and `(P, F)` for atom, structure and pair outputs respectively. Result arrays
-are owned snapshots and exposed read-only.
+- structure level: `[structure]`
+- atom level: `[structure, local_atom]`
+- pair level: `[structure, local_atom_1, local_atom_2, shift_a, shift_b, shift_c]`
 
-## Supported descriptors / 支持的描述符
+## Built-in descriptors / 内置描述符
 
-The built-in registry currently provides 28 descriptors. `None` means no model
-file is needed; `Optional` means a model can be supplied (as with MTP); and
-`Required` means the descriptor always resolves a local model resource. See
-the [full descriptor inventory](docs/descriptor-inventory.md) for parameters,
-capabilities and backend details.
+The built-in registry currently contains 28 descriptors:
 
-内置注册表目前提供 28 个描述符。`None` 表示不需要模型文件；`Optional` 表示
-可以提供模型（例如 MTP）；`Required` 表示描述符始终解析本地模型资源。参数、
-能力和后端详情请参阅[完整描述符清单](docs/descriptor-inventory.md)。
+| Family | Descriptors |
+|---|---|
+| Local | `SOAP`, `SOAPTurbo`, `ACSF`, `ACE`, `AtomicComposition`, `NeighborList`, `SortedDistances`, `SphericalExpansion`, `SphericalExpansionByPair`, `SoapRadialSpectrum`, `SoapPowerSpectrum`, `LodeSphericalExpansion`, `MTP`, `C00PSMLFF` |
+| Matrix | `CoulombMatrix`, `SineMatrix`, `EwaldSumMatrix` |
+| Many-body | `MBTR`, `LMBTR`, `ValleOganov` |
+| Rotational | `EAD`, `SO3`, `SO4`, `SNAP`, `LBispectrum` |
+| Model-backed | `NEP`, `DPA4`, `DPA4C` |
 
-| Descriptor / 描述符 | Category / 类型 | Output / 输出 | Model / 模型 |
-|---|---|---|---|
-| `SOAP` | Local / 局部 | Structure / 结构 | `None` |
-| `SOAPTurbo` | Local / 局部 | Atom / 原子 | `None` |
-| `ACSF` | Local / 局部 | Atom / 原子 | `None` |
-| `ACE` | Local / 局部 | Atom / 原子 | `None` |
-| `CoulombMatrix` | Matrix / 矩阵 | Structure / 结构 | `None` |
-| `SineMatrix` | Matrix / 矩阵 | Structure / 结构 | `None` |
-| `EwaldSumMatrix` | Matrix / 矩阵 | Structure / 结构 | `None` |
-| `MBTR` | Many-body / 多体 | Structure / 结构 | `None` |
-| `LMBTR` | Many-body / 多体 | Atom / 原子 | `None` |
-| `ValleOganov` | Many-body / 多体 | Structure / 结构 | `None` |
-| `AtomicComposition` | Local / 局部 | Structure / 结构 | `None` |
-| `NeighborList` | Local / 局部 | Pair / 原子对 | `None` |
-| `SortedDistances` | Local / 局部 | Atom / 原子 | `None` |
-| `SphericalExpansion` | Local / 局部 | Atom / 原子 | `None` |
-| `SphericalExpansionByPair` | Local / 局部 | Pair / 原子对 | `None` |
-| `SoapRadialSpectrum` | Local / 局部 | Atom / 原子 | `None` |
-| `SoapPowerSpectrum` | Local / 局部 | Atom / 原子 | `None` |
-| `LodeSphericalExpansion` | Local / 局部 | Atom / 原子 | `None` |
-| `EAD` | Rotational / 旋转 | Atom / 原子 | `None` |
-| `SO3` | Rotational / 旋转 | Atom / 原子 | `None` |
-| `SO4` | Rotational / 旋转 | Atom / 原子 | `None` |
-| `SNAP` | Rotational / 旋转 | Atom / 原子 | `None` |
-| `LBispectrum` | Rotational / 旋转 | Atom / 原子 | `None` |
-| `MTP` | Local / 局部 | Atom / 原子 | `Optional` |
-| `C00PSMLFF` | Local / 局部 | Atom / 原子 | `None` |
-| `NEP` | Model-backed / 模型 | Atom / 原子 | `Required` |
-| `DPA4` | Model-backed / 模型 | Atom / 原子 | `Required` |
-| `DPA4C` | Model-backed / 模型 | Atom / 原子 | `Required` |
+See the [descriptor inventory](docs/descriptor-inventory.md) for the
+canonical parameters, output levels, periodicity, execution devices, model
+policies, and GUI-facing descriptions. The inventory is generated from the
+immutable built-in registry.
 
-## Registry / 注册表
+## Registry and application integration / 注册表与应用集成
 
-Built-ins come from one explicit immutable specification list. Imports are
-lazy and no decorator or filesystem scan is used.
+The registry is the single discovery source for built-in descriptors. Static
+metadata can be queried without constructing a descriptor or resolving a
+model:
 
 ```python
 import mdescriptor
-from mdescriptor.descriptors import SOAP
 
-print(mdescriptor.list_descriptors())
+names = mdescriptor.list_descriptors()
 summaries = mdescriptor.list_descriptors(detailed=True)
-metadata = mdescriptor.describe_descriptor("SOAP")
+soap_info = mdescriptor.describe_descriptor("SOAP")
 runtime = mdescriptor.get_runtime_info()
-baseline = mdescriptor.gui_baseline()
-soap = SOAP(species=[1, 8], r_cut=4.5, n_max=2, l_max=2)
-rebuilt = mdescriptor.create_descriptor(soap.configuration)
-
-child = mdescriptor.DescriptorRegistry(parent=mdescriptor.builtin_registry)
-child.register(my_spec)
 ```
 
-The built-in list separates `AssetPolicy.NONE`, `OPTIONAL` (for example MTP
-potentials), and `REQUIRED` (NEP/DPA4/DPA4C). The root package exposes stable
-contracts, registry functions and errors only; algorithm implementations are
-not re-exported from the root. `describe_descriptor(name)` reads static,
-JSON-safe GUI metadata from the registry without constructing a descriptor or
-resolving a model. `list_descriptors(detailed=True)` returns the name, version,
-display name, category and level for every descriptor in one call.
-`gui_baseline()` returns the packaged GUI contract document, and
-`get_runtime_info()` reports its `baseline_version` alongside the package and
-schema versions.
-
-The keys in `metadata["parameters"]` are the unchanged constructor and
-configuration names. Each parameter schema also contains a GUI-facing
-`display_name` and `description`; use the former as the field label and the
-latter as the tooltip, while submitting the value under the mapping key:
+`describe_descriptor(name)` returns JSON-safe parameter schemas, display names,
+tooltips, execution devices, input periodicity, output options, and model asset
+policy. `DescriptorConfiguration` is an immutable, versioned JSON form that
+can be stored and reconstructed:
 
 ```python
-metadata = mdescriptor.describe_descriptor("SOAP")
-for parameter_name, schema in metadata["parameters"].items():
-    label = schema["display_name"]
-    tooltip = schema["description"]
-    # Render `label` and `tooltip`, then serialize the value as `parameter_name`.
+from mdescriptor import DescriptorConfiguration, create_descriptor
+
+saved = descriptor.configuration.to_dict()
+restored = create_descriptor(DescriptorConfiguration.from_dict(saved))
+restored.close()
 ```
 
-On Windows, import `mdescriptor` during single-threaded startup, before an
-embedding host starts background stdin/stdio readers. The package preloads the
-packaged native binary at that point; a host that controls startup explicitly
-may also call `mdescriptor.preload_native()`.
+`gui_baseline()` returns the packaged [GUI adaptation contract](docs/gui-adaptation-baseline.md),
+including the error and metadata conventions expected by an application.
 
 ## Model resources / 模型资源
 
-`ModelResource`, `ModelResolver`, `LoadedModel` and `ModelSession` are the
-shared model-resource seam. Resolution is explicit, local and checksum-aware:
+`NEP`, `DPA4`, and `DPA4C` use local model resources. Each has a bundled,
+checksum-verified default model:
 
 ```python
-from pathlib import Path
-from mdescriptor.descriptors import DPA4
 from mdescriptor import ExecutionOptions
+from mdescriptor.descriptors import DPA4, DPA4C, NEP
 
-dpa4 = DPA4(
-    model=Path("/path/to/official-checkpoint.pt"),
-    execution=ExecutionOptions(device="cpu"),
-)
-result = dpa4.compute(batch)
+nep = NEP()
+dpa4 = DPA4(execution=ExecutionOptions(device="cpu"))
+dpa4c = DPA4C(calibrate=True)
+
+for descriptor in (nep, dpa4, dpa4c):
+    descriptor.close()
 ```
 
-For GUI configuration JSON, a model parameter may be an explicit path string
-or the tagged object returned by `ModelResource.to_dict()`; the latter is used
-for named/checksummed resources.
+An explicit compatible local model can be passed with `model=/path/to/model`.
+`MTP` accepts an optional local model for MLIP-2/MLIP-4-compatible features;
+standalone descriptors do not require model files. No descriptor downloads a
+model or searches the filesystem implicitly.
 
-The DPA4/DPA4C checkpoint readers and NumPy fallback path remain isolated
-vendor adapters. The default inference graphs are lowered into the private
-`mdescriptor._native` C++17/OpenMP extension.
+DPA4 and DPA4C official `.pt` checkpoints are parsed by the bundled NumPy
+reader. The default inference graphs use the native execution backends when
+available, while compatible specialized configurations retain the NumPy
+fallback.
 
 ## Development / 开发
 
-```bash
-.venv/bin/python -m pip install -e . --no-build-isolation
-.venv/bin/python -m pytest --import-mode=importlib tests -q
-.venv/bin/python -m pytest --cov=mdescriptor --cov-report=term-missing tests
+Install the project in editable mode and run the default test suite:
 
-.venv/bin/cmake -S cpp/tests -B build/cpp-tests -DCMAKE_BUILD_TYPE=Release
-.venv/bin/cmake --build build/cpp-tests --config Release
-.venv/bin/ctest --test-dir build/cpp-tests -C Release --output-on-failure
+```bash
+python -m pip install -e . --no-build-isolation
+python -m pytest --import-mode=importlib tests -q
 ```
 
-Coverage excludes the isolated vendored DPA implementation and enforces 75%
-branch coverage for project-owned Python code.  Controlled performance
-reports are produced by `scripts/benchmarking/run_descriptor_benchmark.py`.
+Quality and contract checks:
 
-The extension is private (`mdescriptor._native`). C++ shared math and batch
-helpers live in named headers under `cpp/include/mdescriptor/detail/`.
+```bash
+python -m ruff check src tests scripts
+python -m mypy
+python scripts/check_descriptor_inventory.py --check
+python scripts/check_numerical_baselines.py --check
+```
 
-MDescriptor is licensed under the GNU General Public License v3.0; see
-[LICENSE](LICENSE).
+The direct C++ tests can be run independently:
+
+```bash
+cmake -S cpp/tests -B build/cpp-tests -DCMAKE_BUILD_TYPE=Release
+cmake --build build/cpp-tests --config Release
+ctest --test-dir build/cpp-tests -C Release --output-on-failure
+```
+
+The controlled CPU benchmark uses the committed golden fixtures:
+
+```bash
+python scripts/benchmarking/run_descriptor_benchmark.py \
+  --output /tmp/mdescriptor-benchmark.json
+```
+
+Pushing a `v*` tag runs the release workflow. It builds CPython 3.10–3.14
+wheels for Linux x86_64, Windows x86_64, and macOS arm64, builds an sdist, and
+publishes the artifacts to PyPI through GitHub Trusted Publishing.
+
+## License / 许可证
+
+MDescriptor is distributed under the [GNU General Public License v3.0](LICENSE).
