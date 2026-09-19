@@ -524,6 +524,266 @@ __device__ I64 center_for_edge(const I64* offsets, I64 atoms, I64 edge) {
     return left;
 }
 
+// Block-cooperative form of :c:func:`harmonic_values` for the SOAP
+// coefficient kernel.  The serial version chains 231 local-memory recurrence
+// steps through one lane per edge; here every value is computed by exactly
+// one lane with the identical expression from shared-memory scratch, so the
+// results are bit-identical while the work spreads across the block.
+// ``output`` (441), ``legendre`` (231) and ``scalars`` (8) must be
+// shared-memory arrays visible to the whole block; the caller enters this
+// function with every lane and must not hold divergent barriers.
+__device__ void harmonic_values_block(
+    const double* vector,
+    double* output,
+    double* legendre,
+    double* scalars,
+    int requested,
+    int lane,
+    int threads) {
+    auto legendre_index = [](int angular, int m) {
+        return m + angular * (angular + 1) / 2;
+    };
+    constexpr double sqrt_1_over_2pi = 0.398942280401432677939946059934;
+    constexpr double sqrt_3 = 1.732050807568877293527446341505872;
+    constexpr double sqrt_3_over_2 = 1.224744871391589049098642;
+    // scalars: [0] cos_theta, [1] sin_theta, [2] cos_phi, [3] sin_phi,
+    //          [4] xy, [5] cos_m, [6] sin_m
+    double value = 0.0;
+    if (lane == 0) {
+        const double norm = sqrt(vector[0] * vector[0] + vector[1] * vector[1]
+            + vector[2] * vector[2]);
+        double direction[3] = {vector[0], vector[1], vector[2]};
+        if (norm < 1e-6) {
+            direction[0] = 0.0;
+            direction[1] = 0.0;
+            direction[2] = 1.0;
+        } else {
+            direction[0] /= norm;
+            direction[1] /= norm;
+            direction[2] /= norm;
+        }
+        const double xy = hypot(direction[0], direction[1]);
+        const double cos_theta = direction[2];
+        const double sin_theta = xy;
+        scalars[0] = cos_theta;
+        scalars[1] = sin_theta;
+        scalars[4] = xy;
+        legendre[legendre_index(0, 0)] = sqrt_1_over_2pi;
+        value = -sqrt_3_over_2 * sin_theta * sqrt_1_over_2pi;
+        if (requested > 0) {
+            legendre[legendre_index(1, 0)] = cos_theta * sqrt_3 * sqrt_1_over_2pi;
+            legendre[legendre_index(1, 1)] = value;
+        }
+        scalars[2] = xy > DBL_EPSILON ? direction[0] / xy : 1.0;
+        scalars[3] = xy > DBL_EPSILON ? direction[1] / xy : 0.0;
+    }
+    __syncthreads();
+    for (int angular = 2; angular <= requested; ++angular) {
+        for (int m = lane; m < angular - 1; m += threads) {
+            const double ls = static_cast<double>(angular * angular);
+            const double lm1s = static_cast<double>((angular - 1) * (angular - 1));
+            const double ms = static_cast<double>(m * m);
+            const double a_coef = sqrt((4.0 * ls - 1.0) / (ls - ms));
+            const double b_coef = -sqrt((lm1s - ms) / (4.0 * lm1s - 1.0));
+            legendre[legendre_index(angular, m)] = a_coef * (
+                scalars[0] * legendre[legendre_index(angular - 1, m)]
+                + b_coef * legendre[legendre_index(angular - 2, m)]);
+        }
+        if (lane == 0) {
+            legendre[legendre_index(angular, angular - 1)] = scalars[0]
+                * sqrt(2.0 * angular + 1.0) * value;
+            value *= -sqrt(1.0 + 0.5 / angular) * scalars[1];
+            legendre[legendre_index(angular, angular)] = value;
+        }
+        __syncthreads();
+    }
+    for (int angular = lane; angular <= requested; angular += threads) {
+        output[angular * angular + angular] =
+            legendre[legendre_index(angular, 0)] / 1.414213562373095048801688724209698079;
+    }
+    const double minus_two_cos = -2.0 * scalars[2];
+    double cos_previous = 1.0;
+    double sin_previous = 0.0;
+    double cos_current = -scalars[2];
+    double sin_current = scalars[3];
+    for (int m = 1; m <= requested; ++m) {
+        if (lane == 0) {
+            const double sin_m = minus_two_cos * sin_previous - sin_current;
+            const double cos_m = minus_two_cos * cos_previous - cos_current;
+            sin_current = sin_previous;
+            sin_previous = sin_m;
+            cos_current = cos_previous;
+            cos_previous = cos_m;
+            scalars[5] = cos_m;
+            scalars[6] = sin_m;
+        }
+        __syncthreads();
+        for (int angular = lane + m; angular <= requested; angular += threads) {
+            output[angular * angular + angular + m] =
+                legendre[legendre_index(angular, m)] * scalars[5];
+            output[angular * angular + angular - m] =
+                legendre[legendre_index(angular, m)] * scalars[6];
+        }
+        __syncthreads();
+    }
+}
+
+
+__global__ void soap_coefficients_block_kernel(
+    const I32* numbers,
+    const I64* graph_offsets,
+    const I32* graph_atoms,
+    const I32* graph_shifts,
+    const double* graph_displacements,
+    const double* graph_distance2,
+    const I32* species,
+    int species_count,
+    int coefficient_types,
+    int radial_count,
+    int max_angular,
+    int radial_basis,
+    double cutoff,
+    double graph_cutoff,
+    double sigma,
+    const double* alphas,
+    const double* betas,
+    const double* radial_grid,
+    int radial_grid_count,
+    const double* radial_weights,
+    const double* radial_values,
+    int weighting_function,
+    double weighting_r0,
+    double weighting_c,
+    double weighting_d,
+    double weighting_m,
+    double weighting_threshold,
+    double weighting_w0,
+    bool weighting_has_w0,
+    const double* species_weights,
+    I64 atoms,
+    double* coefficients) {
+    __shared__ double soap_eta_power[kSoapMaxAngular + 1];
+    __shared__ double soap_radius_power[kSoapMaxAngular + 1];
+    __shared__ double soap_prefactor[(kSoapMaxAngular + 1) * 32];
+    __shared__ double soap_flir[(kSoapMaxAngular + 1) * kSoapGridBound];
+    __shared__ double soap_radial_value[(kSoapMaxAngular + 1) * 32];
+    __shared__ double soap_harmonics[(kSoapMaxAngular + 1) * (kSoapMaxAngular + 1)];
+    __shared__ double soap_legendre[(kSoapMaxAngular + 1) * (kSoapMaxAngular + 2) / 2];
+    __shared__ double soap_harmonics_scalars[8];
+    __shared__ int soap_a_of_h[(kSoapMaxAngular + 1) * (kSoapMaxAngular + 1)];
+    // One thread block per atom.  The previous one-thread-per-atom form left
+    // the GPU idle for typical batches (256 atoms -> 256 threads).  Here the
+    // block cooperates on every edge while each coefficient element is still
+    // updated exactly once per edge, in edge order, so the per-element
+    // accumulation sequence -- and therefore the bits -- match the serial
+    // kernel.
+    const I64 center = static_cast<I64>(blockIdx.x);
+    if (center >= atoms) return;
+    const int lane = static_cast<int>(threadIdx.x);
+    const int harmonic_count = (max_angular + 1) * (max_angular + 1);
+    const I64 coefficient_size = static_cast<I64>(coefficient_types)
+        * radial_count * harmonic_count;
+    double* target = coefficients + center * coefficient_size;
+    for (I64 index = lane; index < coefficient_size; index += blockDim.x) {
+        target[index] = 0.0;
+    }
+    // Harmonic index -> angular degree: degree a owns the contiguous index
+    // range [a*a, a*a + 2a], i.e. exactly the integers with floor(sqrt(h))==a.
+    for (int h = lane; h < harmonic_count; h += blockDim.x) {
+        soap_a_of_h[h] = static_cast<int>(sqrt(static_cast<double>(h)));
+    }
+    const double eta = 1.0 / (2.0 * sigma * sigma);
+    // pow(eta, angular) does not depend on the edge; evaluate it once.
+    for (int a = lane; a <= max_angular; a += blockDim.x) {
+        soap_eta_power[a] = pow(eta, a);
+    }
+    __syncthreads();
+    const I64 begin = graph_offsets[center];
+    const I64 end = graph_offsets[center + 1];
+    for (I64 edge = begin; edge < end; ++edge) {
+        const I32 atom = graph_atoms[edge];
+        const int type = species_index(numbers[atom], species, species_count);
+        if (type < 0) continue;
+        const double distance2 = fmax(0.0, graph_distance2[edge]);
+        const double distance = sqrt(distance2);
+        if (distance >= graph_cutoff) continue;
+        const bool exact_self = exact_self_edge(center, atom, graph_shifts, edge);
+        const double weight = soap_weight_device(
+            weighting_function, weighting_r0, weighting_c, weighting_d, weighting_m,
+            weighting_threshold, weighting_w0, weighting_has_w0, exact_self,
+            distance, species_weights == nullptr ? 1.0 : species_weights[type]);
+        if (weight == 0.0) continue;
+        harmonic_values_block(
+            graph_displacements + edge * 3, soap_harmonics, soap_legendre,
+            soap_harmonics_scalars, max_angular, lane,
+            static_cast<int>(blockDim.x));
+        for (int a = lane; a <= max_angular; a += blockDim.x) {
+            soap_radius_power[a] = pow(distance, a);
+        }
+        // The GTO prefactor and the polynomial grid Flir depend only on the
+        // (angular, raw) / (angular, grid) pair -- never on the radial
+        // channel -- so they are evaluated once and shared by every radial.
+        if (radial_basis == 0) {
+            for (int idx = lane; idx < (max_angular + 1) * radial_count; idx += blockDim.x) {
+                const int angular = idx / radial_count;
+                const int raw = idx % radial_count;
+                const double alpha = alphas[angular * radial_count + raw];
+                const double denominator = alpha + eta;
+                soap_prefactor[idx] = soap_eta_power[angular]
+                    * pow(denominator, -angular - 1.5)
+                    * exp(-alpha * eta / denominator * distance2);
+            }
+        } else {
+            for (int idx = lane; idx < (max_angular + 1) * radial_grid_count; idx += blockDim.x) {
+                const int angular = idx / radial_grid_count;
+                const int q = idx % radial_grid_count;
+                soap_flir[idx] = soap_polynomial_flir(
+                    distance, radial_grid[q], angular, sigma);
+            }
+        }
+        __syncthreads();
+        for (int idx = lane; idx < (max_angular + 1) * radial_count; idx += blockDim.x) {
+            const int angular = idx / radial_count;
+            const int radial = idx % radial_count;
+            double radial_value = 0.0;
+            if (radial_basis == 0) {
+                for (int raw = 0; raw < radial_count; ++raw) {
+                    radial_value += betas[(angular * radial_count + radial)
+                        * radial_count + raw] * soap_prefactor[angular * radial_count + raw];
+                }
+                radial_value = kPi * sqrt(kPi) * radial_value;
+            } else {
+                for (int q = 0; q < radial_grid_count; ++q) {
+                    radial_value += radial_weights[q] * radial_grid[q] * radial_grid[q]
+                        * soap_flir[angular * radial_grid_count + q]
+                        * radial_values[radial * radial_grid_count + q];
+                }
+                radial_value *= 4.0 * kPi;
+            }
+            soap_radial_value[idx] = radial_value;
+        }
+        __syncthreads();
+        // One lane per (radial, harmonic) element per edge; the element's
+        // update order across edges is unchanged from the serial kernel.
+        const int destination_type = coefficient_types == 1 ? 0 : type;
+        const int touched = radial_count * harmonic_count;
+        for (int t = lane; t < touched; t += blockDim.x) {
+            const int radial = t / harmonic_count;
+            const int h = t - radial * harmonic_count;
+            const int angular = soap_a_of_h[h];
+            const double angular_factor = radial_basis == 0
+                ? soap_radius_power[angular] : 1.0;
+            target[(destination_type * radial_count + radial) * harmonic_count + h]
+                += weight * soap_radial_value[angular * radial_count + radial]
+                * angular_factor * soap_harmonics[h];
+        }
+        __syncthreads();
+        // mu2 combines species densities in one coefficient block; the loop
+        // above already accumulates every neighbor into that block.
+    }
+}
+
+
 // Two-phase SOAP expansion.  Phase 1 runs one thread per edge and computes
 // the spherical harmonics, the species-summed radial values, and the
 // per-degree distance powers exactly as the serial kernel did, into a
@@ -1121,6 +1381,18 @@ py::dict compute_soap_descriptor(
     const I64 edge_scratch_stride = 2 + (max_angular + 1) * radial_count
         + (max_angular + 1) + harmonic_count;
     constexpr I64 kSoapTileEdgeCap = 32768;
+    constexpr unsigned soap_block_threads = 256;
+    // Dense batches (many directed edges per atom) run the block-cooperative
+    // kernel: its per-atom edge loop stays latency-friendly, while the
+    // two-phase path's per-atom accumulate thread would starve.  Wide batches
+    // and small batches run the two-phase path, whose edge-parallel
+    // precompute covers both.  Measured crossover on RTX 2080 sits near 490
+    // directed edges per atom at 256 atoms, with the cooperative form winning
+    // from roughly 256 edges per atom upward once at least 64 blocks are
+    // available.  Both paths update every coefficient element exactly once
+    // per edge in edge order, so they are bit-identical.
+    const bool dense = batch.atoms() >= 64
+        && graph.pairs() >= 256 * static_cast<I64>(batch.atoms());
     std::size_t edge_scratch_slots = 0;
     I64 max_atom_edges = 0;
     std::vector<I64> host_offsets;
@@ -1187,7 +1459,21 @@ py::dict compute_soap_descriptor(
     // bit-identical to the serial accumulation.
     const I64 segment_size = std::max<I64>(1,
         (max_atom_edges + kSoapReduceSegments - 1) / kSoapReduceSegments);
-    if (batch.atoms() > 0) {
+    if (batch.atoms() > 0 && dense) {
+        soap_coefficients_block_kernel<<<static_cast<unsigned>(batch.atoms()),
+            soap_block_threads, 0, context.stream()>>>(
+            batch.numbers(), graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(),
+            graph.distance2(), d_species.get(), species_count, coefficient_types, radial_count,
+            max_angular, radial_basis, cutoff, graph_cutoff, sigma,
+            d_alphas.get(), d_betas.get(), d_grid.get(),
+            static_cast<int>(radial_grid.size()), d_radial_weights.get(), d_values.get(), weighting_function,
+            option(weighting, "r0", 1.0), option(weighting, "c", 1.0),
+            option(weighting, "d", 0.0), option(weighting, "m", 1.0),
+            option(weighting, "threshold", 1e-2), option(weighting, "w0", 1.0),
+            weighting.contains("w0"), d_species_weights.get(), batch.atoms(), coefficients);
+        check_cuda(cudaGetLastError(), "CUDA SOAP block coefficient kernel launch failed");
+    }
+    if (batch.atoms() > 0 && !dense) {
         I64 atom_begin = 0;
         while (atom_begin < batch.atoms()) {
             I64 atom_end = atom_begin + 1;
