@@ -719,22 +719,6 @@ __device__ double soap_power_feature(
     }
     double sum = 0.0;
     const int first_type = coefficient_types == 1 ? 0 : first;
-    if (compression == 2) {
-        for (int type = 0; type < species_count; ++type) {
-            for (int m = -angular; m <= angular; ++m) {
-                sum += soap_coefficient_at(
-                    coefficients, first_type, n1, angular * angular + angular + m,
-                    radial_count, harmonic_count)
-                    * soap_coefficient_at(
-                        coefficients, 0, n2, angular * angular + angular + m,
-                        radial_count, harmonic_count);
-            }
-        }
-        // The second factor above is the combined density for a mu1nu1
-        // representation.  It is materialized below by the caller in the
-        // species-summed coefficient buffer; this branch is replaced there.
-        return sum * kPi * sqrt(8.0 / (2.0 * angular + 1.0));
-    }
     for (int m = -angular; m <= angular; ++m) {
         sum += soap_coefficient_at(
             coefficients, first_type, n1, angular * angular + angular + m,
@@ -746,6 +730,9 @@ __device__ double soap_power_feature(
     return kPi * sqrt(8.0 / (2.0 * angular + 1.0)) * sum;
 }
 
+// One thread per (row, feature).  Every power-spectrum entry is independent,
+// so the feature dimension parallelizes the work without touching the
+// per-entry summation order.
 __global__ void soap_power_kernel(
     const double* coefficients,
     I64 rows,
@@ -757,47 +744,75 @@ __global__ void soap_power_kernel(
     int max_angular,
     int compression,
     double* output) {
-    const I64 row = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (row >= rows) return;
+    const I64 index = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (index >= static_cast<I64>(rows) * features) return;
+    const I64 row = index / features;
+    output[index] = soap_power_feature(
+        coefficients + row * coefficient_stride, static_cast<int>(index % features),
+        species_count, coefficient_types, radial_count, max_angular, compression);
+}
+
+// mu1nu1 phase 1: build the species-summed density in global scratch.  Each
+// thread owns one (row, coefficient) element and accumulates the species
+// blocks in the same sequential order the previous per-thread local array
+// used, keeping the results bit-identical without the 112 KiB per-thread
+// local-memory footprint.
+__global__ void soap_mu1nu1_sum_kernel(
+    const double* coefficients,
+    I64 rows,
+    I64 coefficient_stride,
+    int sum_count,
+    int species_count,
+    int radial_count,
+    int harmonic_count,
+    double* summed) {
+    const I64 index = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (index >= static_cast<I64>(rows) * sum_count) return;
+    const I64 row = index / sum_count;
+    const int element = static_cast<int>(index % sum_count);
     const double* source = coefficients + row * coefficient_stride;
-    double* target = output + row * features;
-    if (compression != 2) {
-        for (int feature = 0; feature < features; ++feature) {
-            target[feature] = soap_power_feature(
-                source, feature, species_count, coefficient_types,
-                radial_count, max_angular, compression);
-        }
-        return;
+    double value = 0.0;
+    for (int type = 0; type < species_count; ++type) {
+        value += source[type * radial_count * harmonic_count + element];
     }
-    // Build the species-summed density once per row for mu1nu1.  The temporary
-    // block is kept in registers/local memory so no host-side reduction is
-    // introduced into the CUDA path.
+    summed[index] = value;
+}
+
+// mu1nu1 phase 2: one thread per (row, feature), reading the species-summed
+// density from scratch with the same per-feature m-summation order.
+__global__ void soap_power_mu1nu1_kernel(
+    const double* coefficients,
+    const double* summed,
+    I64 rows,
+    I64 coefficient_stride,
+    int features,
+    int radial_count,
+    int max_angular,
+    double* output) {
+    const I64 index = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (index >= static_cast<I64>(rows) * features) return;
     const int harmonic_count = (max_angular + 1) * (max_angular + 1);
     const int sum_count = radial_count * harmonic_count;
-    double summed[32 * 441]{};
-    if (sum_count > static_cast<int>(sizeof(summed) / sizeof(double))) return;
-    for (int type = 0; type < species_count; ++type) {
-        const double* block = source + type * radial_count * harmonic_count;
-        for (int index = 0; index < sum_count; ++index) summed[index] += block[index];
+    const I64 row = index / features;
+    const int feature = static_cast<int>(index % features);
+    const double* source = coefficients + row * coefficient_stride;
+    const double* summed_row = summed + row * sum_count;
+    int remainder = feature;
+    const int per_type = (max_angular + 1) * radial_count * radial_count;
+    const int first = feature / per_type;
+    remainder %= per_type;
+    int angular = remainder / (radial_count * radial_count);
+    remainder %= radial_count * radial_count;
+    const int n1 = remainder / radial_count;
+    const int n2 = remainder % radial_count;
+    double value = 0.0;
+    for (int m = -angular; m <= angular; ++m) {
+        const int harmonic = angular * angular + angular + m;
+        value += soap_coefficient_at(
+            source, first, n1, harmonic, radial_count, harmonic_count)
+            * summed_row[n2 * harmonic_count + harmonic];
     }
-    for (int feature = 0; feature < features; ++feature) {
-        int remainder = feature;
-        const int per_type = (max_angular + 1) * radial_count * radial_count;
-        const int first = feature / per_type;
-        remainder %= per_type;
-        int angular = remainder / (radial_count * radial_count);
-        remainder %= radial_count * radial_count;
-        const int n1 = remainder / radial_count;
-        const int n2 = remainder % radial_count;
-        double value = 0.0;
-        for (int m = -angular; m <= angular; ++m) {
-            const int harmonic = angular * angular + angular + m;
-            value += soap_coefficient_at(
-                source, first, n1, harmonic, radial_count, harmonic_count)
-                * summed[n2 * harmonic_count + harmonic];
-        }
-        target[feature] = kPi * sqrt(8.0 / (2.0 * angular + 1.0)) * value;
-    }
+    output[index] = kPi * sqrt(8.0 / (2.0 * angular + 1.0)) * value;
 }
 
 __global__ void soap_average_coefficients_kernel(
@@ -963,13 +978,25 @@ py::dict compute_soap_descriptor(
         * static_cast<std::size_t>(features) : 0U;
     const std::size_t average_size = inner ? static_cast<std::size_t>(batch.structures())
         * static_cast<std::size_t>(coefficient_stride) : 0U;
-    const std::size_t workspace_size = coefficient_size + power_size + average_size;
+    // mu1nu1 keeps the species-summed density in a scratch slot sized by the
+    // rows the power kernel consumes (atom rows, or structure rows for the
+    // inner average) instead of a per-thread local array.
+    const int sum_count = radial_count * harmonic_count;
+    const I64 power_rows = inner ? batch.structures() : batch.atoms();
+    const std::size_t summed_size = compression == 2
+        ? static_cast<std::size_t>(power_rows) * static_cast<std::size_t>(sum_count)
+        : 0U;
+    const std::size_t workspace_size = coefficient_size + power_size + average_size
+        + summed_size;
     auto* workspace = static_cast<double*>(context.workspace_buffer(
         workspace_size * sizeof(double)));
     double* coefficients = workspace;
     double* atom_power = outer ? coefficients + coefficient_size : nullptr;
     double* structure_coefficients = inner
         ? coefficients + coefficient_size + power_size : nullptr;
+    double* summed_scratch = compression == 2
+        ? coefficients + coefficient_size + power_size + average_size
+        : nullptr;
     if (output_size > 0) {
         zeroed_output(context, output, output_size, "could not clear CUDA SOAP output");
     }
@@ -989,6 +1016,32 @@ py::dict compute_soap_descriptor(
         check_cuda(cudaGetLastError(), "CUDA SOAP coefficient kernel launch failed");
     }
     constexpr unsigned block_size = 64;
+    auto launch_power = [&](const double* source_rows, I64 power_row_count,
+                            double* destination) {
+        if (power_row_count <= 0) return;
+        if (compression == 2) {
+            soap_mu1nu1_sum_kernel<<<static_cast<unsigned>(
+                (power_row_count * sum_count + block_size - 1) / block_size),
+                block_size, 0, context.stream()>>>(
+                source_rows, power_row_count, coefficient_stride, sum_count,
+                species_count, radial_count, harmonic_count, summed_scratch);
+            check_cuda(cudaGetLastError(), "CUDA SOAP mu1nu1 density sum launch failed");
+            soap_power_mu1nu1_kernel<<<static_cast<unsigned>(
+                (power_row_count * features + block_size - 1) / block_size),
+                block_size, 0, context.stream()>>>(
+                source_rows, summed_scratch, power_row_count, coefficient_stride,
+                static_cast<int>(features), radial_count, max_angular, destination);
+            check_cuda(cudaGetLastError(), "CUDA SOAP mu1nu1 power kernel launch failed");
+        } else {
+            soap_power_kernel<<<static_cast<unsigned>(
+                (power_row_count * features + block_size - 1) / block_size),
+                block_size, 0, context.stream()>>>(
+                source_rows, power_row_count, coefficient_stride,
+                static_cast<int>(features), species_count, coefficient_types,
+                radial_count, max_angular, compression, destination);
+            check_cuda(cudaGetLastError(), "CUDA SOAP power kernel launch failed");
+        }
+    };
     if (inner) {
         if (batch.structures() > 0) {
             soap_average_coefficients_kernel<<<static_cast<unsigned>((batch.structures() + block_size - 1) / block_size),
@@ -996,21 +1049,11 @@ py::dict compute_soap_descriptor(
                 batch.offsets(), batch.structures(), coefficient_stride, coefficients,
                 structure_coefficients);
             check_cuda(cudaGetLastError(), "CUDA SOAP coefficient average launch failed");
-            soap_power_kernel<<<static_cast<unsigned>((batch.structures() + block_size - 1) / block_size),
-                block_size, 0, context.stream()>>>(
-                structure_coefficients, batch.structures(), coefficient_stride,
-                static_cast<int>(features), species_count, coefficient_types, radial_count,
-                max_angular, compression, output);
-            check_cuda(cudaGetLastError(), "CUDA SOAP inner power kernel launch failed");
+            launch_power(structure_coefficients, batch.structures(), output);
         }
     } else {
         if (batch.atoms() > 0) {
-            soap_power_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
-                block_size, 0, context.stream()>>>(
-                coefficients, batch.atoms(), coefficient_stride, static_cast<int>(features),
-                species_count, coefficient_types, radial_count, max_angular, compression,
-                outer ? atom_power : output);
-            check_cuda(cudaGetLastError(), "CUDA SOAP power kernel launch failed");
+            launch_power(coefficients, batch.atoms(), outer ? atom_power : output);
         }
         if (outer && batch.structures() > 0) {
             soap_average_power_kernel<<<static_cast<unsigned>((batch.structures() + block_size - 1) / block_size),

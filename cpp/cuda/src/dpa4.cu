@@ -1676,6 +1676,13 @@ __global__ void qk_kernel(
     }
 }
 
+namespace {
+constexpr unsigned int kAttentionThreads = 256;
+static_assert(kFullDim * kChannels % kAttentionThreads == 0,
+    "attention accumulator must split evenly across the block");
+constexpr int kAttentionSlice = kFullDim * kChannels / kAttentionThreads;
+}
+
 __global__ void attention_kernel(
     const std::int64_t* graph_offsets,
     const std::int32_t* graph_atoms,
@@ -1689,110 +1696,136 @@ __global__ void attention_kernel(
     const float* key,
     DeviceBlock block,
     float* aggregate) {
-    const std::int64_t node =
-        static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    // One block per node.  Each thread owns a fixed strided slice of the
+    // 16x64 accumulator, which therefore lives in registers instead of a
+    // spilled 4 KiB local array, and every edge_message read is coalesced
+    // across the block.  Thread 0 computes the per-edge logits and the gate
+    // with the original sequential double arithmetic, so the accumulation
+    // order of every accumulator element is unchanged.
+    const std::int64_t node = static_cast<std::int64_t>(blockIdx.x);
     if (node >= atoms) {
         return;
     }
-    // The aggregate is a float32 model tensor.  Keeping this per-node
-    // accumulator in double spills twice as much local memory and invokes the
-    // consumer GPU's slow FP64 pipeline for every edge contribution.
-    float accumulator[kFullDim * kChannels] = {};
+    const int lane = static_cast<int>(threadIdx.x);
+    float accumulator[kAttentionSlice] = {};
     const std::int64_t begin = graph_offsets[node];
     const std::int64_t end = graph_offsets[node + 1];
-    const double null_logit = log(
-        static_cast<double>(d_softplus(block.attn_z_bias[0]))
-        + static_cast<double>(kEpsilon));
-    double max_logit = null_logit;
-    for (std::int64_t edge = begin; edge < end; ++edge) {
-        const std::int32_t source = graph_atoms[edge];
-        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
-        const float envelope = envelopes[edge];
-        if (exact_self || envelope <= 0.0F) {
-            continue;
-        }
-        double dot = 0.0;
-        for (int channel = 0; channel < 64; ++channel) {
-            dot += static_cast<double>(query[node * 64 + channel])
-                * key[source * 64 + channel];
-        }
-        double radial = 0.0;
-        for (int channel = 0; channel < 64; ++channel) {
-            radial += static_cast<double>(radial_bias[edge * 64 + channel])
-                * block.attn_logit[channel];
-        }
-        const double logit = dot / 8.0 + radial
-            + 2.0 * log(static_cast<double>(envelope));
-        max_logit = fmax(max_logit, logit);
-    }
-    double denominator = exp(null_logit - max_logit);
-    for (std::int64_t edge = begin; edge < end; ++edge) {
-        const std::int32_t source = graph_atoms[edge];
-        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
-        const float envelope = envelopes[edge];
-        if (exact_self || envelope <= 0.0F) {
-            continue;
-        }
-        double dot = 0.0;
-        for (int channel = 0; channel < 64; ++channel) {
-            dot += static_cast<double>(query[node * 64 + channel])
-                * key[source * 64 + channel];
-        }
-        double radial = 0.0;
-        for (int channel = 0; channel < 64; ++channel) {
-            radial += static_cast<double>(radial_bias[edge * 64 + channel])
-                * block.attn_logit[channel];
-        }
-        denominator += exp(dot / 8.0 + radial
-            + 2.0 * log(static_cast<double>(envelope)) - max_logit);
-    }
-    const double inverse = 1.0 / denominator;
-    for (std::int64_t edge = begin; edge < end; ++edge) {
-        const std::int32_t source = graph_atoms[edge];
-        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
-        const float envelope = envelopes[edge];
-        if (exact_self || envelope <= 0.0F) {
-            continue;
-        }
-        double dot = 0.0;
-        for (int channel = 0; channel < 64; ++channel) {
-            dot += static_cast<double>(query[node * 64 + channel])
-                * key[source * 64 + channel];
-        }
-        double radial = 0.0;
-        for (int channel = 0; channel < 64; ++channel) {
-            radial += static_cast<double>(radial_bias[edge * 64 + channel])
-                * block.attn_logit[channel];
-        }
-        const double alpha = exp(dot / 8.0 + radial
-            + 2.0 * log(static_cast<double>(envelope)) - max_logit) * inverse;
-        for (int row = 0; row < kFullDim; ++row) {
-            for (int channel = 0; channel < 64; ++channel) {
-                accumulator[row * 64 + channel] += static_cast<float>(alpha)
-                    * edge_message[edge * kFullDim * kChannels
-                        + row * kChannels + channel];
+    __shared__ float alpha_shared;
+    __shared__ float gate_shared;
+    __shared__ double max_logit_shared;
+    __shared__ double inverse_shared;
+    if (lane == 0) {
+        // The aggregate is a float32 model tensor.  Keeping this per-node
+        // reduction in double matches the reference execution path.
+        const double null_logit = log(
+            static_cast<double>(d_softplus(block.attn_z_bias[0]))
+            + static_cast<double>(kEpsilon));
+        double max_logit = null_logit;
+        for (std::int64_t edge = begin; edge < end; ++edge) {
+            const std::int32_t source = graph_atoms[edge];
+            const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
+            const float envelope = envelopes[edge];
+            if (exact_self || envelope <= 0.0F) {
+                continue;
             }
+            double dot = 0.0;
+            for (int channel = 0; channel < 64; ++channel) {
+                dot += static_cast<double>(query[node * 64 + channel])
+                    * key[source * 64 + channel];
+            }
+            double radial = 0.0;
+            for (int channel = 0; channel < 64; ++channel) {
+                radial += static_cast<double>(radial_bias[edge * 64 + channel])
+                    * block.attn_logit[channel];
+            }
+            const double logit = dot / 8.0 + radial
+                + 2.0 * log(static_cast<double>(envelope));
+            max_logit = fmax(max_logit, logit);
         }
+        double denominator = exp(null_logit - max_logit);
+        for (std::int64_t edge = begin; edge < end; ++edge) {
+            const std::int32_t source = graph_atoms[edge];
+            const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
+            const float envelope = envelopes[edge];
+            if (exact_self || envelope <= 0.0F) {
+                continue;
+            }
+            double dot = 0.0;
+            for (int channel = 0; channel < 64; ++channel) {
+                dot += static_cast<double>(query[node * 64 + channel])
+                    * key[source * 64 + channel];
+            }
+            double radial = 0.0;
+            for (int channel = 0; channel < 64; ++channel) {
+                radial += static_cast<double>(radial_bias[edge * 64 + channel])
+                    * block.attn_logit[channel];
+            }
+            denominator += exp(dot / 8.0 + radial
+                + 2.0 * log(static_cast<double>(envelope)) - max_logit);
+        }
+        max_logit_shared = max_logit;
+        inverse_shared = 1.0 / denominator;
     }
-    const float* node_input = pre_focus + node * kFullDim * kChannels;
-    float gate_input[64];
-    float gate_mean_square = 0.0F;
-    for (int channel = 0; channel < 64; ++channel) {
-        gate_mean_square += node_input[channel] * node_input[channel];
+    __syncthreads();
+    for (std::int64_t edge = begin; edge < end; ++edge) {
+        const std::int32_t source = graph_atoms[edge];
+        const bool exact_self = exact_self_edge(node, source, graph_shifts, edge);
+        const float envelope = envelopes[edge];
+        // The skip decision depends only on the edge, so every thread takes
+        // the same branch and the barriers below stay uniform.
+        if (exact_self || envelope <= 0.0F) {
+            continue;
+        }
+        if (lane == 0) {
+            double dot = 0.0;
+            for (int channel = 0; channel < 64; ++channel) {
+                dot += static_cast<double>(query[node * 64 + channel])
+                    * key[source * 64 + channel];
+            }
+            double radial = 0.0;
+            for (int channel = 0; channel < 64; ++channel) {
+                radial += static_cast<double>(radial_bias[edge * 64 + channel])
+                    * block.attn_logit[channel];
+            }
+            const double alpha = exp(dot / 8.0 + radial
+                + 2.0 * log(static_cast<double>(envelope)) - max_logit_shared)
+                * inverse_shared;
+            alpha_shared = static_cast<float>(alpha);
+        }
+        __syncthreads();
+        const float alpha = alpha_shared;
+        #pragma unroll
+        for (int slice = 0; slice < kAttentionSlice; ++slice) {
+            const int index = lane + slice * kAttentionThreads;
+            accumulator[slice] += alpha
+                * edge_message[edge * kFullDim * kChannels + index];
+        }
+        __syncthreads();
     }
-    const float gate_inverse =
-        1.0F / sqrtf(gate_mean_square / 64.0F + kEpsilon);
-    double gate_logit = 0.0;
-    for (int channel = 0; channel < 64; ++channel) {
-        gate_input[channel] =
-            node_input[channel] * gate_inverse * block.attn_output_gate_scale[channel];
-        gate_logit += static_cast<double>(gate_input[channel])
-            * block.attn_gate[channel];
+    if (lane == 0) {
+        const float* node_input = pre_focus + node * kFullDim * kChannels;
+        float gate_input[64];
+        float gate_mean_square = 0.0F;
+        for (int channel = 0; channel < 64; ++channel) {
+            gate_mean_square += node_input[channel] * node_input[channel];
+        }
+        const float gate_inverse =
+            1.0F / sqrtf(gate_mean_square / 64.0F + kEpsilon);
+        double gate_logit = 0.0;
+        for (int channel = 0; channel < 64; ++channel) {
+            gate_input[channel] =
+                node_input[channel] * gate_inverse * block.attn_output_gate_scale[channel];
+            gate_logit += static_cast<double>(gate_input[channel])
+                * block.attn_gate[channel];
+        }
+        gate_shared = d_sigmoid(static_cast<float>(gate_logit));
     }
-    const float gate = d_sigmoid(static_cast<float>(gate_logit));
-    for (int index = 0; index < kFullDim * kChannels; ++index) {
-        aggregate[node * kFullDim * kChannels + index] =
-            accumulator[index] * gate;
+    __syncthreads();
+    const float gate = gate_shared;
+    #pragma unroll
+    for (int slice = 0; slice < kAttentionSlice; ++slice) {
+        const int index = lane + slice * kAttentionThreads;
+        aggregate[node * kFullDim * kChannels + index] = accumulator[slice] * gate;
     }
 }
 
@@ -2925,7 +2958,7 @@ std::vector<double> DeviceDpa4Model::compute(
         qk_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
             pre_focus, batch.atoms(), block, query, key);
         launch_check(cudaGetLastError(), "DPA4 QK kernel launch failed");
-        attention_kernel<<<node_blocks, 128, 0, context.stream()>>>(
+        attention_kernel<<<static_cast<unsigned int>(batch.atoms()), kAttentionThreads, 0, context.stream()>>>(
             graph.offsets(), graph.atoms(), graph.shifts(), batch.atoms(),
             envelopes, radial_bias, edge_message, pre_focus,
             query, key,

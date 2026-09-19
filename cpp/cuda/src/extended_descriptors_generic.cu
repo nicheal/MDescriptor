@@ -27,16 +27,27 @@ __global__ void generic_moment_kernel(
     I64 moment_stride,
     int mtp_radial_basis_size,
     double* moment_workspace,
+    double* moments_scratch,
     double* output) {
     const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (center >= atoms) return;
     if (channels > 256 || max_rank > 20) return;
-    double local_moments[256 * 21]{};
-    double* moments = local_moments;
+    double* moments;
     if (mode == 0) {
         if (moment_workspace == nullptr || max_rank > 5 || moment_stride <= 0) return;
         moments = moment_workspace + center * static_cast<I64>(channels) * moment_stride;
         for (I64 index = 0; index < static_cast<I64>(channels) * moment_stride; ++index) {
+            moments[index] = 0.0;
+        }
+    } else {
+        // Modes 1-3 address only channels * (max_rank + 1) moment slots, so
+        // they live in a per-center global scratch slot sized exactly that
+        // way instead of a fully-sized local array whose zero fill dominated
+        // small-config runs.
+        if (moments_scratch == nullptr) return;
+        moments = moments_scratch
+            + center * static_cast<I64>(channels) * (max_rank + 1);
+        for (I64 index = 0; index < static_cast<I64>(channels) * (max_rank + 1); ++index) {
             moments[index] = 0.0;
         }
     }
@@ -402,6 +413,11 @@ py::dict compute_generic_moment_descriptor(
             static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(channels)
             * static_cast<std::size_t>(moment_stride) * sizeof(double)))
         : nullptr;
+    auto* moments_scratch = mode != 0
+        ? static_cast<double*>(context.workspace_buffer(
+            static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(channels)
+            * static_cast<std::size_t>(max_rank + 1) * sizeof(double)))
+        : nullptr;
     if (size > 0) {
         zeroed_output(context, output, size, "could not clear generic CUDA descriptor output");
         constexpr unsigned block_size = 64;
@@ -412,7 +428,7 @@ py::dict compute_generic_moment_descriptor(
             static_cast<int>(channels), max_rank, mode, max_order, min_dist, max_dist,
             soft_cutoff, hard_cutoff, radial_sigma, radial_weight, angular_weight,
             d_center_weights.get(), features, batch.atoms(), moment_stride,
-            mtp_radial_basis_size, moment_workspace, output);
+            mtp_radial_basis_size, moment_workspace, moments_scratch, output);
         check_cuda(cudaGetLastError(), "generic CUDA descriptor kernel launch failed");
     }
     const auto values = download_output_with_gil_release(context, size);
