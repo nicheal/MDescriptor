@@ -317,6 +317,7 @@ struct WorkspaceLayout {
     std::size_t radial_m1_output = 0;
     std::size_t envelope = 0;
     std::size_t radial_bias = 0;
+    std::size_t edge_logits = 0;
     std::size_t local = 0;
     std::size_t edge_message = 0;
     std::size_t rotation = 0;
@@ -359,6 +360,7 @@ WorkspaceLayout make_workspace_layout(
     result.radial_m1_output = reserve(edges * 2U * 384U * sizeof(float), alignof(float));
     result.envelope = reserve(edges * sizeof(float), alignof(float));
     result.radial_bias = reserve(edges * kChannels * sizeof(float), alignof(float));
+    result.edge_logits = reserve(edges * sizeof(double), alignof(double));
     result.local = reserve(edges * kReducedDim * kChannels * sizeof(float), alignof(float));
     result.edge_message = reserve(edges * kFullDim * kChannels * sizeof(float), alignof(float));
     result.rotation = reserve(edges * kReducedDim * kFullDim * sizeof(float), alignof(float));
@@ -1683,13 +1685,57 @@ static_assert(kFullDim * kChannels % kAttentionThreads == 0,
 constexpr int kAttentionSlice = kFullDim * kChannels / kAttentionThreads;
 }
 
-__global__ void attention_kernel(
+__global__ void attention_logit_kernel(
     const std::int64_t* graph_offsets,
     const std::int32_t* graph_atoms,
     const std::int32_t* graph_shifts,
     std::int64_t atoms,
     const float* envelopes,
     const float* radial_bias,
+    const float* query,
+    const float* key,
+    DeviceBlock block,
+    double* edge_logits) {
+    // One thread per edge.  The attention logit is independent of the
+    // accumulator, so computing it once here in parallel removes the two
+    // redundant recomputations the node kernel used to perform.  The cached
+    // doubles are bit-identical to the inline expressions: the three
+    // attention passes read exactly the values they would have computed.
+    const std::int64_t edge =
+        static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (edge >= graph_offsets[atoms]) {
+        return;
+    }
+    const std::int64_t center = center_for_edge(graph_offsets, atoms, edge);
+    const std::int32_t source = graph_atoms[edge];
+    if (exact_self_edge(center, source, graph_shifts, edge)) {
+        return;
+    }
+    const float envelope = envelopes[edge];
+    if (envelope <= 0.0F) {
+        return;
+    }
+    double dot = 0.0;
+    for (int channel = 0; channel < 64; ++channel) {
+        dot += static_cast<double>(query[center * 64 + channel])
+            * key[source * 64 + channel];
+    }
+    double radial = 0.0;
+    for (int channel = 0; channel < 64; ++channel) {
+        radial += static_cast<double>(radial_bias[edge * 64 + channel])
+            * block.attn_logit[channel];
+    }
+    edge_logits[edge] = dot / 8.0 + radial
+        + 2.0 * log(static_cast<double>(envelope));
+}
+
+__global__ void attention_kernel(
+    const std::int64_t* graph_offsets,
+    const std::int32_t* graph_atoms,
+    const std::int32_t* graph_shifts,
+    std::int64_t atoms,
+    const float* envelopes,
+    const double* edge_logits,
     const float* edge_message,
     const float* pre_focus,
     const float* query,
@@ -1716,7 +1762,11 @@ __global__ void attention_kernel(
     __shared__ double inverse_shared;
     if (lane == 0) {
         // The aggregate is a float32 model tensor.  Keeping this per-node
-        // reduction in double matches the reference execution path.
+        // reduction in double matches the reference execution path.  The
+        // logits come from the cache computed by attention_logit_kernel;
+        // reading them preserves the exact values the inline expressions
+        // produced, so the max/denominator sums keep their original order
+        // and bits.
         const double null_logit = log(
             static_cast<double>(d_softplus(block.attn_z_bias[0]))
             + static_cast<double>(kEpsilon));
@@ -1728,19 +1778,7 @@ __global__ void attention_kernel(
             if (exact_self || envelope <= 0.0F) {
                 continue;
             }
-            double dot = 0.0;
-            for (int channel = 0; channel < 64; ++channel) {
-                dot += static_cast<double>(query[node * 64 + channel])
-                    * key[source * 64 + channel];
-            }
-            double radial = 0.0;
-            for (int channel = 0; channel < 64; ++channel) {
-                radial += static_cast<double>(radial_bias[edge * 64 + channel])
-                    * block.attn_logit[channel];
-            }
-            const double logit = dot / 8.0 + radial
-                + 2.0 * log(static_cast<double>(envelope));
-            max_logit = fmax(max_logit, logit);
+            max_logit = fmax(max_logit, edge_logits[edge]);
         }
         double denominator = exp(null_logit - max_logit);
         for (std::int64_t edge = begin; edge < end; ++edge) {
@@ -1750,18 +1788,7 @@ __global__ void attention_kernel(
             if (exact_self || envelope <= 0.0F) {
                 continue;
             }
-            double dot = 0.0;
-            for (int channel = 0; channel < 64; ++channel) {
-                dot += static_cast<double>(query[node * 64 + channel])
-                    * key[source * 64 + channel];
-            }
-            double radial = 0.0;
-            for (int channel = 0; channel < 64; ++channel) {
-                radial += static_cast<double>(radial_bias[edge * 64 + channel])
-                    * block.attn_logit[channel];
-            }
-            denominator += exp(dot / 8.0 + radial
-                + 2.0 * log(static_cast<double>(envelope)) - max_logit);
+            denominator += exp(edge_logits[edge] - max_logit);
         }
         max_logit_shared = max_logit;
         inverse_shared = 1.0 / denominator;
@@ -1777,18 +1804,7 @@ __global__ void attention_kernel(
             continue;
         }
         if (lane == 0) {
-            double dot = 0.0;
-            for (int channel = 0; channel < 64; ++channel) {
-                dot += static_cast<double>(query[node * 64 + channel])
-                    * key[source * 64 + channel];
-            }
-            double radial = 0.0;
-            for (int channel = 0; channel < 64; ++channel) {
-                radial += static_cast<double>(radial_bias[edge * 64 + channel])
-                    * block.attn_logit[channel];
-            }
-            const double alpha = exp(dot / 8.0 + radial
-                + 2.0 * log(static_cast<double>(envelope)) - max_logit_shared)
+            const double alpha = exp(edge_logits[edge] - max_logit_shared)
                 * inverse_shared;
             alpha_shared = static_cast<float>(alpha);
         }
@@ -2814,6 +2830,7 @@ std::vector<double> DeviceDpa4Model::compute(
     float* state1 = workspace_data<float>(workspace, layout.state1);
     float* pre_focus = workspace_data<float>(workspace, layout.pre_focus);
     float* aggregate = workspace_data<float>(workspace, layout.aggregate);
+    double* edge_logits = workspace_data<double>(workspace, layout.edge_logits);
     float* message = workspace_data<float>(workspace, layout.message);
     float* hidden = workspace_data<float>(workspace, layout.hidden);
     float* activation = workspace_data<float>(workspace, layout.activation);
@@ -2958,9 +2975,14 @@ std::vector<double> DeviceDpa4Model::compute(
         qk_kernel<<<static_cast<unsigned int>(atoms), 128, 0, context.stream()>>>(
             pre_focus, batch.atoms(), block, query, key);
         launch_check(cudaGetLastError(), "DPA4 QK kernel launch failed");
+        attention_logit_kernel<<<edge_blocks, 128, 0, context.stream()>>>(
+            graph.offsets(), graph.atoms(), graph.shifts(), batch.atoms(),
+            envelopes, radial_bias, query, key,
+            block, edge_logits);
+        launch_check(cudaGetLastError(), "DPA4 attention logit launch failed");
         attention_kernel<<<static_cast<unsigned int>(batch.atoms()), kAttentionThreads, 0, context.stream()>>>(
             graph.offsets(), graph.atoms(), graph.shifts(), batch.atoms(),
-            envelopes, radial_bias, edge_message, pre_focus,
+            envelopes, edge_logits, edge_message, pre_focus,
             query, key,
             block, aggregate);
         launch_check(cudaGetLastError(), "DPA4 attention kernel launch failed");

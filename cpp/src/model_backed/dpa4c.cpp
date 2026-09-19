@@ -194,6 +194,26 @@ void validate_options(const Dpa4cOptions& options) {
             throw std::invalid_argument("DPA4C degree triples must stay within 1..lmax");
         }
     }
+    // Probe indices address each triple's rank product; validating them here
+    // keeps a malformed checkpoint from throwing mid-computation.
+    for (std::size_t triple_index = 0;
+         triple_index < options.degree_triples.size() / 3; ++triple_index) {
+        const std::int64_t rank_product = static_cast<std::int64_t>(
+            options.bispectrum_ranks[static_cast<std::size_t>(
+                options.degree_triples[triple_index * 3 + 0] - 1)])
+            * options.bispectrum_ranks[static_cast<std::size_t>(
+                options.degree_triples[triple_index * 3 + 1] - 1)]
+            * options.bispectrum_ranks[static_cast<std::size_t>(
+                options.degree_triples[triple_index * 3 + 2] - 1)];
+        for (auto probe = options.probe_offsets[triple_index];
+             probe < options.probe_offsets[triple_index + 1]; ++probe) {
+            const auto index = options.probe_index[static_cast<std::size_t>(probe)];
+            if (index < 0 || index >= rank_product) {
+                throw std::invalid_argument(
+                    "DPA4C probe index is outside its contraction");
+            }
+        }
+    }
     const std::size_t triple_count = options.degree_triples.size() / 3;
     validate_vector_size(options.coupling_offsets, triple_count + 1, "DPA4C coupling offsets");
     validate_vector_size(options.probe_offsets, triple_count + 1, "DPA4C probe offsets");
@@ -504,17 +524,14 @@ void Dpa4cCalculator::compute(
         }
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(options_.num_threads))
+#pragma omp parallel num_threads(detail::resolved_thread_count(options_.num_threads))
 #endif
-    for (std::int64_t center_atom = 0; center_atom < batch.atoms; ++center_atom) {
-        if (control && control->cancelled()) {
-            continue;
-        }
-        const int center_type = type_indices[center_atom];
-        // Accumulate destination reductions in fp64 while keeping the
-        // checkpoint/activation storage in fp32.  A center can have many
-        // neighbors; rounding every contribution in fp32 was the dominant
-        // source of the residual DPA4C parity error.
+    {
+        // Per-thread work buffers, allocated once and reused for every
+        // atom.  Only `reduced` accumulates across the edge loop and needs
+        // a per-atom reset; every other buffer is fully rewritten before it
+        // is read (affine_values zeroes its own accumulators, and the
+        // moment writes cover every entry).
         std::vector<double> reduced(static_cast<std::size_t>(2 + moment_count_), 0.0);
         std::vector<float> radial_basis(static_cast<std::size_t>(options_.n_radial));
         std::vector<float> radial_pre(static_cast<std::size_t>(2 * options_.radial_hidden));
@@ -526,12 +543,27 @@ void Dpa4cCalculator::compute(
             std::max(options_.channels, options_.radial_modes))));
         std::vector<float> basis(static_cast<std::size_t>(angular_width));
         std::vector<double> amplitudes(static_cast<std::size_t>(options_.channels));
+        std::vector<float> moments(static_cast<std::size_t>(moment_count_), 0.0F);
+        std::vector<std::size_t> edge_order;
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+    for (std::int64_t center_atom = 0; center_atom < batch.atoms; ++center_atom) {
+        if (control && control->cancelled()) {
+            continue;
+        }
+        const int center_type = type_indices[center_atom];
+        // Accumulate destination reductions in fp64 while keeping the
+        // checkpoint/activation storage in fp32.  A center can have many
+        // neighbors; rounding every contribution in fp32 was the dominant
+        // source of the residual DPA4C parity error.
+        std::fill(reduced.begin(), reduced.end(), 0.0);
         const NeighborView neighbors = graph.for_center(center_atom);
         // The Python dense builder presents each destination row in ascending
         // distance order.  Match that order before the moment reduction so
         // fp32 edge features and the final gram/bispectrum contractions do not
         // depend on the cell-list traversal order.
-        std::vector<std::size_t> edge_order(neighbors.size);
+        edge_order.resize(neighbors.size);
         std::iota(edge_order.begin(), edge_order.end(), std::size_t{0});
         std::stable_sort(edge_order.begin(), edge_order.end(), [&neighbors](
             std::size_t lhs, std::size_t rhs) {
@@ -643,7 +675,6 @@ void Dpa4cCalculator::compute(
 
         const double divisor_scalar = std::sqrt(reduced[0] + static_cast<double>(kNormFloor));
         const double divisor_angular = std::sqrt(reduced[1] + static_cast<double>(kNormFloor));
-        std::vector<float> moments(static_cast<std::size_t>(moment_count_), 0.0F);
         const int scalar_width = options_.channels;
         for (int channel = 0; channel < scalar_width; ++channel) {
             moments[static_cast<std::size_t>(channel)] = static_cast<float>(
@@ -888,6 +919,7 @@ void Dpa4cCalculator::compute(
                 control->mark_completed();
             }
         }
+    }
     }
     if (control && control->cancelled()) {
         throw CancelledError();
