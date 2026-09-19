@@ -57,15 +57,38 @@ py::dict compute_matrix_descriptor(
     const double r_cut = option(options, "r_cut", 0.0);
     const double g_cut = option(options, "g_cut", 0.0);
     const double split = option(options, "a", 0.0);
-    constexpr unsigned block_size = 64;
-    const auto blocks = static_cast<unsigned>(
-        (host_batch.structures + block_size - 1) / block_size);
-    if (host_batch.structures > 0) {
-        matrix_kernel<<<blocks, block_size, 0, context.stream()>>>(
-            batch.numbers(), batch.positions(), batch.cells(), batch.offsets(),
-            host_batch.structures, n_atoms_max, static_cast<I64>(matrix_stride), kind, permutation, exponent,
-            accuracy, weight, r_cut, g_cut, split, matrices, output);
-        check_cuda(cudaGetLastError(), "CUDA matrix kernel launch failed");
+    constexpr unsigned block_size = 256;
+    if (kind == kMatrixKindEwald) {
+        // The Ewald branch keeps the per-structure form: its reciprocal loop
+        // needs the phase-matrix restructure before it can parallelize.
+        const auto blocks = static_cast<unsigned>(
+            (host_batch.structures + 63) / 64);
+        if (host_batch.structures > 0) {
+            matrix_kernel<<<blocks, 64, 0, context.stream()>>>(
+                batch.numbers(), batch.positions(), batch.cells(), batch.offsets(),
+                host_batch.structures, n_atoms_max, static_cast<I64>(matrix_stride), kind, permutation, exponent,
+                accuracy, weight, r_cut, g_cut, split, matrices, output);
+            check_cuda(cudaGetLastError(), "CUDA matrix kernel launch failed");
+        }
+    } else {
+        // Coulomb and sine elements are independent: one thread per
+        // (structure, i, j) fills the raw matrix, then a per-structure pass
+        // applies the permutation / eigenspectrum tail.
+        const auto fill_blocks = static_cast<unsigned>(
+            (static_cast<std::size_t>(host_batch.structures) * n_atoms_max * n_atoms_max
+                + block_size - 1) / block_size);
+        if (fill_blocks > 0) {
+            matrix_fill_pairs_kernel<<<fill_blocks, block_size, 0, context.stream()>>>(
+                batch.numbers(), batch.positions(), batch.cells(), batch.offsets(),
+                host_batch.structures, n_atoms_max, kind, exponent, matrices);
+            check_cuda(cudaGetLastError(), "CUDA matrix fill launch failed");
+            const auto post_blocks = static_cast<unsigned>(
+                (host_batch.structures + 63) / 64);
+            matrix_post_kernel<<<post_blocks, 64, 0, context.stream()>>>(
+                host_batch.structures, n_atoms_max, permutation, kind, batch.offsets(),
+                matrices, output);
+            check_cuda(cudaGetLastError(), "CUDA matrix post launch failed");
+        }
     }
     const auto values = download_output_with_gil_release(context, output_size);
     py::dict result;

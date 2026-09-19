@@ -2069,6 +2069,155 @@ __device__ void eigenvalues_symmetric_device(
     for (int index = size; index < output_size; ++index) output[index] = 0.0;
 }
 
+// Pair-parallel fill for the Coulomb and sine matrix families: one thread
+// per (structure, i, j) element.  Every element is independent and written
+// exactly once by one thread, so the fill is bit-identical to the
+// per-structure serial form while spreading N*N work across the GPU.
+__global__ void matrix_fill_pairs_kernel(
+    const I32* numbers,
+    const double* positions,
+    const double* cells,
+    const I64* offsets,
+    I64 structures,
+    int n_atoms_max,
+    int kind,
+    double exponent,
+    double* matrices) {
+    const I64 index = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const I64 square = static_cast<I64>(n_atoms_max) * n_atoms_max;
+    if (index >= structures * square) return;
+    const I64 structure = index / square;
+    const I64 within = index - structure * square;
+    const int i = static_cast<int>(within / n_atoms_max);
+    const int j = static_cast<int>(within - static_cast<I64>(i) * n_atoms_max);
+    double* matrix = matrices + structure * square;
+    const I64 begin = offsets[structure];
+    const I64 end = offsets[structure + 1];
+    const int count = static_cast<int>(end - begin);
+    if (i >= count || j >= count) {
+        // Rows past count are never read by the permutation tail.
+        return;
+    }
+    const double zi = static_cast<double>(numbers[begin + i]);
+    const double zj = static_cast<double>(numbers[begin + j]);
+    double value = 0.0;
+    if (i == j) {
+        value = 0.5 * pow(zi, exponent);
+    } else if (kind == kMatrixKindCoulomb) {
+        const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
+        const double dy = positions[(begin + i) * 3 + 1] - positions[(begin + j) * 3 + 1];
+        const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
+        value = zi * zj / sqrt(dx * dx + dy * dy + dz * dz);
+    } else {
+        const double* cell = cells + structure * 9;
+        double inverse[9]{};
+        const bool inverse_valid = inverse3_device(cell, inverse);
+        if (inverse_valid) {
+            const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
+            const double dy = positions[(begin + i) * 3 + 1] - positions[(begin + j) * 3 + 1];
+            const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
+            const double denominator = sine_matrix_off_diagonal(
+                cell, inverse, dx, dy, dz);
+            value = denominator > 1e-14 ? zi * zj / denominator : 0.0;
+        }
+    }
+    matrix[i * n_atoms_max + j] = value;
+}
+
+// Per-structure post-processing (permutation / eigenspectrum) over the
+// filled raw matrix; one thread per structure, identical to the serial tail.
+__global__ void matrix_post_kernel(
+    I64 structures,
+    int n_atoms_max,
+    int permutation,
+    int kind,
+    const I64* offsets,
+    double* matrices,
+    double* output) {
+    const I64 structure = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (structure >= structures) return;
+    const I64 begin = offsets[structure];
+    const int count = static_cast<int>(offsets[structure + 1] - begin);
+    double* matrix = matrices + structure
+        * (static_cast<I64>(n_atoms_max) * n_atoms_max
+            + (kind == kMatrixKindEwald ? static_cast<std::size_t>(3 * n_atoms_max) : 0));
+    double* row = output + structure * (permutation == kMatrixPermutationEigenspectrum
+        ? n_atoms_max : n_atoms_max * n_atoms_max);
+    if (count <= 0) {
+        const I64 columns = permutation == kMatrixPermutationEigenspectrum
+            ? n_atoms_max : static_cast<I64>(n_atoms_max) * n_atoms_max;
+        for (I64 index = 0; index < columns; ++index) row[index] = 0.0;
+        return;
+    }
+    if (permutation == kMatrixPermutationEigenspectrum) {
+        eigenvalues_symmetric_device(matrix, count, n_atoms_max, row, n_atoms_max);
+        return;
+    }
+    if (permutation == kMatrixPermutationNone) {
+        for (int i = 0; i < count; ++i) {
+            for (int j = 0; j < count; ++j) {
+                row[i * n_atoms_max + j] = matrix[i * n_atoms_max + j];
+            }
+            for (int j = count; j < n_atoms_max; ++j) row[i * n_atoms_max + j] = 0.0;
+        }
+        for (int i = count; i < n_atoms_max; ++i) {
+            for (int j = 0; j < n_atoms_max; ++j) row[i * n_atoms_max + j] = 0.0;
+        }
+        return;
+    }
+    int order[256];
+    double norms[256];
+    double maximum_norm_squared = 1.0;
+    for (int i = 0; i < count; ++i) {
+        order[i] = i;
+        double norm2 = 0.0;
+        const int grouped_end = count & ~3;
+        for (int j = 0; j < grouped_end; j += 4) {
+            norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j]
+                + matrix[i * n_atoms_max + j + 1] * matrix[i * n_atoms_max + j + 1]
+                + matrix[i * n_atoms_max + j + 2] * matrix[i * n_atoms_max + j + 2]
+                + matrix[i * n_atoms_max + j + 3] * matrix[i * n_atoms_max + j + 3];
+        }
+        for (int j = grouped_end; j < count; ++j) {
+            norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j];
+        }
+        norms[i] = norm2;
+        maximum_norm_squared = max(maximum_norm_squared, norm2);
+    }
+    for (int i = 1; i < count; ++i) {
+        int current = i;
+        while (current > 0 && norms[current] > norms[current - 1]) {
+            const double norm_saved = norms[current]; norms[current] = norms[current - 1]; norms[current - 1] = norm_saved;
+            const int index_saved = order[current]; order[current] = order[current - 1]; order[current - 1] = index_saved;
+            --current;
+        }
+    }
+    const double tie_tolerance = 4.0 * DBL_EPSILON * maximum_norm_squared;
+    for (int group_begin = 0; group_begin < count;) {
+        int group_end = group_begin + 1;
+        while (group_end < count
+            && norms[group_end - 1] - norms[group_end] <= tie_tolerance) {
+            ++group_end;
+        }
+        for (int i = group_begin + 1; i < group_end; ++i) {
+            int current = i;
+            while (current > group_begin && order[current] < order[current - 1]) {
+                const int index_saved = order[current];
+                order[current] = order[current - 1];
+                order[current - 1] = index_saved;
+                --current;
+            }
+        }
+        group_begin = group_end;
+    }
+    for (int i = 0; i < n_atoms_max; ++i) {
+        for (int j = 0; j < n_atoms_max; ++j) {
+            row[i * n_atoms_max + j] = i < count && j < count
+                ? matrix[order[i] * n_atoms_max + order[j]] : 0.0;
+        }
+    }
+}
+
 __global__ void matrix_kernel(
     const I32* numbers,
     const double* positions,

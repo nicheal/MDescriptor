@@ -38,6 +38,24 @@ class EadKernel(_AtomKernel):
     def feature_count(self) -> int:
         return (self.L + 1) * len(self.eta) * len(self.Rs)
 
+    def _canonical_configuration(self, options: dict[str, Any]) -> dict[str, Any]:
+        """Record the effective EAD parameters for CUDA and snapshots.
+
+        The public constructor applies kernel defaults when ``parameters`` is
+        omitted; the configuration snapshot (and the CUDA option language that
+        reads it) must see the same resolved values or the CUDA path rejects
+        the payload the CPU path accepts.
+        """
+
+        result = dict(options)
+        if result.get("parameters") is None:
+            result["parameters"] = {
+                "L": self.L,
+                "eta": self.eta.tolist(),
+                "Rs": self.Rs.tolist(),
+            }
+        return result
+
     def compute(self, value: StructureBatch | Sequence[Any] | Any, control: Any = None) -> DescriptorResult:
         batch = _as_batch(value)
         values = np.asarray(
