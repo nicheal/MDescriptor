@@ -182,7 +182,7 @@ _DESCRIPTOR_INFO = {
             "n_max": _parameter(
                 "integer",
                 display_name="Maximum radial order",
-                description="Number of radial basis functions used for each species.",
+                description="Number of radial basis functions used for each species. Very large n_max combined with a high l_max can leave the radial basis ill-conditioned and fail to normalize.",
                 default=8,
                 minimum=1,
             ),
@@ -216,7 +216,7 @@ _DESCRIPTOR_INFO = {
             "r_cut": _parameter(
                 "number",
                 display_name="Cutoff radius",
-                description="Maximum distance from the center included in the descriptor.",
+                description="Maximum distance from the center included in the descriptor. The GTO radial basis requires r_cut > 1 Å; values that leave the basis ill-conditioned are rejected at construction.",
                 exclusiveMinimum=0.0,
                 unit="Å",
             ),
