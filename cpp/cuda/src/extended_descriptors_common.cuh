@@ -41,6 +41,9 @@ using I64 = std::int64_t;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
+// Upper bound for the polynomial quadrature grid; the Python side ships the
+// 100-point Legendre grid, and the per-thread kernel scratch is sized to this.
+constexpr int kSoapGridBound = 256;
 constexpr int kMatrixKindSine = static_cast<int>(::mdescriptor::MatrixKind::Sine);
 constexpr int kMatrixKindEwald = static_cast<int>(::mdescriptor::MatrixKind::Ewald);
 constexpr int kMatrixKindCoulomb = static_cast<int>(::mdescriptor::MatrixKind::Coulomb);
@@ -508,30 +511,6 @@ __device__ double soap_polynomial_flir(
     return current;
 }
 
-__device__ double soap_gto_radial(
-    double distance2,
-    int angular,
-    int radial,
-    int radial_count,
-    double sigma,
-    const double* alphas,
-    const double* betas) {
-    const double eta = 1.0 / (2.0 * sigma * sigma);
-    const double eta_power = pow(eta, angular);
-    const double pi_sqrt_pi = kPi * sqrt(kPi);
-    double result = 0.0;
-    for (int raw = 0; raw < radial_count; ++raw) {
-        const int index = angular * radial_count + raw;
-        const double alpha = alphas[index];
-        const double denominator = alpha + eta;
-        const double prefactor = eta_power * pow(denominator, -angular - 1.5)
-            * exp(-alpha * eta / denominator * distance2);
-        // The CPU basis stores beta[n, k], while the raw loop here is over k.
-        result += betas[(angular * radial_count + radial) * radial_count + raw] * prefactor;
-    }
-    return pi_sqrt_pi * result;
-}
-
 __global__ void soap_coefficients_kernel(
     const I32* numbers,
     const I64* graph_offsets,
@@ -589,22 +568,47 @@ __global__ void soap_coefficients_kernel(
         if (weight == 0.0) continue;
         double harmonics[441]{};
         harmonic_values<20>(graph_displacements + edge * 3, harmonics, max_angular);
+        // The GTO prefactor and the polynomial grid Flir depend only on the
+        // (angular, raw) / (angular, grid) pair — never on the radial
+        // channel — yet the per-channel evaluation recomputed them
+        // radial_count times per edge.  Evaluate them once per angular
+        // degree; every kept operation is textually identical to the
+        // per-channel form, so the coefficient values are bit-identical.
+        const double eta = 1.0 / (2.0 * sigma * sigma);
+        double prefactors[kSoapGridBound];
         for (int angular = 0; angular <= max_angular; ++angular) {
             const double radius_power = pow(distance, angular);
+            if (radial_basis == 0) {
+                const double eta_power = pow(eta, angular);
+                for (int raw = 0; raw < radial_count; ++raw) {
+                    const double alpha = alphas[angular * radial_count + raw];
+                    const double denominator = alpha + eta;
+                    prefactors[raw] = eta_power
+                        * pow(denominator, -angular - 1.5)
+                        * exp(-alpha * eta / denominator * distance2);
+                }
+            } else {
+                for (int q = 0; q < radial_grid_count; ++q) {
+                    prefactors[q] = soap_polynomial_flir(
+                        distance, radial_grid[q], angular, sigma);
+                }
+            }
+            const int destination_type = coefficient_types == 1 ? 0 : type;
             for (int radial = 0; radial < radial_count; ++radial) {
-                const int destination_type = coefficient_types == 1 ? 0 : type;
                 double* destination = target + (
                     destination_type * radial_count + radial) * harmonic_count
                     + angular * angular;
                 double radial_value = 0.0;
                 if (radial_basis == 0) {
-                    radial_value = soap_gto_radial(
-                        distance2, angular, radial, radial_count, sigma, alphas, betas);
+                    for (int raw = 0; raw < radial_count; ++raw) {
+                        radial_value += betas[(angular * radial_count + radial)
+                            * radial_count + raw] * prefactors[raw];
+                    }
+                    radial_value = kPi * sqrt(kPi) * radial_value;
                 } else {
                     for (int q = 0; q < radial_grid_count; ++q) {
                         radial_value += radial_weights[q] * radial_grid[q] * radial_grid[q]
-                            * soap_polynomial_flir(
-                                distance, radial_grid[q], angular, sigma)
+                            * prefactors[q]
                             * radial_values[radial * radial_grid_count + q];
                     }
                     radial_value *= 4.0 * kPi;
@@ -931,6 +935,7 @@ py::dict compute_soap_descriptor(
         throw std::invalid_argument("CUDA SOAP GTO payload has an invalid shape");
     }
     if (radial_basis == 1 && (radial_grid.size() < 2
+        || radial_grid.size() > static_cast<std::size_t>(kSoapGridBound)
         || radial_weights.size() != radial_grid.size()
         || radial_values.size() != radial_grid.size() * static_cast<std::size_t>(radial_count))) {
         throw std::invalid_argument("CUDA SOAP polynomial payload has an invalid shape");
