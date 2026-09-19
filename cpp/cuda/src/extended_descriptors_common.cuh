@@ -15,6 +15,7 @@
 
 #include <cfloat>
 #include <algorithm>
+#include <cstdio>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -513,6 +514,17 @@ __device__ double soap_polynomial_flir(
     return current;
 }
 
+__device__ I64 center_for_edge(const I64* offsets, I64 atoms, I64 edge) {
+    I64 left = 0;
+    I64 right = atoms;
+    while (left + 1 < right) {
+        const I64 middle = left + (right - left) / 2;
+        if (offsets[middle] <= edge) left = middle;
+        else right = middle;
+    }
+    return left;
+}
+
 // Block-cooperative form of :c:func:`harmonic_values` for the SOAP
 // coefficient kernel.  The serial version chains 231 local-memory recurrence
 // steps through one lane per edge; here every value is computed by exactly
@@ -617,7 +629,8 @@ __device__ void harmonic_values_block(
     }
 }
 
-__global__ void soap_coefficients_kernel(
+
+__global__ void soap_coefficients_block_kernel(
     const I32* numbers,
     const I64* graph_offsets,
     const I32* graph_atoms,
@@ -768,6 +781,187 @@ __global__ void soap_coefficients_kernel(
         __syncthreads();
         // mu2 combines species densities in one coefficient block; the loop
         // above already accumulates every neighbor into that block.
+    }
+}
+
+
+// Two-phase SOAP expansion.  Phase 1 runs one thread per edge and computes
+// the spherical harmonics, the species-summed radial values, and the
+// per-degree distance powers exactly as the serial kernel did, into a
+// per-edge scratch slot; running it across all edges of an atom tile keeps
+// the GPU busy with no block-wide barriers.  Phase 2 runs one thread per
+// atom and streams the scratch into the coefficient rows in edge order, so
+// every accumulator sees the same addition sequence as the serial kernel and
+// the results stay bit-identical.
+//
+// Scratch slot layout (doubles):
+//   [0]                       weight (0.0 marks a skipped edge)
+//   [1]                       destination species block
+//   [2 .. 2+(L+1)*R)          radial values rv[angular * radial_count + radial]
+//   [.. + (L+1))              radius_power[angular] (GTO only; 1.0 for poly)
+//   [.. + harmonic_count)     spherical harmonics
+
+
+__global__ void soap_edge_scratch_kernel(
+    const I32* numbers,
+    const I64* graph_offsets,
+    const I32* graph_atoms,
+    const I32* graph_shifts,
+    const double* graph_displacements,
+    const double* graph_distance2,
+    const I32* species,
+    int species_count,
+    int coefficient_types,
+    int radial_count,
+    int max_angular,
+    int radial_basis,
+    double cutoff,
+    double graph_cutoff,
+    double sigma,
+    const double* alphas,
+    const double* betas,
+    const double* radial_grid,
+    int radial_grid_count,
+    const double* radial_weights,
+    const double* radial_values,
+    int weighting_function,
+    double weighting_r0,
+    double weighting_c,
+    double weighting_d,
+    double weighting_m,
+    double weighting_threshold,
+    double weighting_w0,
+    bool weighting_has_w0,
+    const double* species_weights,
+    I64 atoms,
+    I64 tile_edge_begin,
+    I64 tile_edge_end,
+    I64 scratch_stride,
+    double* scratch) {
+    const I64 edge = tile_edge_begin
+        + static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (edge >= tile_edge_end) return;
+    double* slot = scratch + (edge - tile_edge_begin) * scratch_stride;
+    const int harmonic_count = (max_angular + 1) * (max_angular + 1);
+    const I64 center = center_for_edge(graph_offsets, atoms, edge);
+    const I32 atom = graph_atoms[edge];
+    const int type = species_index(numbers[atom], species, species_count);
+    const double distance2 = fmax(0.0, graph_distance2[edge]);
+    const double distance = sqrt(distance2);
+    const bool exact_self = exact_self_edge(center, atom, graph_shifts, edge);
+    double weight = 0.0;
+    if (type >= 0 && distance < graph_cutoff) {
+        weight = soap_weight_device(
+            weighting_function, weighting_r0, weighting_c, weighting_d, weighting_m,
+            weighting_threshold, weighting_w0, weighting_has_w0, exact_self,
+            distance, species_weights == nullptr ? 1.0 : species_weights[type]);
+    }
+    if (weight == 0.0) {
+        // Phase 2 skips edges whose weight is zero, matching the serial
+        // kernel's skip conditions (unknown species, cutoff, zero weight).
+        slot[0] = 0.0;
+        return;
+    }
+    const int destination_type = coefficient_types == 1 ? 0 : type;
+    double harmonics[441]{};
+    harmonic_values<20>(graph_displacements + edge * 3, harmonics, max_angular);
+    const double eta = 1.0 / (2.0 * sigma * sigma);
+    double* rv = slot + 2;
+    double* radius_power = rv + (max_angular + 1) * radial_count;
+    double* harmonics_out = radius_power + (max_angular + 1);
+    for (int angular = 0; angular <= max_angular; ++angular) {
+        radius_power[angular] = pow(distance, angular);
+        // The GTO prefactor and the polynomial grid Flir depend only on the
+        // (angular, raw) / (angular, grid) pair -- never on the radial
+        // channel -- so they are evaluated once per angular degree and shared
+        // by every radial (the serial kernel recomputed them radial_count
+        // times per edge).
+        const double eta_power = pow(eta, angular);
+        double prefactors[kSoapGridBound];
+        if (radial_basis == 0) {
+            for (int raw = 0; raw < radial_count; ++raw) {
+                const double alpha = alphas[angular * radial_count + raw];
+                const double denominator = alpha + eta;
+                prefactors[raw] = eta_power
+                    * pow(denominator, -angular - 1.5)
+                    * exp(-alpha * eta / denominator * distance2);
+            }
+        } else {
+            for (int q = 0; q < radial_grid_count; ++q) {
+                prefactors[q] = soap_polynomial_flir(
+                    distance, radial_grid[q], angular, sigma);
+            }
+        }
+        for (int radial = 0; radial < radial_count; ++radial) {
+            double radial_value = 0.0;
+            if (radial_basis == 0) {
+                for (int raw = 0; raw < radial_count; ++raw) {
+                    radial_value += betas[(angular * radial_count + radial)
+                        * radial_count + raw] * prefactors[raw];
+                }
+                radial_value = kPi * sqrt(kPi) * radial_value;
+            } else {
+                for (int q = 0; q < radial_grid_count; ++q) {
+                    radial_value += radial_weights[q] * radial_grid[q] * radial_grid[q]
+                        * prefactors[q]
+                        * radial_values[radial * radial_grid_count + q];
+                }
+                radial_value *= 4.0 * kPi;
+            }
+            rv[angular * radial_count + radial] = radial_value;
+        }
+    }
+    slot[0] = weight;
+    slot[1] = static_cast<double>(destination_type);
+    for (int h = 0; h < harmonic_count; ++h) harmonics_out[h] = harmonics[h];
+}
+
+__global__ void soap_atom_accumulate_kernel(
+    const I64* graph_offsets,
+    I64 tile_atom_begin,
+    I64 tile_atom_end,
+    I64 tile_edge_begin,
+    int coefficient_types,
+    int radial_count,
+    int max_angular,
+    int radial_basis,
+    I64 scratch_stride,
+    const double* scratch,
+    double* coefficients) {
+    const I64 center = tile_atom_begin
+        + static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (center >= tile_atom_end) return;
+    const int harmonic_count = (max_angular + 1) * (max_angular + 1);
+    const I64 coefficient_size = static_cast<I64>(coefficient_types)
+        * radial_count * harmonic_count;
+    double* target = coefficients + center * coefficient_size;
+    for (I64 index = 0; index < coefficient_size; ++index) target[index] = 0.0;
+    // Degree a owns the contiguous harmonic indices [a*a, a*a + 2a].
+    int angular_of[(kSoapMaxAngular + 1) * (kSoapMaxAngular + 1)];
+    for (int h = 0; h < harmonic_count; ++h) {
+        angular_of[h] = static_cast<int>(sqrt(static_cast<double>(h)));
+    }
+    const I64 begin = graph_offsets[center];
+    const I64 end = graph_offsets[center + 1];
+    for (I64 edge = begin; edge < end; ++edge) {
+        const double* slot = scratch + (edge - tile_edge_begin) * scratch_stride;
+        const double weight = slot[0];
+        if (weight == 0.0) continue;
+        const int destination_type = static_cast<int>(slot[1]);
+        const double* rv = slot + 2;
+        const double* radius_power = rv + (max_angular + 1) * radial_count;
+        const double* harmonics = radius_power + (max_angular + 1);
+        for (int radial = 0; radial < radial_count; ++radial) {
+            double* destination = target
+                + (destination_type * radial_count + radial) * harmonic_count;
+            for (int h = 0; h < harmonic_count; ++h) {
+                const int angular = angular_of[h];
+                const double angular_factor = radial_basis == 0
+                    ? radius_power[angular] : 1.0;
+                destination[h] += weight * rv[angular * radial_count + radial]
+                    * angular_factor * harmonics[h];
+            }
+        }
     }
 }
 
@@ -1136,8 +1330,38 @@ py::dict compute_soap_descriptor(
     const std::size_t summed_size = compression == 2
         ? static_cast<std::size_t>(power_rows) * static_cast<std::size_t>(sum_count)
         : 0U;
+    // Per-edge scratch slot for the two-phase expansion (see the phase-1
+    // kernel): weight, destination block, radial values, radius powers, and
+    // harmonics for one edge.
+    const I64 edge_scratch_stride = 2 + (max_angular + 1) * radial_count
+        + (max_angular + 1) + harmonic_count;
+    constexpr I64 kSoapTileEdgeCap = 32768;
+    std::size_t edge_scratch_slots = 0;
+    std::vector<I64> host_offsets;
+    if (output_size > 0) {
+        zeroed_output(context, output, output_size, "could not clear CUDA SOAP output");
+    }
+    if (batch.atoms() > 0) {
+        // Host copy of the graph offsets plans edge-bounded atom tiles.  The
+        // per-edge scratch is sized by the tile cap -- or by a single atom
+        // whose neighbor count alone exceeds the cap -- and never by the
+        // whole batch.
+        host_offsets.resize(batch.atoms() + 1);
+        check_cuda(cudaMemcpyAsync(host_offsets.data(), graph.offsets(),
+            host_offsets.size() * sizeof(I64), cudaMemcpyDeviceToHost,
+            context.stream()), "could not download the SOAP graph offsets");
+        check_cuda(cudaStreamSynchronize(context.stream()),
+            "could not sync the SOAP graph offsets");
+        I64 max_atom_edges = 0;
+        for (std::size_t atom = 0; atom + 1 < host_offsets.size(); ++atom) {
+            max_atom_edges = std::max(max_atom_edges,
+                host_offsets[atom + 1] - host_offsets[atom]);
+        }
+        edge_scratch_slots = std::max<I64>(
+            std::min<I64>(graph.pairs(), kSoapTileEdgeCap), max_atom_edges);
+    }
     const std::size_t workspace_size = coefficient_size + power_size + average_size
-        + summed_size;
+        + summed_size + edge_scratch_slots * static_cast<std::size_t>(edge_scratch_stride);
     auto* workspace = static_cast<double*>(context.workspace_buffer(
         workspace_size * sizeof(double)));
     double* coefficients = workspace;
@@ -1147,12 +1371,20 @@ py::dict compute_soap_descriptor(
     double* summed_scratch = compression == 2
         ? coefficients + coefficient_size + power_size + average_size
         : nullptr;
-    if (output_size > 0) {
-        zeroed_output(context, output, output_size, "could not clear CUDA SOAP output");
-    }
-    if (batch.atoms() > 0) {
-        constexpr unsigned soap_block_threads = 256;
-        soap_coefficients_kernel<<<static_cast<unsigned>(batch.atoms()),
+    double* edge_scratch = coefficients + coefficient_size + power_size
+        + average_size + summed_size;
+    // Dense batches (many edges per atom) run the block-cooperative kernel:
+    // its per-atom edge loop stays latency-friendly, while the two-phase
+    // path's per-atom accumulate thread would starve.  Wide batches (few
+    // edges per atom, many atoms) run the two-phase path, whose edge-parallel
+    // precompute fills the GPU where the block-per-atom form would launch too
+    // few blocks.  Both update every coefficient element exactly once per
+    // edge in edge order, so they are bit-identical.
+    const bool dense = batch.atoms() > 0
+        && graph.pairs() / static_cast<I64>(batch.atoms()) > 512;
+    constexpr unsigned soap_block_threads = 256;
+    if (batch.atoms() > 0 && dense) {
+        soap_coefficients_block_kernel<<<static_cast<unsigned>(batch.atoms()),
             soap_block_threads, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(),
             graph.distance2(), d_species.get(), species_count, coefficient_types, radial_count,
@@ -1163,7 +1395,40 @@ py::dict compute_soap_descriptor(
             option(weighting, "d", 0.0), option(weighting, "m", 1.0),
             option(weighting, "threshold", 1e-2), option(weighting, "w0", 1.0),
             weighting.contains("w0"), d_species_weights.get(), batch.atoms(), coefficients);
-        check_cuda(cudaGetLastError(), "CUDA SOAP coefficient kernel launch failed");
+        check_cuda(cudaGetLastError(), "CUDA SOAP block coefficient kernel launch failed");
+    }
+    if (batch.atoms() > 0 && !dense) {
+        I64 atom_begin = 0;
+        while (atom_begin < batch.atoms()) {
+            I64 atom_end = atom_begin + 1;
+            while (atom_end < batch.atoms() && atom_end - atom_begin < 256
+                && host_offsets[atom_end + 1] - host_offsets[atom_begin] <= kSoapTileEdgeCap) {
+                ++atom_end;
+            }
+            const I64 tile_edge_begin = host_offsets[atom_begin];
+            const I64 tile_edge_end = host_offsets[atom_end];
+            const I64 tile_edges = tile_edge_end - tile_edge_begin;
+            soap_edge_scratch_kernel<<<static_cast<unsigned>((tile_edges + 127) / 128),
+                128, 0, context.stream()>>>(
+                batch.numbers(), graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(),
+                graph.distance2(), d_species.get(), species_count, coefficient_types, radial_count,
+                max_angular, radial_basis, cutoff, graph_cutoff, sigma,
+                d_alphas.get(), d_betas.get(), d_grid.get(),
+                static_cast<int>(radial_grid.size()), d_radial_weights.get(), d_values.get(), weighting_function,
+                option(weighting, "r0", 1.0), option(weighting, "c", 1.0),
+                option(weighting, "d", 0.0), option(weighting, "m", 1.0),
+                option(weighting, "threshold", 1e-2), option(weighting, "w0", 1.0),
+                weighting.contains("w0"), d_species_weights.get(), batch.atoms(),
+                tile_edge_begin, tile_edge_end, edge_scratch_stride, edge_scratch);
+            check_cuda(cudaGetLastError(), "CUDA SOAP edge scratch launch failed");
+            soap_atom_accumulate_kernel<<<static_cast<unsigned>((atom_end - atom_begin + 63) / 64),
+                64, 0, context.stream()>>>(
+                graph.offsets(), atom_begin, atom_end, tile_edge_begin,
+                coefficient_types, radial_count, max_angular, radial_basis,
+                edge_scratch_stride, edge_scratch, coefficients);
+            check_cuda(cudaGetLastError(), "CUDA SOAP accumulate launch failed");
+            atom_begin = atom_end;
+        }
     }
     constexpr unsigned block_size = 64;
     auto launch_power = [&](const double* source_rows, I64 power_row_count,
@@ -1441,16 +1706,6 @@ __device__ double smooth_cutoff(double distance, double cutoff) {
     return 0.5 * (1.0 + cos(kPi * (distance - cutoff + width) / width));
 }
 
-__device__ I64 center_for_edge(const I64* offsets, I64 atoms, I64 edge) {
-    I64 left = 0;
-    I64 right = atoms;
-    while (left + 1 < right) {
-        const I64 middle = left + (right - left) / 2;
-        if (offsets[middle] <= edge) left = middle;
-        else right = middle;
-    }
-    return left;
-}
 
 __device__ bool inverse3_device(const double* matrix, double* inverse) {
     const double determinant = matrix[0] * (matrix[4] * matrix[8] - matrix[5] * matrix[7])
