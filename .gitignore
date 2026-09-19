@@ -35,6 +35,7 @@ docs/*
 !docs/gui-adaptation-baseline.md
 !docs/gpu-backend-design.md
 !docs/dpa4-strided-projections.md
+!docs/handoff-cuda-perf.md
 research/
 mdescriptor/*.so
 mdescriptor/*.pyd
