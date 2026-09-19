@@ -1248,6 +1248,9 @@ void compute_soap(const StructureBatchView& batch, const SoapOptions& options, d
 SoapCalculator::SoapCalculator(SoapOptions options) : options_(std::move(options)) {}
 std::int64_t SoapCalculator::feature_count() const noexcept { return soap_features(options_); }
 const std::vector<std::int32_t>& SoapCalculator::species() const noexcept { return options_.species; }
+bool SoapCalculator::averages_structures() const noexcept {
+    return options_.inner_average || options_.outer_average;
+}
 void SoapCalculator::compute(const StructureBatchView& batch, double* output, const std::shared_ptr<ComputeControl>& control) const {
     std::lock_guard<std::mutex> lock(compute_mutex_);
     assert_open("SOAP calculator");

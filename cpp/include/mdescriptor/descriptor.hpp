@@ -154,6 +154,9 @@ public:
 
     std::int64_t feature_count() const noexcept;
     const std::vector<std::int32_t>& species() const noexcept;
+    // The output row layout follows the calculator's own averaging options,
+    // never per-call flags; callers must allocate accordingly.
+    bool averages_structures() const noexcept;
 
     void compute(
         const StructureBatchView& batch,

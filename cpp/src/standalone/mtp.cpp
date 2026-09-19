@@ -644,6 +644,11 @@ void OfficialMtpModel::load(const std::string& path) {
             invalid_model(path, "alpha_index_basic contains an out-of-range value");
         }
     }
+    // Each basic moment accumulates into ``moments[index]`` with the buffer
+    // sized by alpha_moments_count, so the basic table cannot be longer.
+    if (alpha_index_basic.size() > static_cast<std::size_t>(alpha_moments_count)) {
+        invalid_model(path, "alpha_index_basic_count exceeds alpha_moments_count");
+    }
     for (const auto& alpha : alpha_index_times) {
         if (alpha[0] < 0 || alpha[1] < 0 || alpha[0] >= alpha_moments_count
             || alpha[1] >= alpha_moments_count || alpha[3] < 0 || alpha[3] >= alpha_moments_count) {
@@ -707,6 +712,16 @@ MtpCalculator::MtpCalculator(MtpOptions options) : options_(std::move(options)) 
         if (!official_model_) {
             official_model_ = std::make_shared<OfficialMtpModel>();
             official_model_->load(options_.potential_path);
+            // Expired entries hold only the digest string; sweep them on
+            // insert so a long-lived process loading many distinct models
+            // does not grow the map.
+            for (auto entry = cache.begin(); entry != cache.end();) {
+                if (entry->second.expired()) {
+                    entry = cache.erase(entry);
+                } else {
+                    ++entry;
+                }
+            }
             cache[cache_key] = official_model_;
         }
     } else {

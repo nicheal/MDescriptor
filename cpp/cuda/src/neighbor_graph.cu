@@ -1516,10 +1516,12 @@ void DeviceNeighborGraph::build_nep(
     // implementation, then stable-sort it once by cell.  This preserves the
     // deterministic order within each cell while removing the extra radix sort
     // and gather.
-    make_nep_lane_major_order_kernel<<<blocks, block_size, 0, stream>>>(
-        static_cast<int>(atom_count), static_cast<int>(blocks), atom_cells_,
-        cell_atoms_, cell_sort_keys_);
-    check_cuda(cudaGetLastError(), "CUDA NEP atom order construction failed");
+    if (blocks > 0) {
+        make_nep_lane_major_order_kernel<<<blocks, block_size, 0, stream>>>(
+            static_cast<int>(atom_count), static_cast<int>(blocks), atom_cells_,
+            cell_atoms_, cell_sort_keys_);
+        check_cuda(cudaGetLastError(), "CUDA NEP atom order construction failed");
+    }
     thrust::stable_sort_by_key(
         execution_policy,
         cell_sort_keys_, cell_sort_keys_ + atom_count,

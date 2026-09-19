@@ -72,7 +72,9 @@ private:
         std::vector<float> mixing;
     };
 
-    void ensure_pair_cache(const std::vector<std::size_t>& pair_indices) const;
+    // Fills lazily computed pair coefficients; the caller must hold
+    // ``compute_mutex_`` (compute takes it like every other calculator).
+    void fill_pair_cache(const std::vector<std::size_t>& pair_indices) const;
 
     Dpa4cOptions options_;
     std::int64_t feature_count_ = 0;

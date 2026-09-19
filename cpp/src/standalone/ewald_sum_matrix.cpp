@@ -23,6 +23,12 @@ std::vector<double> ewald_matrix_values(
     if (count == 0) {
         return {};
     }
+    if (!(w > 0.0)) {
+        // A non-positive weight makes the splitting-parameter estimate
+        // ``pow(negative, 1/6)`` NaN, which would silently poison every
+        // downstream cutoff computation.
+        throw std::invalid_argument("w must be positive");
+    }
 #ifdef _OPENMP
     const int workers = num_threads > 0 ? num_threads : omp_get_max_threads();
 #else
@@ -99,7 +105,7 @@ std::vector<double> ewald_matrix_values(
             }
         }
     }
-    std::vector<double> real_matrix(static_cast<std::size_t>(count * count), 0.0);
+    std::vector<double> real_matrix(static_cast<std::size_t>(count) * count, 0.0);
     // Each center writes one matrix column, so centers can be evaluated
     // independently.  Keep the image list private to the worker: its bounds
     // depend on the center and sharing the old scratch vector would race.  Do
@@ -148,7 +154,7 @@ std::vector<double> ewald_matrix_values(
                         real += std::erfc(alpha * distance) / distance;
                     }
                 }
-                real_matrix[static_cast<std::size_t>(target * count + center)] = real
+                real_matrix[static_cast<std::size_t>(target) * count + center] = real
                     * charges[static_cast<std::size_t>(target)] * charges[static_cast<std::size_t>(center)];
             }
         }
@@ -162,7 +168,7 @@ std::vector<double> ewald_matrix_values(
     std::vector<double> cosine_phase(static_cast<std::size_t>(count));
     std::vector<double> sum_phase(static_cast<std::size_t>(count));
     std::vector<double> difference_phase(static_cast<std::size_t>(count));
-    std::vector<double> reciprocal_matrix(static_cast<std::size_t>(count * count), 0.0);
+    std::vector<double> reciprocal_matrix(static_cast<std::size_t>(count) * count, 0.0);
     // One team processes all reciprocal vectors.  The two worksharing loops
     // have implicit barriers: all phase values are ready before any matrix
     // row is updated, and all rows finish vector g before vector g + 1 starts.
@@ -190,7 +196,7 @@ std::vector<double> ewald_matrix_values(
 #pragma omp for schedule(static)
 #endif
             for (int i = 0; i < count; ++i) {
-                double* row_values = reciprocal_matrix.data() + static_cast<std::size_t>(i * count);
+                double* row_values = reciprocal_matrix.data() + static_cast<std::size_t>(i) * count;
                 const double sine_i = sine_phase[static_cast<std::size_t>(i)];
                 const double cosine_i = cosine_phase[static_cast<std::size_t>(i)];
                 const double factor = g_factors[g_index];
@@ -203,7 +209,7 @@ std::vector<double> ewald_matrix_values(
         }
     }
 
-    std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
+    std::vector<double> matrix(static_cast<std::size_t>(count) * count, 0.0);
     const double reciprocal_scale = 4.0 * kPi / volume * std::sqrt(2.0);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(workers) if(count >= 8 && !omp_in_parallel())
@@ -212,15 +218,15 @@ std::vector<double> ewald_matrix_values(
         const double zi = charges[static_cast<std::size_t>(i)];
         for (int j = 0; j < count; ++j) {
             const double zj = charges[static_cast<std::size_t>(j)];
-            matrix[static_cast<std::size_t>(i * count + j)] = real_matrix[static_cast<std::size_t>(i * count + j)]
-                + reciprocal_matrix[static_cast<std::size_t>(i * count + j)] * reciprocal_scale * zi * zj;
+            matrix[static_cast<std::size_t>(i) * count + j] = real_matrix[static_cast<std::size_t>(i) * count + j]
+                + reciprocal_matrix[static_cast<std::size_t>(i) * count + j] * reciprocal_scale * zi * zj;
             if (i == j) {
-                matrix[static_cast<std::size_t>(i * count + j)] = 0.5 * matrix[static_cast<std::size_t>(i * count + j)]
+                matrix[static_cast<std::size_t>(i) * count + j] = 0.5 * matrix[static_cast<std::size_t>(i) * count + j]
                     - alpha / std::sqrt(kPi) * zi * zi;
             }
-            matrix[static_cast<std::size_t>(i * count + j)] += -kPi / (2.0 * volume * alpha * alpha) * 2.0 * zi * zj;
+            matrix[static_cast<std::size_t>(i) * count + j] += -kPi / (2.0 * volume * alpha * alpha) * 2.0 * zi * zj;
             if (i == j) {
-                matrix[static_cast<std::size_t>(i * count + j)] -= -kPi / (2.0 * volume * alpha * alpha) * zi * zj;
+                matrix[static_cast<std::size_t>(i) * count + j] -= -kPi / (2.0 * volume * alpha * alpha) * zi * zj;
             }
         }
     }

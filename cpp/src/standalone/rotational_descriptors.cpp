@@ -420,12 +420,15 @@ void compute_rotational_descriptors(
         batch, graph_cutoff, control, options.num_threads,
         detail::rotational::kBispectrumIncludeCutoffBoundary,
         false, true);
+    // The SO(3) radial basis depends only on descriptor options, never on the
+    // batch: build the O(n^3) eigendecomposition once instead of once per
+    // structure.  It is read-only when shared across worker threads.
+    const int l_max = options.kind == RotationalDescriptorKind::LBispectrum ? std::max(0, options.twojmax / 2) : options.l_max;
+    const auto so3_basis = so3 ? so3_radial_basis(options.n_max, l_max, options.cutoff, options.alpha)
+                               : std::vector<double>{};
     auto compute_structure = [&](std::int64_t structure) {
         const std::int64_t begin = batch.offsets[structure];
         const std::int64_t end = batch.offsets[structure + 1];
-        const int l_max = options.kind == RotationalDescriptorKind::LBispectrum ? std::max(0, options.twojmax / 2) : options.l_max;
-        const auto so3_basis = so3 ? so3_radial_basis(options.n_max, l_max, options.cutoff, options.alpha)
-                                   : std::vector<double>{};
         const int so3_width = 2 * l_max + 1;
         if (!so3) {
             const auto compute_center = [&](std::int64_t center, int workspace_index) {

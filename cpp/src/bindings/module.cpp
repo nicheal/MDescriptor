@@ -375,6 +375,14 @@ py::array compute_soap_array(
     bool inner_average,
     bool outer_average
 ) {
+    // The calculator writes atom or structure rows according to its own
+    // averaging options.  Allocating the output from the caller's flags would
+    // let a mismatch overflow the buffer, so the flags may only restate the
+    // configuration the calculator was built with.
+    if (calculator.averages_structures() != (inner_average || outer_average)) {
+        throw std::invalid_argument(
+            "SOAP average flags must match the calculator configuration");
+    }
     return compute_batch_array(
         calculator, numbers, positions, cells, pbc, offsets, control,
         inner_average || outer_average);

@@ -36,47 +36,23 @@ inline int effective_thread_count(std::int64_t work, int requested_threads) {
         std::max<std::int64_t>(work, 1), resolved_thread_count(requested_threads)));
 }
 
-template <typename Function>
-inline void run_parallel_structures(
-    std::int64_t structures,
-    int requested_threads,
-    const std::shared_ptr<ComputeControl>& control,
-    Function&& fn
-) {
-    const int threads = effective_thread_count(structures, requested_threads);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(threads)
-#endif
-    for (std::int64_t s = 0; s < structures; ++s) {
-        if (cancelled(control)) {
-            continue;
-        }
-        fn(s);
-        if (control) {
-            control->mark_completed();
-        }
-    }
-    if (cancelled(control)) {
-        throw CancelledError();
-    }
-}
-
 // Exceptions must not escape an OpenMP loop: doing so calls std::terminate.
 // Keep each structure independent, capture failures in the worker, and
 // rethrow after all workers have joined.
 template <typename Function>
-inline void run_parallel_matrix_structures(
+inline void run_captured_structures(
     std::int64_t structures,
-    int requested_threads,
+    int threads,
     const std::shared_ptr<ComputeControl>& control,
-    Function&& fn) {
+    Function&& fn
+) {
     std::vector<std::exception_ptr> exceptions(static_cast<std::size_t>(structures));
     std::atomic<bool> failed{false};
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(resolved_thread_count(requested_threads))
+#pragma omp parallel for schedule(static) num_threads(threads)
 #endif
     for (std::int64_t structure = 0; structure < structures; ++structure) {
-        if (failed.load(std::memory_order_acquire) || (control && control->cancelled())) {
+        if (failed.load(std::memory_order_acquire) || cancelled(control)) {
             continue;
         }
         try {
@@ -91,9 +67,45 @@ inline void run_parallel_matrix_structures(
             std::rethrow_exception(exception);
         }
     }
-    if (control && control->cancelled()) {
+    if (cancelled(control)) {
         throw CancelledError();
     }
+}
+
+template <typename Function>
+inline void run_parallel_structures(
+    std::int64_t structures,
+    int requested_threads,
+    const std::shared_ptr<ComputeControl>& control,
+    Function&& fn
+) {
+    // Structure-level kernels let this driver own progress marking (only
+    // after a successful structure); matrix callers mark inside their own
+    // work function.
+    run_captured_structures(
+        structures,
+        effective_thread_count(structures, requested_threads),
+        control,
+        [&fn, &control](std::int64_t structure) {
+            fn(structure);
+            mark_completed(control);
+        });
+}
+
+// Structure-parallel driver for the matrix family: it keeps the caller's raw
+// thread request (no work-sized cap) because the per-structure matrices are
+// large enough to fill a team on their own.
+template <typename Function>
+inline void run_parallel_matrix_structures(
+    std::int64_t structures,
+    int requested_threads,
+    const std::shared_ptr<ComputeControl>& control,
+    Function&& fn) {
+    run_captured_structures(
+        structures,
+        resolved_thread_count(requested_threads),
+        control,
+        std::forward<Function>(fn));
 }
 
 } // namespace mdescriptor::detail

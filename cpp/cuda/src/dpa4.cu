@@ -1417,8 +1417,7 @@ __global__ void radial_apply_kernel(
     const float* gate,
     std::int64_t edges,
     int final_layer,
-    float* local,
-    float* edge_message_output) {
+    float* local) {
     const std::size_t edge = static_cast<std::size_t>(blockIdx.x);
     if (edge >= static_cast<std::size_t>(edges)) {
         return;
@@ -1428,7 +1427,6 @@ __global__ void radial_apply_kernel(
     const float* negative = radial_m1 + edge * 384;
     const float* positive = radial_m1
         + (static_cast<std::size_t>(edges) + edge) * 384;
-    float* edge_message = edge_message_output + edge * 1024;
     __shared__ float logits[192];
     if (!final_layer) {
         for (int output = lane; output < 192; output += blockDim.x) {
@@ -1452,15 +1450,12 @@ __global__ void radial_apply_kernel(
         float value = 0.0F;
         if (row < 4) {
             value = m0[index];
-            edge_message[index] = value;
         } else if (row < 7) {
             const int m1_index = (row - 4) * 64 + channel;
             value = negative[m1_index] - positive[192 + m1_index];
-            edge_message[256 + m1_index] = value;
         } else {
             const int m1_index = (row - 7) * 64 + channel;
             value = negative[192 + m1_index] + positive[m1_index];
-            edge_message[448 + m1_index] = value;
         }
         if (final_layer) {
             values[index] += value;
@@ -2404,7 +2399,6 @@ void radial_so2(
     float* radial_projection,
     float* radial_m1_output,
     float* local,
-    float* edge_message,
     cudaStream_t stream) {
     if (edges <= 0) {
         return;
@@ -2440,7 +2434,7 @@ void radial_so2(
             static_cast<unsigned int>(edges), 256, 0, stream>>>(
             radial_projection, radial_m1_output,
             layer < 3 ? block.so2_gate[layer] : nullptr,
-            edges, layer == 3 ? 1 : 0, local, edge_message);
+            edges, layer == 3 ? 1 : 0, local);
         launch_check(cudaGetLastError(), "DPA4 radial activation launch failed");
     }
 }
@@ -2912,7 +2906,7 @@ std::vector<double> DeviceDpa4Model::compute(
             radial_so2(
                 static_cast<std::int64_t>(edges), radial, block,
                 radial_compact, radial_projection,
-                radial_m1_output, local, edge_message, context.stream());
+                radial_m1_output, local, context.stream());
             rotate_edge_kernel<<<static_cast<unsigned int>(edges), edge_block_size, 0, context.stream()>>>(
                 graph.offsets(), batch.atoms(), rotation, local, edge_message);
             launch_check(cudaGetLastError(), "DPA4 edge message launch failed");

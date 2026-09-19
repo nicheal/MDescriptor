@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any, cast
 
 import numpy as np
@@ -114,45 +115,47 @@ class SoapTurboKernel(_Kernel):
         self._central_weight: list[float] | None = None
         self._native: Any = None
         self._labels_cache: tuple[str, ...] | None = None
+        self._init_lock = threading.Lock()
 
     def _initialize_native(self) -> None:
-        if self._native is not None:
-            return
-        if self.species is None:
-            raise ValueError("SOAPTurbo requires an explicit species declaration")
-        count = len(self.species)
-        self._alpha_max = _per_species(self._alpha_max_config, count, "alpha_max", 8.0, integer=True)
-        self._atom_sigma_r = _per_species(self._atom_sigma_r_config, count, "atom_sigma_r", 0.5)
-        self._atom_sigma_r_scaling = _per_species(self._atom_sigma_r_scaling_config, count, "atom_sigma_r_scaling", 0.0)
-        self._atom_sigma_t = _per_species(self._atom_sigma_t_config, count, "atom_sigma_t", 0.5)
-        self._atom_sigma_t_scaling = _per_species(self._atom_sigma_t_scaling_config, count, "atom_sigma_t_scaling", 0.0)
-        self._amplitude_scaling = _per_species(self._amplitude_scaling_config, count, "amplitude_scaling", 0.0)
-        self._central_weight = _per_species(self._central_weight_config, count, "central_weight", 1.0)
-        if self.central_species is not None and not set(self.central_species).issubset(self.species):
-            raise ValueError("central_species must be contained in species")
-        options = _cpp.SoapTurboOptions()
-        options.species = list(self.species)
-        options.alpha_max = self._alpha_max
-        options.central_species = list(self.central_species or ())
-        options.atom_sigma_r = self._atom_sigma_r
-        options.atom_sigma_r_scaling = self._atom_sigma_r_scaling
-        options.atom_sigma_t = self._atom_sigma_t
-        options.atom_sigma_t_scaling = self._atom_sigma_t_scaling
-        options.amplitude_scaling = self._amplitude_scaling
-        options.central_weight = self._central_weight
-        options.l_max = self.l_max
-        options.rcut_hard = self.rcut_hard
-        options.rcut_soft = self.rcut_soft
-        options.nf = self.nf
-        options.radial_enhancement = self.radial_enhancement
-        options.basis = {"poly3": 0, "poly3gauss": 1}[self.basis]
-        options.compression = self.compression
-        options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
-        self._native = _cpp.SoapTurboCalculator(options)
-        self._labels_cache = self._labels()
-        self._metadata_template = normalize_metadata(
-            self._metadata(), DescriptorLevel.ATOM, self.feature_count
-        )
+        with self._init_lock:
+            if self._native is not None:
+                return
+            if self.species is None:
+                raise ValueError("SOAPTurbo requires an explicit species declaration")
+            count = len(self.species)
+            self._alpha_max = _per_species(self._alpha_max_config, count, "alpha_max", 8.0, integer=True)
+            self._atom_sigma_r = _per_species(self._atom_sigma_r_config, count, "atom_sigma_r", 0.5)
+            self._atom_sigma_r_scaling = _per_species(self._atom_sigma_r_scaling_config, count, "atom_sigma_r_scaling", 0.0)
+            self._atom_sigma_t = _per_species(self._atom_sigma_t_config, count, "atom_sigma_t", 0.5)
+            self._atom_sigma_t_scaling = _per_species(self._atom_sigma_t_scaling_config, count, "atom_sigma_t_scaling", 0.0)
+            self._amplitude_scaling = _per_species(self._amplitude_scaling_config, count, "amplitude_scaling", 0.0)
+            self._central_weight = _per_species(self._central_weight_config, count, "central_weight", 1.0)
+            if self.central_species is not None and not set(self.central_species).issubset(self.species):
+                raise ValueError("central_species must be contained in species")
+            options = _cpp.SoapTurboOptions()
+            options.species = list(self.species)
+            options.alpha_max = self._alpha_max
+            options.central_species = list(self.central_species or ())
+            options.atom_sigma_r = self._atom_sigma_r
+            options.atom_sigma_r_scaling = self._atom_sigma_r_scaling
+            options.atom_sigma_t = self._atom_sigma_t
+            options.atom_sigma_t_scaling = self._atom_sigma_t_scaling
+            options.amplitude_scaling = self._amplitude_scaling
+            options.central_weight = self._central_weight
+            options.l_max = self.l_max
+            options.rcut_hard = self.rcut_hard
+            options.rcut_soft = self.rcut_soft
+            options.nf = self.nf
+            options.radial_enhancement = self.radial_enhancement
+            options.basis = {"poly3": 0, "poly3gauss": 1}[self.basis]
+            options.compression = self.compression
+            options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
+            self._native = _cpp.SoapTurboCalculator(options)
+            self._labels_cache = self._labels()
+            self._metadata_template = normalize_metadata(
+                self._metadata(), DescriptorLevel.ATOM, self.feature_count
+            )
 
     def _ensure_native(self, batch: StructureBatch) -> None:
         if self._closed:

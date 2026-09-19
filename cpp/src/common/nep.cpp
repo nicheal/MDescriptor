@@ -666,6 +666,15 @@ std::shared_ptr<NepModel> load_model(
             }
         }
     }
+    // Expired entries hold only the digest string; sweep them on insert so a
+    // long-lived process loading many distinct models does not grow the map.
+    for (auto entry = cache.begin(); entry != cache.end();) {
+        if (entry->second.expired()) {
+            entry = cache.erase(entry);
+        } else {
+            ++entry;
+        }
+    }
     cache[cache_key] = model;
     return model;
 }

@@ -1091,6 +1091,28 @@ struct NativeMtp4Model::Impl {
                 assignment[static_cast<std::size_t>(i)].resize(static_cast<std::size_t>(reduced[static_cast<std::size_t>(i)]));
                 for (int& value : assignment[static_cast<std::size_t>(i)]) value = index_count++;
             }
+            // The pair loop below pops one assignment entry per cross-matrix
+            // unit.  A malformed model whose cross matrix exceeds the reduced
+            // counts would pop from an empty vector, so validate the totals
+            // before touching the assignment rows.
+            {
+                const int pair_offset = node->from[0]->key.size;
+                std::vector<int> pops(static_cast<std::size_t>(node->key.size), 0);
+                for (int i = 0; i < node->from[0]->key.size; ++i) {
+                    for (int j = 0; j < node->from[1]->key.size; ++j) {
+                        const int left = node->perm[i];
+                        const int right = node->perm[pair_offset + j];
+                        pops[static_cast<std::size_t>(left)] += node->key.matrix(left, right);
+                        pops[static_cast<std::size_t>(right)] += node->key.matrix(left, right);
+                    }
+                }
+                for (int i = 0; i < node->key.size; ++i) {
+                    if (pops[static_cast<std::size_t>(i)] > reduced[static_cast<std::size_t>(i)]) {
+                        throw std::invalid_argument(
+                            "MLIP-4 model moment matrix is inconsistent with its reduced counts");
+                    }
+                }
+            }
             const int offset = node->from[0]->key.size;
             for (int i = 0; i < node->from[0]->key.size; ++i) {
                 for (int j = 0; j < node->from[1]->key.size; ++j) {

@@ -18,7 +18,7 @@ std::vector<double> sine_matrix_values(
     const int count = static_cast<int>(end - begin);
     const Mat3 cell = load_cell(batch, structure);
     const Mat3 inverse_cell = inverse(cell);
-    std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
+    std::vector<double> matrix(static_cast<std::size_t>(count) * count, 0.0);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(resolved_thread_count(num_threads)) if(count >= 32 && !omp_in_parallel())
 #endif
@@ -45,9 +45,9 @@ std::vector<double> sine_matrix_values(
             const double denominator = norm(transformed);
             const double zi = static_cast<double>(batch.numbers[begin + i]);
             const double zj = static_cast<double>(batch.numbers[begin + j]);
-            matrix[static_cast<std::size_t>(i * count + j)] = denominator > 1e-14 ? zi * zj / denominator : 0.0;
+            matrix[static_cast<std::size_t>(i) * count + j] = denominator > 1e-14 ? zi * zj / denominator : 0.0;
         }
-        matrix[static_cast<std::size_t>(i * count + i)] = 0.5 * std::pow(static_cast<double>(batch.numbers[begin + i]), exponent);
+        matrix[static_cast<std::size_t>(i) * count + i] = 0.5 * std::pow(static_cast<double>(batch.numbers[begin + i]), exponent);
     }
     return matrix;
 }

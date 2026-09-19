@@ -650,6 +650,7 @@ void compute_soap_turbo(
     const SoapTurboPrepared& prepared,
     double* output,
     const std::shared_ptr<ComputeControl>& control) {
+    validate_batch(batch);
     const auto& compression = prepared.compression;
     const std::int64_t features = compression.dimension;
     std::fill(output, output + batch.atoms * features, 0.0);

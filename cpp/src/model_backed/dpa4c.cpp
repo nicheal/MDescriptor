@@ -186,6 +186,14 @@ void validate_options(const Dpa4cOptions& options) {
     if (options.degree_triples.size() % 3 != 0) {
         throw std::invalid_argument("DPA4C degree triples must have three entries");
     }
+    // Every triple degree indexes ``bispectrum_ranks[degree - 1]`` and sizes a
+    // (2*degree+1) band; a malformed checkpoint must be rejected here rather
+    // than at compute time.
+    for (const int degree : options.degree_triples) {
+        if (degree < 1 || degree > options.lmax) {
+            throw std::invalid_argument("DPA4C degree triples must stay within 1..lmax");
+        }
+    }
     const std::size_t triple_count = options.degree_triples.size() / 3;
     validate_vector_size(options.coupling_offsets, triple_count + 1, "DPA4C coupling offsets");
     validate_vector_size(options.probe_offsets, triple_count + 1, "DPA4C probe offsets");
@@ -336,12 +344,11 @@ Dpa4cCalculator::Dpa4cCalculator(Dpa4cOptions options)
     pair_cache_.resize(pair_count);
 }
 
-void Dpa4cCalculator::ensure_pair_cache(
+void Dpa4cCalculator::fill_pair_cache(
     const std::vector<std::size_t>& pair_indices) const {
     if (pair_indices.empty()) {
         return;
     }
-    std::lock_guard<std::mutex> lock(compute_mutex_);
     const int type_rows = options_.ntypes + 1;
     const int pair_output = options_.channels * (2 + options_.radial_modes);
     std::vector<float> input(static_cast<std::size_t>(2 * options_.channels));
@@ -423,6 +430,7 @@ void Dpa4cCalculator::compute(
     const std::int32_t* type_indices,
     double* output,
     const std::shared_ptr<ComputeControl>& control) const {
+    std::lock_guard<std::mutex> lock(compute_mutex_);
     assert_open("DPA4C descriptor");
     detail::validate_batch(batch);
     if (type_indices == nullptr && batch.atoms > 0) {
@@ -472,7 +480,7 @@ void Dpa4cCalculator::compute(
     used_pair_indices.erase(
         std::unique(used_pair_indices.begin(), used_pair_indices.end()),
         used_pair_indices.end());
-    ensure_pair_cache(used_pair_indices);
+    fill_pair_cache(used_pair_indices);
 
     const int angular_width = (options_.lmax + 1) * (options_.lmax + 1);
     std::vector<std::int64_t> structure_for_atom;

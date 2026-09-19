@@ -277,7 +277,9 @@ py::dict compute_c00ps_mlff_descriptor(
     const int max_angular = option(options, "l_max", 4);
     const double cutoff = option(options, "r_cut", option(options, "cutoff", 6.0));
     const double sigma = option(options, "radial_sigma", 0.5);
-    if (species.empty() || max_angular < 0 || max_angular >= static_cast<int>(radial_counts.size())
+    // The kernel fixes MaxAngular=20, so its legendre/harmonics workspaces
+    // cannot hold a higher runtime degree (same cap as the SOAP family).
+    if (species.empty() || max_angular < 0 || max_angular > 20 || max_angular >= static_cast<int>(radial_counts.size())
         || cutoff <= 0.0 || sigma < 0.0
         || zeros_nested.size() != radial_counts.size()
         || norms_nested.size() != radial_counts.size()

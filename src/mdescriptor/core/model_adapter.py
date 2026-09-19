@@ -92,7 +92,11 @@ class ModelBackedAdapter(DescriptorAdapter):
             if self.loaded_model is not None:
                 discard_loaded_model(self.loaded_model)
             raise
-        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError, AttributeError) as exc:
+            # Payload extraction can also fail with AttributeError when a
+            # validated checkpoint still lacks an implementation-specific
+            # tensor holder; keep every construction failure on the public
+            # ModelLoadError surface (the cause stays chained).
             if self.loaded_model is not None:
                 discard_loaded_model(self.loaded_model)
             raise ModelLoadError(f"failed to load {self.name} model") from exc

@@ -53,7 +53,7 @@ std::vector<double> coulomb_matrix_values(
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
     const int count = static_cast<int>(end - begin);
-    std::vector<double> matrix(static_cast<std::size_t>(count * count), 0.0);
+    std::vector<double> matrix(static_cast<std::size_t>(count) * count, 0.0);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(resolved_thread_count(num_threads)) if(count >= 32 && !omp_in_parallel())
 #endif
@@ -65,8 +65,8 @@ std::vector<double> coulomb_matrix_values(
             const double value = i == j
                 ? 0.5 * reference_pow(zi, exponent)
                 : zi * zj / norm(first - position(batch, begin + j));
-            matrix[static_cast<std::size_t>(i * count + j)] = value;
-            matrix[static_cast<std::size_t>(j * count + i)] = value;
+            matrix[static_cast<std::size_t>(i) * count + j] = value;
+            matrix[static_cast<std::size_t>(j) * count + i] = value;
         }
     }
     return matrix;

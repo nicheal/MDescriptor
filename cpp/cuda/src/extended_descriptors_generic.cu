@@ -366,6 +366,13 @@ py::dict compute_generic_moment_descriptor(
     const I64 channels = static_cast<I64>(channel_species.size());
     I64 moment_stride = 0;
     if (mode == 0) {
+        // The mode-0 kernel accumulates full moment tensors in a workspace
+        // sized by 3^rank and only supports ranks up to 5; accepting more
+        // would silently produce an all-zero descriptor.
+        if (max_rank > 5) {
+            throw std::invalid_argument(
+                "MTP CUDA moment path supports max_rank <= 5");
+        }
         I64 tensor_size = 1;
         for (int rank = 0; rank <= max_rank; ++rank) {
             moment_stride += tensor_size;

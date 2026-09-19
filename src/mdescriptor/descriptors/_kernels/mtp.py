@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 from typing import Any
 
@@ -72,6 +73,7 @@ class MtpKernel(_Kernel):
         self._native: Any = None
         self._closed = False
         self._feature_count = 0
+        self._init_lock = threading.Lock()
         if self._official and self.species is not None:
             self._create_native()
 
@@ -86,9 +88,10 @@ class MtpKernel(_Kernel):
         return channels * (self.max_rank // 2 + 1) + (self.max_rank + 1) * channels * (channels + 1) // 2
 
     def _create_native(self) -> None:
-        if self._native is not None:
-            return
-        options = _cpp.MtpOptions()
+        with self._init_lock:
+            if self._native is not None:
+                return
+            options = _cpp.MtpOptions()
         options.species = list(self.species)
         options.potential_path = self.model_path or ""
         if self.model_digest is not None:
