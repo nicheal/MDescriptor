@@ -15,7 +15,6 @@
 
 #include <cfloat>
 #include <algorithm>
-#include <cstdio>
 #include <array>
 #include <cmath>
 #include <cstddef>
