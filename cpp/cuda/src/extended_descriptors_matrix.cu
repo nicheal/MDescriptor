@@ -409,7 +409,8 @@ py::dict compute_matrix_descriptor(
     }
     if (n_atoms_max <= 0 && host_batch.atoms == 0) {
         py::dict result;
-        result["values"] = values_array({}, host_batch.structures, 0);
+        result["values"] = download_output_with_gil_release(
+            context, 0, host_batch.structures, 0);
         result["level"] = "structure";
         result["labels"] = labels_option(options, name, 0);
         result["metadata"] = metadata(options, name);
@@ -434,8 +435,7 @@ py::dict compute_matrix_descriptor(
     const std::size_t matrix_size = static_cast<std::size_t>(host_batch.structures)
         * matrix_stride;
     double* output = context.output_buffer(output_size);
-    auto* matrices = static_cast<double*>(context.workspace_buffer(
-        matrix_size * sizeof(double)));
+    double* matrices = nullptr;
     const double exponent = option(options, "exponent", 2.4);
     const double accuracy = option(options, "accuracy", 1e-5);
     const double weight = option(options, "w", 1.0);
@@ -453,8 +453,12 @@ py::dict compute_matrix_descriptor(
         const EwaldPlan plan = plan_ewald(
             host_batch, accuracy, weight, r_cut, g_cut, split);
         const std::size_t structures = static_cast<std::size_t>(host_batch.structures);
-        double* ewald = static_cast<double*>(context.workspace_buffer(
-            (matrix_size + plan.scratch_doubles) * sizeof(double))) + matrix_size;
+        // The workspace pool frees its old allocation when it grows.  Keep
+        // the matrix and Ewald scratch slices from the same request so no
+        // pointer is left referring to the freed allocation.
+        matrices = static_cast<double*>(context.workspace_buffer(
+            (matrix_size + plan.scratch_doubles) * sizeof(double)));
+        double* ewald = matrices + matrix_size;
         double* d_centers_prefix = ewald;
         double* d_g_prefix = d_centers_prefix + (structures + 1);
         double* d_pairs_prefix = d_g_prefix + (structures + 1);
@@ -518,14 +522,8 @@ py::dict compute_matrix_descriptor(
             matrices, output);
         check_cuda(cudaGetLastError(), "CUDA Ewald post launch failed");
     } else if (host_batch.structures > 0) {
-        matrix_kernel<<<static_cast<unsigned>((host_batch.structures + block_size - 1) / block_size),
-            block_size, 0, context.stream()>>>(
-            batch.numbers(), batch.positions(), batch.cells(), batch.offsets(),
-            host_batch.structures, n_atoms_max, static_cast<I64>(matrix_stride), kind, permutation, exponent,
-            accuracy, weight, r_cut, g_cut, split, matrices, output);
-        check_cuda(cudaGetLastError(), "CUDA matrix kernel launch failed");
-    }
-    if (kind != kMatrixKindEwald && host_batch.structures > 0) {
+        matrices = static_cast<double*>(context.workspace_buffer(
+            matrix_size * sizeof(double)));
         // Coulomb and sine elements are independent: one thread per
         // (structure, i, j) fills the raw matrix, then a per-structure pass
         // applies the permutation / eigenspectrum tail.
@@ -545,9 +543,10 @@ py::dict compute_matrix_descriptor(
             check_cuda(cudaGetLastError(), "CUDA matrix post launch failed");
         }
     }
-    const auto values = download_output_with_gil_release(context, output_size);
+    const auto values = download_output_with_gil_release(
+        context, output_size, host_batch.structures, columns);
     py::dict result;
-    result["values"] = values_array(values, host_batch.structures, columns);
+    result["values"] = values;
     result["level"] = "structure";
     result["labels"] = labels_option(options, name, columns);
     result["metadata"] = metadata(options, name);

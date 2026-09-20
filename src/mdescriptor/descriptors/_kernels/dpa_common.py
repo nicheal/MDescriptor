@@ -91,6 +91,7 @@ class DpaKernelBase:
 
         return load_dpa_checkpoint(
             resolved.path,
+            content=resolved.content,
             expected_descriptor=cls.checkpoint_descriptor,
         )
 

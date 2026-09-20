@@ -183,8 +183,9 @@ py::dict compute_rotational_descriptor(
             check_cuda(cudaGetLastError(), "CUDA rotational kernel launch failed");
         }
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, name, options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, name, options, false,
         host_row_offsets(host_batch));
 }
 

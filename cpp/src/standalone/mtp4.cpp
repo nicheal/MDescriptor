@@ -1244,7 +1244,11 @@ void NativeMtp4Model::load(const std::string& path) {
     if (!stream.is_open()) throw std::invalid_argument("cannot open MLIP-4 JSON potential '" + path + "'");
     std::ostringstream buffer;
     buffer << stream.rdbuf();
-    const JsonValue root = JsonParser(buffer.str()).parse();
+    load(path, buffer.str());
+}
+
+void NativeMtp4Model::load(const std::string& path, const std::string& content) {
+    const JsonValue root = JsonParser(content).parse();
     const JsonValue* potential = &root;
     if (root.kind == JsonValue::Kind::Array && root.array.size() == 2 && root.at(0).kind == JsonValue::Kind::String) potential = &root.at(1);
     if (potential->kind != JsonValue::Kind::Object) throw std::invalid_argument("MLIP-4 potential JSON must be an object or [class, object]");

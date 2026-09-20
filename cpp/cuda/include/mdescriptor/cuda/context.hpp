@@ -19,6 +19,11 @@ public:
     explicit CudaOutOfMemory(const char* message) : std::runtime_error(message) {}
 };
 
+class CudaCancelledError : public std::runtime_error {
+public:
+    CudaCancelledError() : std::runtime_error("descriptor computation cancelled") {}
+};
+
 class CudaExecutionContext {
 public:
     explicit CudaExecutionContext(int device = 0);
@@ -37,6 +42,8 @@ public:
     void* workspace_buffer(std::size_t count);
     std::vector<double> download_output(std::size_t count);
     std::vector<double> download_output_slice(std::size_t offset, std::size_t count);
+    // Copy the full output into caller-owned host storage and synchronize.
+    void download_output_into(double* destination, std::size_t count);
 
     void synchronize();
     void close() noexcept;

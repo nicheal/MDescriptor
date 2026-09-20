@@ -40,6 +40,9 @@ struct OfficialMtpModel {
     std::vector<double> radial_coeffs;
 
     void load(const std::string& path);
+    void load(const std::string& path, const std::string& content);
+
+    void load_stream(const std::string& path, std::istream& input);
     std::int64_t feature_count() const noexcept {
         if (native_mlip4) return native_model ? native_model->feature_count() : 0;
         return static_cast<std::int64_t>(alpha_moment_mapping.size()) + 1;
@@ -491,6 +494,28 @@ void OfficialMtpModel::load(const std::string& path) {
     if (!input.is_open()) {
         invalid_model(path, "cannot open file");
     }
+    load_stream(path, input);
+}
+
+void OfficialMtpModel::load(const std::string& path, const std::string& content) {
+    std::istringstream input(content);
+    input >> std::ws;
+    if (input.peek() == '{' || input.peek() == '[') {
+        native_mlip4 = true;
+        native_model = std::make_shared<NativeMtp4Model>();
+        native_model->load(path, content);
+        species_count = native_model->species_count();
+        min_dist = native_model->min_dist();
+        max_dist = native_model->max_dist();
+        radial_basis_size = native_model->radial_basis_size();
+        radial_funcs_count = native_model->radial_funcs_count();
+        radial_basis_type = native_model->radial_basis_type();
+        return;
+    }
+    load_stream(path, input);
+}
+
+void OfficialMtpModel::load_stream(const std::string& path, std::istream& input) {
     std::string line;
     input >> std::ws;
     if (input.peek() == '{' || input.peek() == '[') {
@@ -702,17 +727,27 @@ MtpCalculator::MtpCalculator(MtpOptions options) : options_(std::move(options)) 
     if (!options_.potential_path.empty()) {
         static std::mutex cache_mutex;
         static std::unordered_map<std::string, std::weak_ptr<OfficialMtpModel>> cache;
-        const std::string cache_key = options_.model_digest.empty()
-            ? options_.potential_path
-            : options_.model_digest;
+        // Resolver-backed calls pass the exact bytes used for parsing.  Use
+        // those bytes as the cache identity so a stale digest cannot alias a
+        // different payload.  Keep the path/digest branches for legacy native
+        // callers that do not provide a snapshot.
+        const std::string cache_key = options_.model_data.has_value()
+            ? "content:" + *options_.model_data
+            : (options_.model_digest.empty()
+                ? "path:" + options_.potential_path
+                : "digest:" + options_.model_digest);
         std::lock_guard<std::mutex> cache_lock(cache_mutex);
         if (const auto found = cache.find(cache_key); found != cache.end()) {
             official_model_ = found->second.lock();
         }
         if (!official_model_) {
             official_model_ = std::make_shared<OfficialMtpModel>();
-            official_model_->load(options_.potential_path);
-            // Expired entries hold only the digest string; sweep them on
+            if (options_.model_data.has_value()) {
+                official_model_->load(options_.potential_path, *options_.model_data);
+            } else {
+                official_model_->load(options_.potential_path);
+            }
+            // Expired entries hold only the cache key; sweep them on
             // insert so a long-lived process loading many distinct models
             // does not grow the map.
             for (auto entry = cache.begin(); entry != cache.end();) {

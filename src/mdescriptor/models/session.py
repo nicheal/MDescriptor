@@ -135,10 +135,13 @@ class LoadedModel:
     loader_schema: int
     config: Any
     weights: Any
+    content: bytes | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", _freeze(self.config))
         object.__setattr__(self, "weights", _freeze(self.weights))
+        if self.content is not None:
+            object.__setattr__(self, "content", bytes(self.content))
 
     def materialize_weights(self) -> Any:
         """Return an isolated mutable payload for one runtime loader."""
@@ -147,12 +150,12 @@ class LoadedModel:
 
 
 def identity_model_artifact(resolved: ResolvedModel) -> tuple[Mapping[str, str], None]:
-    """Represent a path-owned model without eagerly parsing its contents.
+    """Represent a native model without eagerly parsing its format.
 
-    Native kernels that consume the resolved path themselves still participate
-    in the shared artifact cache.  Their immutable identity keeps cache keys
-    and session ownership uniform without pretending that the Python side owns
-    a format-specific parser.
+    Native kernels still participate in the shared artifact cache.  Their
+    immutable identity keeps cache keys and session ownership uniform without
+    pretending that the Python side owns a format-specific parser; the
+    resolver's bytes travel separately through ``LoadedModel.content``.
     """
 
     return MappingProxyType(
@@ -192,6 +195,7 @@ def shared_loaded_model(
                 loader_schema=int(loader_schema),
                 config=config,
                 weights=weights,
+                content=resolved.content,
             )
         except ModelLoadError:
             raise

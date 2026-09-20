@@ -109,11 +109,22 @@ std::vector<T> download(
     return result;
 }
 
-std::vector<double> download_output_with_gil_release(
+py::array download_output_with_gil_release(
     CudaExecutionContext& context,
-    std::size_t count) {
-    py::gil_scoped_release release;
-    return context.download_output(count);
+    std::size_t count,
+    I64 rows,
+    I64 columns) {
+    py::array_t<double> result({
+        static_cast<py::ssize_t>(rows), static_cast<py::ssize_t>(columns)});
+    double* destination = result.mutable_data();
+    if (count != 0) {
+        // The NumPy array owns the host storage.  Keep Python object access
+        // before releasing the GIL, and do the device copy/synchronization
+        // without holding it.
+        py::gil_scoped_release release;
+        context.download_output_into(destination, count);
+    }
+    return result;
 }
 
 // Host-side SO3 math is shared with the CPU standalone implementation via
@@ -275,15 +286,14 @@ inline std::vector<I64> host_row_offsets(const detail::StructureBatchView& host_
 }
 
 py::dict atom_result(
-    const std::vector<double>& values,
-    I64 rows,
+    const py::array& values,
     I64 columns,
     const std::string& name,
     const py::dict& options,
     bool per_system,
     const std::vector<I64>& offsets) {
     py::dict result;
-    result["values"] = values_array(values, rows, columns);
+    result["values"] = values;
     result["level"] = per_system ? "structure" : "atom";
     if (!per_system) result["row_offsets"] = i64_array(offsets);
     result["labels"] = labels_option(options, name, columns);
@@ -1561,9 +1571,10 @@ py::dict compute_soap_descriptor(
             check_cuda(cudaGetLastError(), "CUDA SOAP outer power average launch failed");
         }
     }
-    const auto values = download_output_with_gil_release(context, output_size);
+    const auto values = download_output_with_gil_release(
+        context, output_size, rows, features);
     py::dict result;
-    result["values"] = values_array(values, rows, features);
+    result["values"] = values;
     result["level"] = inner || outer ? "structure" : "atom";
     if (!inner && !outer) result["row_offsets"] = i64_array(
         host_row_offsets(host_batch));
@@ -1843,89 +1854,6 @@ __device__ double sine_matrix_off_diagonal(
     const double ty = sx * sx * cell[1] + sy * sy * cell[4] + sz * sz * cell[7];
     const double tz = sx * sx * cell[2] + sy * sy * cell[5] + sz * sz * cell[8];
     return sqrt(tx * tx + ty * ty + tz * tz);
-}
-
-__device__ double ewald_off_diagonal(
-    const I32* numbers,
-    const double* positions,
-    const double* wrapped_positions,
-    const double* cell,
-    const double* inverse,
-    const double* reciprocal_vectors,
-    int first,
-    int second,
-    double alpha,
-    double r_cut,
-    double g_cut,
-    double volume,
-    double inverse_norm_x,
-    double inverse_norm_y,
-    double inverse_norm_z,
-    int gx,
-    int gy,
-    int gz) {
-    const double xi = positions[first * 3 + 0];
-    const double yi = positions[first * 3 + 1];
-    const double zi = positions[first * 3 + 2];
-    const double xj = positions[second * 3 + 0];
-    const double yj = positions[second * 3 + 1];
-    const double zj = positions[second * 3 + 2];
-    double fi_x = 0.0;
-    double fi_y = 0.0;
-    double fi_z = 0.0;
-    fractional_device(inverse, xi, yi, zi, fi_x, fi_y, fi_z);
-    fi_x -= floor(fi_x);
-    fi_y -= floor(fi_y);
-    fi_z -= floor(fi_z);
-    const double wj_x = wrapped_positions[second * 3 + 0];
-    const double wj_y = wrapped_positions[second * 3 + 1];
-    const double wj_z = wrapped_positions[second * 3 + 2];
-    double real = 0.0;
-    for (int sx = static_cast<int>(floor(fi_x - r_cut * inverse_norm_x));
-         sx < static_cast<int>(ceil(fi_x + r_cut * inverse_norm_x)); ++sx) {
-        for (int sy = static_cast<int>(floor(fi_y - r_cut * inverse_norm_y));
-             sy < static_cast<int>(ceil(fi_y + r_cut * inverse_norm_y)); ++sy) {
-            for (int sz = static_cast<int>(floor(fi_z - r_cut * inverse_norm_z));
-                 sz < static_cast<int>(ceil(fi_z + r_cut * inverse_norm_z)); ++sz) {
-                const double tx = wj_x - xi + sx * cell[0] + sy * cell[3] + sz * cell[6];
-                const double ty = wj_y - yi + sx * cell[1] + sy * cell[4] + sz * cell[7];
-                const double tz = wj_z - zi + sx * cell[2] + sy * cell[5] + sz * cell[8];
-                const double distance2 = tx * tx + ty * ty + tz * tz;
-                if (distance2 > 1e-16 && distance2 <= r_cut * r_cut) {
-                    real += erfc(alpha * sqrt(distance2)) / sqrt(distance2);
-                }
-            }
-        }
-    }
-    const double reciprocal_x = reciprocal_vectors[0];
-    const double reciprocal_y = reciprocal_vectors[1];
-    const double reciprocal_z = reciprocal_vectors[2];
-    const double reciprocal2_x = reciprocal_vectors[3];
-    const double reciprocal2_y = reciprocal_vectors[4];
-    const double reciprocal2_z = reciprocal_vectors[5];
-    const double reciprocal3_x = reciprocal_vectors[6];
-    const double reciprocal3_y = reciprocal_vectors[7];
-    const double reciprocal3_z = reciprocal_vectors[8];
-    double reciprocal = 0.0;
-    for (int gx_i = -gx; gx_i <= gx; ++gx_i) {
-        for (int gy_i = -gy; gy_i <= gy; ++gy_i) {
-            for (int gz_i = -gz; gz_i <= gz; ++gz_i) {
-                const double vx = gx_i * reciprocal_x + gy_i * reciprocal2_x + gz_i * reciprocal3_x;
-                const double vy = gx_i * reciprocal_y + gy_i * reciprocal2_y + gz_i * reciprocal3_y;
-                const double vz = gx_i * reciprocal_z + gy_i * reciprocal2_z + gz_i * reciprocal3_z;
-                const double length2 = vx * vx + vy * vy + vz * vz;
-                if (length2 <= 1e-24 || length2 > g_cut * g_cut) continue;
-                const double phase_i = vx * xi + vy * yi + vz * zi;
-                const double phase_j = vx * xj + vy * yj + vz * zj;
-                reciprocal += cos(phase_j - phase_i - 0.25 * kPi)
-                    * exp(-length2 / (4.0 * alpha * alpha)) / length2;
-            }
-        }
-    }
-    const double zi_number = numbers[first];
-    const double zj_number = numbers[second];
-    const double scale = zi_number * zj_number;
-    return scale * (real + reciprocal * (4.0 * kPi / volume) * sqrt(2.0));
 }
 
 __device__ void eigenvalues_symmetric_device(
@@ -2218,231 +2146,6 @@ __global__ void matrix_post_kernel(
     }
 }
 
-__global__ void matrix_kernel(
-    const I32* numbers,
-    const double* positions,
-    const double* cells,
-    const I64* offsets,
-    I64 structures,
-    int n_atoms_max,
-    I64 workspace_stride,
-    int kind,
-    int permutation,
-    double exponent,
-    double accuracy,
-    double w,
-    double r_cut_option,
-    double g_cut_option,
-    double a_option,
-    double* matrices,
-    double* output) {
-    const I64 structure = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (structure >= structures) return;
-    const I64 begin = offsets[structure];
-    const I64 end = offsets[structure + 1];
-    const int count = static_cast<int>(end - begin);
-    double* matrix = matrices + structure * workspace_stride;
-    double* wrapped_positions = matrix
-        + static_cast<I64>(n_atoms_max) * n_atoms_max;
-    double* row = output + structure * (permutation == kMatrixPermutationEigenspectrum
-        ? n_atoms_max : n_atoms_max * n_atoms_max);
-
-    if (count <= 0) {
-        const I64 columns = permutation == kMatrixPermutationEigenspectrum
-            ? n_atoms_max : static_cast<I64>(n_atoms_max) * n_atoms_max;
-        for (I64 index = 0; index < columns; ++index) {
-            row[index] = 0.0;
-        }
-        return;
-    }
-
-    const double* cell = cells + structure * 9;
-    double inverse[9]{};
-    const bool inverse_valid = kind == kMatrixKindCoulomb || inverse3_device(cell, inverse);
-    double volume = 0.0;
-    double alpha = 0.0;
-    double r_cut = 0.0;
-    double g_cut = 0.0;
-    double inverse_norm_x = 0.0;
-    double inverse_norm_y = 0.0;
-    double inverse_norm_z = 0.0;
-    double reciprocal_vectors[9]{};
-    int gx = 0;
-    int gy = 0;
-    int gz = 0;
-    if (kind == kMatrixKindEwald && inverse_valid) {
-        volume = cell_volume_device(cell);
-        alpha = a_option > 0.0
-            ? a_option : pow(static_cast<double>(count) * w / (volume * volume), 1.0 / 6.0) * sqrt(kPi);
-        const double factor = sqrt(-log(accuracy));
-        r_cut = r_cut_option > 0.0 ? r_cut_option : factor / alpha;
-        g_cut = g_cut_option > 0.0 ? g_cut_option : 2.0 * alpha * factor;
-        inverse_norm_x = sqrt(inverse[0] * inverse[0] + inverse[3] * inverse[3] + inverse[6] * inverse[6]);
-        inverse_norm_y = sqrt(inverse[1] * inverse[1] + inverse[4] * inverse[4] + inverse[7] * inverse[7]);
-        inverse_norm_z = sqrt(inverse[2] * inverse[2] + inverse[5] * inverse[5] + inverse[8] * inverse[8]);
-        reciprocal_vectors[0] = 2.0 * kPi * inverse[0];
-        reciprocal_vectors[1] = 2.0 * kPi * inverse[3];
-        reciprocal_vectors[2] = 2.0 * kPi * inverse[6];
-        reciprocal_vectors[3] = 2.0 * kPi * inverse[1];
-        reciprocal_vectors[4] = 2.0 * kPi * inverse[4];
-        reciprocal_vectors[5] = 2.0 * kPi * inverse[7];
-        reciprocal_vectors[6] = 2.0 * kPi * inverse[2];
-        reciprocal_vectors[7] = 2.0 * kPi * inverse[5];
-        reciprocal_vectors[8] = 2.0 * kPi * inverse[8];
-        gx = static_cast<int>(ceil(g_cut / sqrt(
-            reciprocal_vectors[0] * reciprocal_vectors[0]
-            + reciprocal_vectors[1] * reciprocal_vectors[1]
-            + reciprocal_vectors[2] * reciprocal_vectors[2]))) + 1;
-        gy = static_cast<int>(ceil(g_cut / sqrt(
-            reciprocal_vectors[3] * reciprocal_vectors[3]
-            + reciprocal_vectors[4] * reciprocal_vectors[4]
-            + reciprocal_vectors[5] * reciprocal_vectors[5]))) + 1;
-        gz = static_cast<int>(ceil(g_cut / sqrt(
-            reciprocal_vectors[6] * reciprocal_vectors[6]
-            + reciprocal_vectors[7] * reciprocal_vectors[7]
-            + reciprocal_vectors[8] * reciprocal_vectors[8]))) + 1;
-        for (int atom = 0; atom < count; ++atom) {
-            double fractional_x = 0.0;
-            double fractional_y = 0.0;
-            double fractional_z = 0.0;
-            const double* position = positions + (begin + atom) * 3;
-            fractional_device(
-                inverse, position[0], position[1], position[2],
-                fractional_x, fractional_y, fractional_z);
-            fractional_x -= floor(fractional_x);
-            fractional_y -= floor(fractional_y);
-            fractional_z -= floor(fractional_z);
-            cartesian_from_fractional(
-                cell, fractional_x, fractional_y, fractional_z,
-                wrapped_positions[atom * 3 + 0],
-                wrapped_positions[atom * 3 + 1],
-                wrapped_positions[atom * 3 + 2]);
-        }
-    }
-    // Only the rows that can be read below need clearing.  The old kernel
-    // cleared the full n_atoms_max square even when structures were smaller.
-    for (int i = 0; i < count; ++i) {
-        for (int j = 0; j < n_atoms_max; ++j) matrix[i * n_atoms_max + j] = 0.0;
-    }
-    for (int i = 0; i < count; ++i) {
-        const double zi = static_cast<double>(numbers[begin + i]);
-        for (int j = 0; j < count; ++j) {
-            const double zj = static_cast<double>(numbers[begin + j]);
-            double value = 0.0;
-            if (i == j && kind != kMatrixKindEwald) {
-                value = 0.5 * pow(zi, exponent);
-            } else if (kind == kMatrixKindCoulomb) {
-                const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
-                const double dy = positions[(begin + i) * 3 + 1] - positions[(begin + j) * 3 + 1];
-                const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
-                value = zi * zj / sqrt(dx * dx + dy * dy + dz * dz);
-            } else if (kind == kMatrixKindSine) {
-                if (inverse_valid) {
-                    const double dx = positions[(begin + i) * 3 + 0] - positions[(begin + j) * 3 + 0];
-                    const double dy = positions[(begin + i) * 3 + 1] - positions[(begin + j) * 3 + 1];
-                    const double dz = positions[(begin + i) * 3 + 2] - positions[(begin + j) * 3 + 2];
-                    const double denominator = sine_matrix_off_diagonal(
-                        cell, inverse, dx, dy, dz);
-                    value = denominator > 1e-14 ? zi * zj / denominator : 0.0;
-                }
-            } else if (kind == kMatrixKindEwald && inverse_valid) {
-                value = ewald_off_diagonal(
-                    numbers + begin, positions + begin * 3, wrapped_positions,
-                    cell, inverse, reciprocal_vectors, i, j, alpha, r_cut, g_cut,
-                    volume, inverse_norm_x, inverse_norm_y, inverse_norm_z,
-                    gx, gy, gz);
-                // The CPU Ewald implementation applies the half self term and
-                // the neutralizing-background correction after accumulating
-                // both real- and reciprocal-space contributions.  Applying
-                // only 0.5 * Z^p on the diagonal drops the periodic images,
-                // reciprocal sum, and self energy, and is especially visible
-                // for the default ``permutation=none`` matrix.
-                if (i == j) {
-                    value = 0.5 * value
-                        - alpha / sqrt(kPi) * zi * zi;
-                }
-                value += -kPi / (2.0 * volume * alpha * alpha) * 2.0 * zi * zj;
-                if (i == j) {
-                    value -= -kPi / (2.0 * volume * alpha * alpha) * zi * zj;
-                }
-            }
-            matrix[i * n_atoms_max + j] = value;
-        }
-    }
-    if (permutation == kMatrixPermutationEigenspectrum) {
-        eigenvalues_symmetric_device(matrix, count, n_atoms_max, row, n_atoms_max);
-        return;
-    }
-    if (permutation == kMatrixPermutationNone) {
-        for (int i = 0; i < count; ++i) {
-            for (int j = 0; j < count; ++j) {
-                row[i * n_atoms_max + j] = matrix[i * n_atoms_max + j];
-            }
-            for (int j = count; j < n_atoms_max; ++j) {
-                row[i * n_atoms_max + j] = 0.0;
-            }
-        }
-        for (int i = count; i < n_atoms_max; ++i) {
-            for (int j = 0; j < n_atoms_max; ++j) {
-                row[i * n_atoms_max + j] = 0.0;
-            }
-        }
-        return;
-    }
-    int order[256];
-    double norms[256];
-    double maximum_norm_squared = 1.0;
-    for (int i = 0; i < count; ++i) {
-        order[i] = i;
-        double norm2 = 0.0;
-        const int grouped_end = count & ~3;
-        for (int j = 0; j < grouped_end; j += 4) {
-            norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j]
-                + matrix[i * n_atoms_max + j + 1] * matrix[i * n_atoms_max + j + 1]
-                + matrix[i * n_atoms_max + j + 2] * matrix[i * n_atoms_max + j + 2]
-                + matrix[i * n_atoms_max + j + 3] * matrix[i * n_atoms_max + j + 3];
-        }
-        for (int j = grouped_end; j < count; ++j) {
-            norm2 += matrix[i * n_atoms_max + j] * matrix[i * n_atoms_max + j];
-        }
-        norms[i] = norm2;
-        maximum_norm_squared = max(maximum_norm_squared, norm2);
-    }
-    if (permutation == kMatrixPermutationSortedL2) {
-        for (int i = 1; i < count; ++i) {
-            int current = i;
-            while (current > 0 && norms[current] > norms[current - 1]) {
-                const double norm_saved = norms[current]; norms[current] = norms[current - 1]; norms[current - 1] = norm_saved;
-                const int index_saved = order[current]; order[current] = order[current - 1]; order[current - 1] = index_saved;
-                --current;
-            }
-        }
-        const double tie_tolerance = 4.0 * DBL_EPSILON * maximum_norm_squared;
-        for (int group_begin = 0; group_begin < count;) {
-            int group_end = group_begin + 1;
-            while (group_end < count
-                && norms[group_end - 1] - norms[group_end] <= tie_tolerance) {
-                ++group_end;
-            }
-            for (int i = group_begin + 1; i < group_end; ++i) {
-                int current = i;
-                while (current > group_begin && order[current] < order[current - 1]) {
-                    const int index_saved = order[current];
-                    order[current] = order[current - 1];
-                    order[current - 1] = index_saved;
-                    --current;
-                }
-            }
-            group_begin = group_end;
-        }
-    }
-    for (int i = 0; i < n_atoms_max; ++i) {
-        for (int j = 0; j < n_atoms_max; ++j) {
-            row[i * n_atoms_max + j] = i < count && j < count
-                ? matrix[order[i] * n_atoms_max + order[j]] : 0.0;
-        }
-    }
-}
 
 template <int MaxAngular>
 __global__ void spherical_pair_kernel(

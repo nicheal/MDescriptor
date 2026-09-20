@@ -146,7 +146,6 @@ def test_cuda_plugin_is_lazy_and_receives_public_control(monkeypatch) -> None:
         return FakeBackend()
 
     monkeypatch.setattr(_runtime, "_CUDA_FACTORY", None)
-    monkeypatch.setattr(_runtime, "_CUDA_LOAD_ERROR", None)
     monkeypatch.setattr(_runtime, "create_cuda_backend", factory)
     descriptor = NeighborList(
         cutoff=3.0,

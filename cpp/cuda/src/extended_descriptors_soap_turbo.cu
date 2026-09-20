@@ -562,8 +562,9 @@ py::dict compute_soap_turbo_descriptor(
             batch.atoms(), coefficient_workspace, dense_workspace, output);
         check_cuda(cudaGetLastError(), "SOAPTurbo CUDA kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "SOAPTurbo", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "SOAPTurbo", options, false,
         host_row_offsets(host_batch));
 }
 

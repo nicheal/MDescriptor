@@ -14,7 +14,7 @@ _DLL_DIRECTORIES: list[Any] = []
 _NATIVE_HANDLES: list[Any] = []
 _NATIVE_PRELOAD_ATTEMPTED = False
 _CUDA_FACTORY: Any = None
-_CUDA_LOAD_ERROR: BaseException | None = None
+_CUDA_MODEL_SNAPSHOT_ABI: int | None = None
 
 
 def native_extension_available() -> bool:
@@ -78,24 +78,18 @@ def preload_native() -> None:
 def _cuda_factory() -> Any:
     """Resolve the optional CUDA backend without touching it during import."""
 
-    global _CUDA_FACTORY, _CUDA_LOAD_ERROR
+    global _CUDA_FACTORY, _CUDA_MODEL_SNAPSHOT_ABI
     if _CUDA_FACTORY is not None:
         return _CUDA_FACTORY
-    if _CUDA_LOAD_ERROR is not None:
-        raise _CUDA_LOAD_ERROR
 
-    try:
-        module = importlib.import_module("mdescriptor._cuda")
-    except (ImportError, OSError) as exc:
-        _CUDA_LOAD_ERROR = exc
-        raise
+    module = importlib.import_module("mdescriptor._cuda")
+    _CUDA_MODEL_SNAPSHOT_ABI = int(getattr(module, "MODEL_SNAPSHOT_ABI", 0))
 
     factory = getattr(module, "create_backend", None)
     if not callable(factory):
         error = ImportError(
             "the CUDA plugin does not expose create_backend(name, options)"
         )
-        _CUDA_LOAD_ERROR = error
         raise error
     _CUDA_FACTORY = factory
     return factory
@@ -109,7 +103,7 @@ def create_cuda_backend(name: str, options: dict[str, Any]) -> Any:
     stable API string.
     """
 
-    from .core.errors import translate_backend_error
+    from .core.errors import ModelLoadError, translate_backend_error
 
     try:
         factory = _cuda_factory()
@@ -119,6 +113,10 @@ def create_cuda_backend(name: str, options: dict[str, Any]) -> Any:
             unavailable_message="CUDA backend is unavailable",
             failure_message="CUDA backend failed to initialize",
         ) from exc
+    if options.get("model_data") is not None and _CUDA_MODEL_SNAPSHOT_ABI != 1:
+        raise ModelLoadError(
+            "CUDA plugin lacks immutable model snapshot support; rebuild MDescriptor"
+        )
     try:
         return factory(name, dict(options))
     except Exception as exc:

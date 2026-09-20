@@ -47,10 +47,13 @@ __device__ void normalize_mbtr_device(
     }
 }
 
-__global__ void mbtr_kernel(
+// Local spectra already expose one thread per atom.  Keeping this row path is
+// cheaper than making every atom rescan its full channel table; the channel
+// split below targets the structure rows where the old launch had only a few
+// threads.
+__global__ void mbtr_row_kernel(
     const I32* numbers,
     const I32* atom_types,
-    const double* cells,
     const I64* offsets,
     const I64* graph_offsets,
     const I32* graph_atoms,
@@ -70,6 +73,224 @@ __global__ void mbtr_kernel(
     double threshold,
     double r_cut,
     double sharpness,
+    I64 structures,
+    I64 atoms,
+    I64 features,
+    double* output) {
+    const I64 row = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (row >= atoms) return;
+    double* target = output + row * features;
+    I64 structure = 0;
+    while (structure + 1 < structures && offsets[structure + 1] <= row) ++structure;
+    const int atom_count = static_cast<int>(offsets[structure + 1] - offsets[structure]);
+    int species_counts[64]{};
+    if (geometry == mbtr::kGeometryAtomicNumber) {
+        const int type = atom_types[row];
+        if (type >= 0) add_histogram_device(
+            target + type * grid_n, static_cast<double>(numbers[row]), 1.0,
+            grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
+        normalize_mbtr_device(
+            target, features, normalization, atom_count, species_counts,
+            species_count, 0.0, geometry, grid_n, true);
+        return;
+    }
+    const I64 graph_begin = graph_offsets[row];
+    const I64 graph_end = graph_offsets[row + 1];
+    if (geometry == mbtr::kGeometryDistance
+        || geometry == mbtr::kGeometryInverseDistance) {
+        for (I64 edge = graph_begin; edge < graph_end; ++edge) {
+            const I32 atom = graph_atoms[edge];
+            const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
+            if (distance <= 1e-12
+                || exact_self_edge(row, atom, graph_shifts, edge)) continue;
+            const int type = atom_types[atom];
+            if (type < 0) continue;
+            const double value = geometry == mbtr::kGeometryDistance
+                ? distance : 1.0 / distance;
+            add_histogram_device(
+                target + (type + 1) * grid_n, value,
+                mbtr_weight_device(weighting, scale, threshold, r_cut, sharpness,
+                    distance, 0.0, 0.0), grid_min, grid_max, grid_sigma,
+                grid_n, normalize_gaussians);
+        }
+    } else {
+        const int element_count = species_count + 1;
+        const int reserved = element_count * (element_count + 1) / 2;
+        for (I64 first = graph_begin; first < graph_end; ++first) {
+            const double first_distance = sqrt(fmax(0.0, graph_distance2[first]));
+            if (first_distance <= 1e-12) continue;
+            for (I64 second = graph_begin; second < first; ++second) {
+                const double second_distance = sqrt(fmax(0.0, graph_distance2[second]));
+                if (second_distance <= 1e-12) continue;
+                const double dx = graph_displacements[first * 3] - graph_displacements[second * 3];
+                const double dy = graph_displacements[first * 3 + 1] - graph_displacements[second * 3 + 1];
+                const double dz = graph_displacements[first * 3 + 2] - graph_displacements[second * 3 + 2];
+                const double third_distance = sqrt(dx * dx + dy * dy + dz * dz);
+                const double cosine = fmin(1.0, fmax(-1.0,
+                    (first_distance * first_distance + second_distance * second_distance
+                        - third_distance * third_distance)
+                        / (2.0 * first_distance * second_distance)));
+                const double value = geometry == mbtr::kGeometryCosine ? cosine
+                    : acos(cosine) * 180.0 / kPi;
+                const int first_type = atom_types[graph_atoms[first]] + 1;
+                const int second_type = atom_types[graph_atoms[second]] + 1;
+                if (first_type <= 0 || second_type <= 0) continue;
+                const double weight = mbtr_weight_device(
+                    weighting, scale, threshold, r_cut, sharpness,
+                    first_distance, second_distance, third_distance);
+                add_histogram_device(
+                    target + pair_channel_device(first_type, second_type, element_count) * grid_n,
+                    value, weight, grid_min, grid_max, grid_sigma,
+                    grid_n, normalize_gaussians);
+                add_histogram_device(
+                    target + (reserved + (first_type - 1) * element_count + second_type) * grid_n,
+                    (geometry == mbtr::kGeometryCosine ? cosine
+                        : acos(fmin(1.0, fmax(-1.0,
+                            (first_distance * first_distance + third_distance * third_distance
+                                - second_distance * second_distance)
+                                / (2.0 * first_distance * third_distance))))
+                            * 180.0 / kPi),
+                    weight, grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
+                add_histogram_device(
+                    target + (reserved + (second_type - 1) * element_count + first_type) * grid_n,
+                    (geometry == mbtr::kGeometryCosine ? cosine
+                        : acos(fmin(1.0, fmax(-1.0,
+                            (second_distance * second_distance + third_distance * third_distance
+                                - first_distance * first_distance)
+                                / (2.0 * second_distance * third_distance))))
+                            * 180.0 / kPi),
+                    weight, grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
+            }
+        }
+    }
+    normalize_mbtr_device(
+        target, features, normalization, atom_count, species_counts,
+        species_count, 0.0, geometry, grid_n, true);
+}
+
+// Each thread owns one complete channel of one output row.  Its contribution
+// loop follows the old row kernel's center/edge order, so the additions within
+// every (row, channel, bin) remain deterministic and use the same summation
+// order.  Channels are independent and therefore need no atomics or scratch
+// reduction.
+__global__ void mbtr_channel_kernel(
+    const I32* numbers,
+    const I32* atom_types,
+    const I64* offsets,
+    const I64* graph_offsets,
+    const I32* graph_atoms,
+    const I32* graph_shifts,
+    const double* graph_displacements,
+    const double* graph_distance2,
+    int species_count,
+    int geometry,
+    int weighting,
+    double grid_min,
+    double grid_max,
+    double grid_sigma,
+    int grid_n,
+    bool normalize_gaussians,
+    double scale,
+    double threshold,
+    double r_cut,
+    double sharpness,
+    I64 structures,
+    I64 channels,
+    I64 features,
+    double* output) {
+    const I64 work = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (work >= structures * channels) return;
+    const I64 row = work / channels;
+    const I64 channel = work - row * channels;
+    double* target = output + row * features + channel * grid_n;
+    const I64 begin = offsets[row];
+    const I64 end = offsets[row + 1];
+    if (geometry == mbtr::kGeometryAtomicNumber) {
+        for (I64 atom = begin; atom < end; ++atom) {
+            const int type = atom_types[atom];
+            if (type == channel) add_histogram_device(
+                target, static_cast<double>(numbers[atom]), 1.0,
+                grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
+        }
+        return;
+    }
+    const int pair_count = species_count * (species_count + 1) / 2;
+    // A non-local MBTR row is one structure, so all of its centers contribute
+    // to the selected channel of the same target histogram.
+    for (I64 center = begin; center < end; ++center) {
+        const int center_type = atom_types[center];
+        if (center_type < 0) continue;
+        const I64 graph_begin = graph_offsets[center];
+        const I64 graph_end = graph_offsets[center + 1];
+        if (geometry == mbtr::kGeometryDistance
+            || geometry == mbtr::kGeometryInverseDistance) {
+            for (I64 first = graph_begin; first < graph_end; ++first) {
+                const I32 first_atom = graph_atoms[first];
+                const bool periodic = graph_shifts[first * 3] != 0
+                    || graph_shifts[first * 3 + 1] != 0
+                    || graph_shifts[first * 3 + 2] != 0;
+                if (!periodic && first_atom < center) continue;
+                const int first_type = atom_types[first_atom];
+                if (first_type < 0
+                    || channel != pair_channel_device(center_type, first_type, species_count)) {
+                    continue;
+                }
+                const double distance = sqrt(fmax(0.0, graph_distance2[first]));
+                if (distance <= 1e-12) continue;
+                const double value = geometry == mbtr::kGeometryDistance
+                    ? distance : 1.0 / distance;
+                const double pair_weight = mbtr_weight_device(
+                    weighting, scale, threshold, r_cut, sharpness, distance, 0.0, 0.0)
+                    * (periodic ? 0.5 : 1.0);
+                add_histogram_device(
+                    target, value, pair_weight, grid_min, grid_max, grid_sigma,
+                    grid_n, normalize_gaussians);
+            }
+        } else {
+            for (I64 first = graph_begin; first < graph_end; ++first) {
+                const double first_distance = sqrt(fmax(0.0, graph_distance2[first]));
+                if (first_distance <= 1e-12) continue;
+                const int first_type = atom_types[graph_atoms[first]];
+                if (first_type < 0) continue;
+                for (I64 second = graph_begin; second < first; ++second) {
+                    const int second_type = atom_types[graph_atoms[second]];
+                    if (first_type < 0 || second_type < 0) continue;
+                    const int output_channel = center_type * pair_count
+                        + pair_channel_device(first_type, second_type, species_count);
+                    if (channel != output_channel) continue;
+                    const double second_distance = sqrt(fmax(0.0, graph_distance2[second]));
+                    if (second_distance <= 1e-12) continue;
+                    const double dx = graph_displacements[first * 3] - graph_displacements[second * 3];
+                    const double dy = graph_displacements[first * 3 + 1] - graph_displacements[second * 3 + 1];
+                    const double dz = graph_displacements[first * 3 + 2] - graph_displacements[second * 3 + 2];
+                    const double third_distance = sqrt(dx * dx + dy * dy + dz * dz);
+                    const double cosine = fmin(1.0, fmax(-1.0,
+                        (first_distance * first_distance + second_distance * second_distance
+                            - third_distance * third_distance)
+                            / (2.0 * first_distance * second_distance)));
+                    const double value = geometry == mbtr::kGeometryCosine ? cosine
+                        : acos(cosine) * 180.0 / kPi;
+                    const double weight = mbtr_weight_device(
+                        weighting, scale, threshold, r_cut, sharpness,
+                        first_distance, second_distance, third_distance);
+                    add_histogram_device(
+                        target, value, weight, grid_min, grid_max, grid_sigma,
+                        grid_n, normalize_gaussians);
+                }
+            }
+        }
+    }
+}
+
+__global__ void mbtr_normalize_kernel(
+    const I32* atom_types,
+    const double* cells,
+    const I64* offsets,
+    const I64* atom_structures,
+    int species_count,
+    int geometry,
+    int normalization,
+    int grid_n,
     bool local,
     I64 structures,
     I64 atoms,
@@ -78,19 +299,7 @@ __global__ void mbtr_kernel(
     const I64 row = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
     const I64 rows = local ? atoms : structures;
     if (row >= rows) return;
-    double* target = output + row * features;
-    I64 begin = 0;
-    I64 end = 0;
-    I64 structure = row;
-    if (local) {
-        begin = row;
-        end = row + 1;
-        structure = 0;
-        while (structure + 1 < structures && offsets[structure + 1] <= row) ++structure;
-    } else {
-        begin = offsets[row];
-        end = offsets[row + 1];
-    }
+    const I64 structure = local ? atom_structures[row] : row;
     const int atom_count = static_cast<int>(offsets[structure + 1] - offsets[structure]);
     int species_counts[64]{};
     const bool needs_species_counts = normalization
@@ -102,169 +311,13 @@ __global__ void mbtr_kernel(
             if (type >= 0) ++species_counts[type];
         }
     }
-    if (geometry == mbtr::kGeometryAtomicNumber) {
-        if (local) {
-            const int type = atom_types[row];
-            if (type >= 0) add_histogram_device(
-                target + type * grid_n, static_cast<double>(numbers[row]), 1.0,
-                grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
-        } else {
-            for (I64 atom = offsets[row]; atom < offsets[row + 1]; ++atom) {
-                const int type = atom_types[atom];
-                if (type >= 0) add_histogram_device(
-                    target + type * grid_n, static_cast<double>(numbers[atom]), 1.0,
-                    grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
-            }
-        }
-        normalize_mbtr_device(
-            target, features, normalization, atom_count, species_counts,
-            species_count, 0.0, geometry, grid_n, local);
-        return;
+    double volume = 0.0;
+    if (!local && geometry != mbtr::kGeometryAtomicNumber) {
+        volume = cell_volume_device(cells + structure * 9);
     }
-    if (local) {
-        const I64 center = row;
-        const I64 graph_begin = graph_offsets[center];
-        const I64 graph_end = graph_offsets[center + 1];
-        if (geometry == mbtr::kGeometryDistance
-            || geometry == mbtr::kGeometryInverseDistance) {
-            for (I64 edge = graph_begin; edge < graph_end; ++edge) {
-                const I32 atom = graph_atoms[edge];
-                const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
-                if (distance <= 1e-12
-                    || exact_self_edge(center, atom, graph_shifts, edge)) continue;
-                const int type = atom_types[atom];
-                if (type < 0) continue;
-                const double value = geometry == mbtr::kGeometryDistance
-                    ? distance : 1.0 / distance;
-                add_histogram_device(
-                    target + (type + 1) * grid_n, value,
-                    mbtr_weight_device(weighting, scale, threshold, r_cut, sharpness,
-                        distance, 0.0, 0.0), grid_min, grid_max, grid_sigma,
-                    grid_n, normalize_gaussians);
-            }
-        } else {
-            const int element_count = species_count + 1;
-            const int reserved = element_count * (element_count + 1) / 2;
-            for (I64 first = graph_begin; first < graph_end; ++first) {
-                const double first_distance = sqrt(fmax(0.0, graph_distance2[first]));
-                if (first_distance <= 1e-12) continue;
-                for (I64 second = graph_begin; second < first; ++second) {
-                    const double second_distance = sqrt(fmax(0.0, graph_distance2[second]));
-                    if (second_distance <= 1e-12) continue;
-                    const double dx = graph_displacements[first * 3] - graph_displacements[second * 3];
-                    const double dy = graph_displacements[first * 3 + 1] - graph_displacements[second * 3 + 1];
-                    const double dz = graph_displacements[first * 3 + 2] - graph_displacements[second * 3 + 2];
-                    const double third_distance = sqrt(dx * dx + dy * dy + dz * dz);
-                    const double cosine = fmin(1.0, fmax(-1.0,
-                        (first_distance * first_distance + second_distance * second_distance
-                            - third_distance * third_distance)
-                            / (2.0 * first_distance * second_distance)));
-                    const double value = geometry == mbtr::kGeometryCosine ? cosine
-                        : acos(cosine) * 180.0 / kPi;
-                    const int first_type = atom_types[graph_atoms[first]] + 1;
-                    const int second_type = atom_types[graph_atoms[second]] + 1;
-                    if (first_type <= 0 || second_type <= 0) continue;
-                    const double weight = mbtr_weight_device(
-                        weighting, scale, threshold, r_cut, sharpness,
-                        first_distance, second_distance, third_distance);
-                    add_histogram_device(
-                        target + pair_channel_device(first_type, second_type, element_count) * grid_n,
-                        value, weight, grid_min, grid_max, grid_sigma,
-                        grid_n, normalize_gaussians);
-                    add_histogram_device(
-                        target + (reserved + (first_type - 1) * element_count + second_type) * grid_n,
-                        (geometry == mbtr::kGeometryCosine ? cosine
-                            : acos(fmin(1.0, fmax(-1.0,
-                                (first_distance * first_distance + third_distance * third_distance
-                                    - second_distance * second_distance)
-                                    / (2.0 * first_distance * third_distance))))
-                                * 180.0 / kPi),
-                        weight, grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
-                    add_histogram_device(
-                        target + (reserved + (second_type - 1) * element_count + first_type) * grid_n,
-                        (geometry == mbtr::kGeometryCosine ? cosine
-                            : acos(fmin(1.0, fmax(-1.0,
-                                (second_distance * second_distance + third_distance * third_distance
-                                    - first_distance * first_distance)
-                                    / (2.0 * second_distance * third_distance))))
-                                * 180.0 / kPi),
-                        weight, grid_min, grid_max, grid_sigma, grid_n, normalize_gaussians);
-                }
-            }
-        }
-        normalize_mbtr_device(
-            target, features, normalization, atom_count, species_counts,
-            species_count, 0.0, geometry, grid_n, local);
-        return;
-    }
-    const int pair_count = species_count * (species_count + 1) / 2;
-    // A non-local MBTR row is one structure, so all of its centers contribute
-    // to the same target histogram.  The local branch above intentionally
-    // handles one center per CUDA thread.
-    for (I64 center = begin; center < end; ++center) {
-        const int center_type = atom_types[center];
-        if (center_type < 0) continue;
-        const I64 graph_begin = graph_offsets[center];
-        const I64 graph_end = graph_offsets[center + 1];
-        if (geometry == mbtr::kGeometryDistance
-            || geometry == mbtr::kGeometryInverseDistance) {
-            for (I64 first = graph_begin; first < graph_end; ++first) {
-                const I32 first_atom = graph_atoms[first];
-                const double distance = sqrt(fmax(0.0, graph_distance2[first]));
-                if (distance <= 1e-12) continue;
-                const bool periodic = graph_shifts[first * 3] != 0
-                    || graph_shifts[first * 3 + 1] != 0
-                    || graph_shifts[first * 3 + 2] != 0;
-                if (!periodic && first_atom < center) continue;
-                const int first_type = atom_types[first_atom];
-                if (first_type < 0) continue;
-                const double value = geometry == mbtr::kGeometryDistance
-                    ? distance : 1.0 / distance;
-                const double pair_weight = mbtr_weight_device(
-                    weighting, scale, threshold, r_cut, sharpness, distance, 0.0, 0.0)
-                    * (periodic ? 0.5 : 1.0);
-                add_histogram_device(
-                    target + pair_channel_device(center_type, first_type, species_count) * grid_n,
-                    value, pair_weight, grid_min, grid_max, grid_sigma,
-                    grid_n, normalize_gaussians);
-            }
-        } else {
-            for (I64 first = graph_begin; first < graph_end; ++first) {
-                const double first_distance = sqrt(fmax(0.0, graph_distance2[first]));
-                if (first_distance <= 1e-12) continue;
-                for (I64 second = graph_begin; second < first; ++second) {
-                    const double second_distance = sqrt(fmax(0.0, graph_distance2[second]));
-                    if (second_distance <= 1e-12) continue;
-                    const double dx = graph_displacements[first * 3] - graph_displacements[second * 3];
-                    const double dy = graph_displacements[first * 3 + 1] - graph_displacements[second * 3 + 1];
-                    const double dz = graph_displacements[first * 3 + 2] - graph_displacements[second * 3 + 2];
-                    const double third_distance = sqrt(dx * dx + dy * dy + dz * dz);
-                    const double cosine = fmin(1.0, fmax(-1.0,
-                        (first_distance * first_distance + second_distance * second_distance
-                            - third_distance * third_distance)
-                            / (2.0 * first_distance * second_distance)));
-                    const double value = geometry == mbtr::kGeometryCosine ? cosine
-                        : acos(cosine) * 180.0 / kPi;
-                    const int first_type = atom_types[graph_atoms[first]];
-                    const int second_type = atom_types[graph_atoms[second]];
-                    if (first_type < 0 || second_type < 0) continue;
-                    const double weight = mbtr_weight_device(
-                        weighting, scale, threshold, r_cut, sharpness,
-                        first_distance, second_distance, third_distance);
-                    const int channel = center_type * pair_count
-                        + pair_channel_device(first_type, second_type, species_count);
-                    add_histogram_device(
-                        target + channel * grid_n, value, weight, grid_min, grid_max,
-                        grid_sigma, grid_n, normalize_gaussians);
-                }
-            }
-        }
-    }
-    const double* cell = cells + structure * 9;
-    const double volume = cell_volume_device(cell);
     normalize_mbtr_device(
-        target, features, normalization, atom_count, species_counts,
-        species_count, volume, geometry, grid_n, false);
+        output + row * features, features, normalization, atom_count,
+        species_counts, species_count, volume, geometry, grid_n, local);
 }
 
 py::dict mbtr_config_option(const py::dict& options) {
@@ -394,6 +447,11 @@ py::dict compute_mbtr_descriptor(
         : local ? (distance_geometry ? species_count + 1
             : (species_count + 1) * (3 * (species_count + 1) - 1) / 2)
         : distance_geometry ? pair_count : species_count * pair_count;
+    if (normalization == mbtr::kNormalizationValleOganov && !local
+        && geometry != mbtr::kGeometryAtomicNumber && species_count > 64) {
+        throw std::invalid_argument(
+            "CUDA Valle-Oganov normalization supports at most 64 species");
+    }
     const I64 features = channels * grid_n;
     const I64 rows = local ? batch.atoms() : batch.structures();
     const std::size_t size = static_cast<std::size_t>(rows)
@@ -418,24 +476,46 @@ py::dict compute_mbtr_descriptor(
     if (geometry != mbtr::kGeometryAtomicNumber) {
         graph.build_dpa(context, batch, host_batch, r_cut, true, false, false);
     }
-    if (rows > 0) {
+    if (rows > 0 && channels > 0) {
         constexpr unsigned block_size = 64;
-        mbtr_kernel<<<static_cast<unsigned>((rows + block_size - 1) / block_size),
-            block_size, 0, context.stream()>>>(
-            batch.numbers(), d_atom_types.get(), batch.cells(), batch.offsets(), graph.offsets(), graph.atoms(),
-            graph.shifts(), graph.displacements(), graph.distance2(),
-            species_count, geometry, weighting, normalization, grid_min, grid_max,
-            grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut, sharpness,
-            local, batch.structures(), batch.atoms(), features, output);
-        check_cuda(cudaGetLastError(), "CUDA MBTR kernel launch failed");
+        if (local) {
+            mbtr_row_kernel<<<static_cast<unsigned>((rows + block_size - 1) / block_size),
+                block_size, 0, context.stream()>>>(
+                batch.numbers(), d_atom_types.get(), batch.offsets(), graph.offsets(),
+                graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(),
+                species_count, geometry, weighting, normalization, grid_min, grid_max,
+                grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut, sharpness,
+                batch.structures(), batch.atoms(), features, output);
+            check_cuda(cudaGetLastError(), "CUDA local MBTR kernel launch failed");
+        } else {
+            const I64 work = rows * channels;
+            mbtr_channel_kernel<<<static_cast<unsigned>((work + block_size - 1) / block_size),
+                block_size, 0, context.stream()>>>(
+                batch.numbers(), d_atom_types.get(), batch.offsets(), graph.offsets(),
+                graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(),
+                species_count, geometry, weighting, grid_min, grid_max,
+                grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut, sharpness,
+                batch.structures(), channels, features, output);
+            check_cuda(cudaGetLastError(), "CUDA MBTR channel kernel launch failed");
+        }
+        if (!local && normalization != mbtr::kNormalizationNone) {
+            mbtr_normalize_kernel<<<static_cast<unsigned>((rows + block_size - 1) / block_size),
+                block_size, 0, context.stream()>>>(
+                d_atom_types.get(), batch.cells(), batch.offsets(),
+                nullptr,
+                species_count, geometry, normalization, grid_n, local,
+                batch.structures(), batch.atoms(), features, output);
+            check_cuda(cudaGetLastError(), "CUDA MBTR normalization kernel launch failed");
+        }
     }
-    const auto values = download_output_with_gil_release(context, size);
+    const auto values = download_output_with_gil_release(
+        context, size, rows, features);
     if (local) {
-        return atom_result(values, rows, features, name, options, false,
+        return atom_result(values, features, name, options, false,
             host_row_offsets(host_batch));
     }
     py::dict result;
-    result["values"] = values_array(values, rows, features);
+    result["values"] = values;
     result["level"] = "structure";
     result["labels"] = labels_option(options, name, features);
     result["metadata"] = metadata(options, name);

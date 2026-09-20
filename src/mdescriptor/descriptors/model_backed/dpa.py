@@ -119,11 +119,12 @@ def load_dpa_checkpoint(
     path: Path,
     *,
     expected_descriptor: Literal["DPA4", "DPA4C"],
+    content: bytes | None = None,
 ) -> tuple[DpaCheckpointInfo, Mapping[str, Any]]:
     """Read and strictly validate an official ``.pt`` without importing Torch."""
 
     try:
-        checkpoint = load_torch_checkpoint(str(path))
+        checkpoint = load_torch_checkpoint(str(path), content=content)
         return _validate_checkpoint_mapping(
             checkpoint,
             path=str(path),

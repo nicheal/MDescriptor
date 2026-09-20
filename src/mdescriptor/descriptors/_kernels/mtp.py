@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from ...core.errors import ModelLoadError
 from ...core.species import require_species, validate_batch_species
 from ._base import _cpp_metadata, _Kernel, _optional_threads, _validate_dtype
 from .core import (
@@ -37,6 +38,7 @@ class MtpKernel(_Kernel):
         species: Iterable[int] | None = None,
         model_path: str | None = None,
         model_digest: str | None = None,
+        model_data: bytes | None = None,
         min_dist: float = 0.0,
         max_dist: float | None = None,
         radial_basis_size: int = 4,
@@ -50,6 +52,7 @@ class MtpKernel(_Kernel):
         self.species = require_species(species, descriptor=self.name)
         self.model_path = None if model_path is None else str(model_path)
         self.model_digest = None if model_digest is None else str(model_digest)
+        self.model_data = None if model_data is None else bytes(model_data)
         if self.model_path == "":
             raise ValueError("model must not be empty")
         self._official = self.model_path is not None
@@ -92,18 +95,26 @@ class MtpKernel(_Kernel):
             if self._native is not None:
                 return
             options = _cpp.MtpOptions()
-        options.species = list(self.species)
-        options.potential_path = self.model_path or ""
-        if self.model_digest is not None:
-            options.model_digest = self.model_digest
-        options.min_dist = self.min_dist
-        options.max_dist = self.max_dist
-        options.radial_basis_size = self.radial_basis_size
-        options.radial_funcs_count = self.radial_funcs_count
-        options.max_rank = self.max_rank
-        options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
-        self._native = _cpp.MtpCalculator(options)
-        self._feature_count = int(self._native.feature_count)
+            options.species = list(self.species)
+            options.potential_path = self.model_path or ""
+            if self.model_digest is not None:
+                options.model_digest = self.model_digest
+            if self.model_data is not None:
+                try:
+                    options.model_data = bytes(self.model_data)
+                except AttributeError as exc:
+                    raise ModelLoadError(
+                        "native extension lacks immutable model snapshot support; rebuild MDescriptor"
+                    ) from exc
+            options.min_dist = self.min_dist
+            options.max_dist = self.max_dist
+            options.radial_basis_size = self.radial_basis_size
+            options.radial_funcs_count = self.radial_funcs_count
+            options.max_rank = self.max_rank
+            options.num_threads = 0 if self.num_threads is None else int(self.num_threads)
+            native = _cpp.MtpCalculator(options)
+            self._native = native
+            self._feature_count = int(native.feature_count)
 
     def _cuda_payload(self) -> dict[str, Any]:
         """Return the flattened official MLIP-4 evaluator for CUDA."""

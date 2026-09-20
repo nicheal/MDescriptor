@@ -227,8 +227,9 @@ py::dict compute_mtp4_descriptor(
             workspace, output);
         check_cuda(cudaGetLastError(), "MLIP-4 MTP CUDA kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "MTP", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "MTP", options, false,
         host_row_offsets(host_batch));
 }
 
@@ -402,8 +403,9 @@ py::dict compute_mtp2_descriptor(
             features, batch.atoms(), workspace, output);
         check_cuda(cudaGetLastError(), "MLIP-2 MTP CUDA kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "MTP", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "MTP", options, false,
         host_row_offsets(host_batch));
 }
 

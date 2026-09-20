@@ -1,4 +1,4 @@
-"""Deterministic model resource resolution with streaming integrity checks."""
+"""Deterministic model resource resolution with snapshot integrity checks."""
 
 from __future__ import annotations
 
@@ -15,11 +15,12 @@ from .resource import ModelResource
 
 @dataclass(frozen=True, slots=True)
 class ResolvedModel:
-    """The concrete file identity selected by a resolver."""
+    """The concrete file identity and immutable bytes selected by a resolver."""
 
     path: Path
     digest: str
     source: Literal["explicit", "cache", "package"]
+    content: bytes | None = None
 
 
 class ModelResolver:
@@ -65,8 +66,19 @@ class ModelResolver:
         return self._resolve_file(resource, packaged, "package")
 
     @staticmethod
+    def _read(path: Path) -> tuple[bytes, str]:
+        """Read one immutable model snapshot and return its SHA-256 digest."""
+
+        try:
+            with path.open("rb") as stream:
+                content = stream.read()
+        except OSError as exc:
+            raise ModelLoadError(f"cannot read model resource {path}: {exc}") from exc
+        return content, sha256(content).hexdigest()
+
+    @staticmethod
     def digest(path: Path) -> str:
-        """Return a streaming SHA-256 digest for one model file."""
+        """Return a SHA-256 digest for one model file."""
 
         try:
             with path.open("rb") as stream:
@@ -86,13 +98,13 @@ class ModelResolver:
         path = path.expanduser().resolve()
         if not path.is_file():
             raise ModelLoadError(f"model resource does not exist: {path}")
-        actual = self.digest(path)
+        content, actual = self._read(path)
         expected = resource.expected_sha256
         if expected is not None and actual != expected:
             raise ModelLoadError(
                 f"model resource checksum mismatch for {path}: expected {expected}, got {actual}"
             )
-        return ResolvedModel(path, actual, source)
+        return ResolvedModel(path, actual, source, content)
 
 
 __all__ = ["ModelResolver", "ModelResource", "ResolvedModel"]

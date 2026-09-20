@@ -23,6 +23,7 @@ public:
     NativeMtp4Model& operator=(const NativeMtp4Model&) = delete;
 
     void load(const std::string& path);
+    void load(const std::string& path, const std::string& content);
     std::int64_t feature_count() const noexcept;
     int species_count() const noexcept;
     double min_dist() const noexcept;

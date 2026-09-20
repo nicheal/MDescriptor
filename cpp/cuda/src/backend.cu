@@ -204,7 +204,7 @@ void mark_completed(const py::object& control) {
 
 void check_cancelled(const py::object& control) {
     if (cancelled(control)) {
-        throw std::runtime_error("descriptor computation cancelled");
+        throw mdescriptor::cuda::CudaCancelledError();
     }
 }
 
@@ -308,6 +308,9 @@ Backend::Backend(std::string name, py::dict options)
         mdescriptor::NepOptions nep_options;
         nep_options.model_path = model_path;
         nep_options.model_digest = option(options_, "model_digest", std::string{});
+        if (options_.contains("model_data") && !options_["model_data"].is_none()) {
+            nep_options.model_data = py::cast<std::string>(options_["model_data"]);
+        }
         nep_options.num_threads = 0;
         mdescriptor::NepCalculator calculator(nep_options);
         const auto parameters = calculator.descriptor_parameters();
@@ -327,7 +330,13 @@ Backend::~Backend() noexcept {
 }
 
 py::object Backend::compute(py::object batch_object, py::object control) {
-    std::lock_guard<std::mutex> guard(compute_mutex_);
+    std::unique_lock<std::mutex> guard(compute_mutex_, std::defer_lock);
+    // A second Python thread must not hold the GIL while waiting for the
+    // instance lock: the active compute needs that GIL to finish unwinding.
+    {
+        py::gil_scoped_release release;
+        guard.lock();
+    }
     if (closed_ || context_ == nullptr) {
         throw std::runtime_error("CUDA backend is closed");
     }
@@ -600,20 +609,28 @@ py::dict Backend::metadata() const {
 }
 
 void Backend::close() noexcept {
-    if (closed_) {
-        return;
+    std::unique_lock<std::mutex> guard(compute_mutex_, std::defer_lock);
+    // Explicit close() is bound with the GIL released. The conditional also
+    // keeps destruction safe when a holder is released on a GIL-owning thread.
+    if (PyGILState_Check()) {
+        py::gil_scoped_release release;
+        guard.lock();
+    } else {
+        guard.lock();
     }
-    closed_ = true;
-    device_graph_.clear();
-    nep_expanded_batch_.clear();
-    device_batch_.clear();
-    rotational_plan_.reset();
-    dpa4c_model_.reset();
-    dpa4_model_.reset();
-    nep_model_.reset();
-    if (context_ != nullptr) {
-        context_->close();
-        context_.reset();
+    if (!closed_) {
+        closed_ = true;
+        device_graph_.clear();
+        nep_expanded_batch_.clear();
+        device_batch_.clear();
+        rotational_plan_.reset();
+        dpa4c_model_.reset();
+        dpa4_model_.reset();
+        nep_model_.reset();
+        if (context_ != nullptr) {
+            context_->close();
+            context_.reset();
+        }
     }
 }
 

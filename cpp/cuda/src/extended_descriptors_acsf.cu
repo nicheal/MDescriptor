@@ -205,8 +205,9 @@ py::dict compute_acsf_descriptor(
                 batch.atoms(), output);
         check_cuda(cudaGetLastError(), "CUDA ACSF kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), columns, "ACSF", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), columns);
+    return atom_result(values, columns, "ACSF", options, false,
         host_row_offsets(host_batch));
 }
 

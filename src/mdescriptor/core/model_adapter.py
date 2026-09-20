@@ -48,6 +48,7 @@ class ModelBackedAdapter(DescriptorAdapter):
         self._preloaded_model_weights: Any = None
         self._resolved_model_path = False
         self._resolved_model_digest: str | None = None
+        self._resolved_model_content: bytes | None = None
 
         if self.model_keyword in options:
             raise DescriptorConfigError(
@@ -70,6 +71,7 @@ class ModelBackedAdapter(DescriptorAdapter):
                 options[self.model_keyword] = self.resolved_model.path
                 self._resolved_model_path = True
                 self._resolved_model_digest = self.resolved_model.digest
+                self._resolved_model_content = self.loaded_model.content
             except DescriptorConfigError as exc:
                 raise DescriptorConfigError(
                     str(exc),

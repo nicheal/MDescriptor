@@ -154,3 +154,22 @@
 ```
 
 **性能扫描脚本模板**：用 `signal.alarm` 包裹每个描述符的 computed，构造 8×(192 原子 12Å 周期盒)、species 1-8，同时跑 cpu/cuda 取 min-of-2，输出比率表——本会话用它在 20 秒内扫完全部 17 个描述符。
+
+## 8. Required GPU gate
+
+CPU CI may keep CUDA tests optional. A runner with a real NVIDIA device must
+run the strict entry point below; it selects both current extensions, checks
+their snapshot ABI, performs a CUDA probe, and fails when the device or plugin
+is unavailable:
+
+```bash
+python scripts/run_gpu_tests.py \
+  --plugin-dir /path/to/current-cuda-build \
+  --native-dir /path/to/current-cuda-build
+```
+
+Both paths must point at the exact extensions built for the current checkout;
+the runner deliberately has no private review-build default.
+
+The current GitHub Actions workflows have no confirmed GPU runner, so remote
+enforcement remains a follow-up that needs an actual self-hosted runner.

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -366,12 +367,23 @@ std::vector<std::string> tokenize(const std::string& line) {
     return tokens;
 }
 
-std::vector<std::vector<std::string>> read_model_lines(const std::string& path) {
-    std::ifstream input(path);
-    if (!input) throw std::runtime_error("could not open NEP model: " + path);
+std::vector<std::vector<std::string>> read_model_lines(
+    const std::string& path,
+    const std::optional<std::string>& content) {
+    std::ifstream file;
+    std::istringstream memory;
+    std::istream* input = nullptr;
+    if (content.has_value()) {
+        memory.str(*content);
+        input = &memory;
+    } else {
+        file.open(path);
+        if (!file) throw std::runtime_error("could not open NEP model: " + path);
+        input = &file;
+    }
     std::vector<std::vector<std::string>> lines;
     std::string line;
-    while (std::getline(input, line)) {
+    while (std::getline(*input, line)) {
         auto tokens = tokenize(line);
         if (!tokens.empty()) lines.push_back(std::move(tokens));
     }
@@ -477,16 +489,23 @@ struct NepModel {
 
 std::shared_ptr<NepModel> load_model(
     const std::string& path,
-    const std::string& model_digest
+    const std::string& model_digest,
+    const std::optional<std::string>& model_data
 ) {
     static std::mutex cache_mutex;
     static std::unordered_map<std::string, std::weak_ptr<NepModel>> cache;
-    const std::string cache_key = model_digest.empty() ? path : model_digest;
+    // A resolver-backed construction supplies the exact bytes that are
+    // parsed.  Key those bytes directly so a bad/private caller cannot make
+    // a different payload reuse a model under a stale digest.  The digest and
+    // path branches preserve the legacy native API when no snapshot exists.
+    const std::string cache_key = model_data.has_value()
+        ? "content:" + *model_data
+        : (model_digest.empty() ? "path:" + path : "digest:" + model_digest);
     std::lock_guard<std::mutex> cache_lock(cache_mutex);
     if (const auto found = cache.find(cache_key); found != cache.end()) {
         if (auto cached = found->second.lock()) return cached;
     }
-    const auto lines = read_model_lines(path);
+    const auto lines = read_model_lines(path, model_data);
     if (lines.empty() || lines[0].size() < 3 || lines[0][0].rfind("nep", 0) != 0) {
         throw std::invalid_argument("invalid NEP model header");
     }
@@ -666,7 +685,7 @@ std::shared_ptr<NepModel> load_model(
             }
         }
     }
-    // Expired entries hold only the digest string; sweep them on insert so a
+    // Expired entries hold only the cache key; sweep them on insert so a
     // long-lived process loading many distinct models does not grow the map.
     for (auto entry = cache.begin(); entry != cache.end();) {
         if (entry->second.expired()) {
@@ -932,7 +951,8 @@ void compute_nep(
 }
 
 NepCalculator::NepCalculator(NepOptions options)
-    : model_(load_model(options.model_path, options.model_digest)), num_threads_(options.num_threads) {
+    : model_(load_model(options.model_path, options.model_digest, options.model_data)),
+      num_threads_(options.num_threads) {
     if (num_threads_ < 0) throw std::invalid_argument("NEP num_threads must be non-negative");
 }
 

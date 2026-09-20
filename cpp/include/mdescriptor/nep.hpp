@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,9 +13,13 @@ namespace mdescriptor {
 struct NepOptions {
     std::string model_path;
     // Content identity supplied by the model resolver.  The native model
-    // cache must not identify mutable files by path alone.
+    // cache must not identify mutable files by path alone.  Without
+    // model_data this remains a caller-trusted legacy cache identity.
     std::string model_digest;
     int num_threads = 0;
+    // Immutable bytes supplied by the model resolver.  When present, native
+    // parsing must not reopen model_path.
+    std::optional<std::string> model_data;
 };
 
 // Descriptor-only model data shared with the optional CUDA plugin.  The ANN

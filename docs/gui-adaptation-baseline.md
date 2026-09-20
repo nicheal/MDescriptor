@@ -57,6 +57,18 @@ an undeclared device produces a structured `unsupported_device` configuration
 error; CUDA extension or driver failures use `device_unavailable`,
 `backend_error`, or `backend_out_of_memory`.
 
+Descriptors with hardware-specific bounds expose them in
+`execution.device_limits`. `parameter_limits` are checked at construction and
+use the path `['parameters', <name>]`; `input_limits` are checked after a
+batch is available and use an `input` path. Matrix `input_limits` carry
+`when: "n_atoms_max_omitted"` because the width is then derived from the
+batch. A conditional limit describes its scope in `conditional_limits`, so a
+GUI can show the applicable condition
+without applying the bound to CPU or to another CUDA configuration. The
+current built-ins declare CUDA matrix width `n_atoms_max <= 256`, C00PS
+`l_max <= 20`, and at most 64 species for global, non-`atomic_number`
+Valle–Oganov normalization in MBTR and ValleOganov.
+
 CUDA execution is synchronous at the public boundary and returns the same
 host-owned NumPy/CSR result contract as CPU execution. The CUDA extension is
 loaded lazily on the first CUDA `compute()` call, so static discovery and

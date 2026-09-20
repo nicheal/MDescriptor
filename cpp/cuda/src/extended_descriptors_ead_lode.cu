@@ -99,8 +99,9 @@ py::dict compute_ead_descriptor(
             batch.atoms(), output);
         check_cuda(cudaGetLastError(), "CUDA EAD kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "EAD", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "EAD", options, false,
         host_row_offsets(host_batch));
 }
 
@@ -443,8 +444,9 @@ py::dict compute_lode_descriptor(
             features, output);
         check_cuda(cudaGetLastError(), "CUDA LODE kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "LodeSphericalExpansion", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "LodeSphericalExpansion", options, false,
         host_row_offsets(host_batch));
 }
 

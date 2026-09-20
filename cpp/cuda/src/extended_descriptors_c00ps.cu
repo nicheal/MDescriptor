@@ -385,8 +385,9 @@ py::dict compute_c00ps_mlff_descriptor(
             max_angular, table_width, features, batch.atoms(), coefficient_stride, workspace, output);
         check_cuda(cudaGetLastError(), "CUDA C00PSMLFF kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "C00PSMLFF", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "C00PSMLFF", options, false,
         host_row_offsets(host_batch));
 }
 

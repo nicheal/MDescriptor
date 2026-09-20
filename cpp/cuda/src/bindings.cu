@@ -7,11 +7,14 @@
 
 namespace py = pybind11;
 using mdescriptor::cuda::Backend;
+using mdescriptor::cuda::CudaCancelledError;
 using mdescriptor::cuda::CudaOutOfMemory;
 using mdescriptor::cuda::CudaUnavailable;
 
 PYBIND11_MODULE(_cuda, module) {
     module.doc() = "MDescriptor optional CUDA backend";
+    module.attr("MODEL_SNAPSHOT_ABI") = 1;
+    py::register_exception<CudaCancelledError>(module, "CudaCancelledError", PyExc_RuntimeError);
     py::register_exception<CudaUnavailable>(module, "CudaUnavailable", PyExc_ImportError);
     py::register_exception<CudaOutOfMemory>(module, "CudaOutOfMemory", PyExc_MemoryError);
 
@@ -20,7 +23,7 @@ PYBIND11_MODULE(_cuda, module) {
         .def_property_readonly("feature_count", &Backend::feature_count)
         .def("compute", &Backend::compute, py::arg("batch"), py::arg("control") = py::none())
         .def("metadata", &Backend::metadata)
-        .def("close", &Backend::close);
+        .def("close", &Backend::close, py::call_guard<py::gil_scoped_release>());
 
     module.def("create_backend", [](const std::string& name, const py::dict& options) {
         try {

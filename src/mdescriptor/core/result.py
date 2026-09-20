@@ -62,7 +62,8 @@ def _snapshot_values(values: Any) -> Any:
         snapshot = values.tocsr(copy=True)
         snapshot.sum_duplicates()
         snapshot.sort_indices()
-        return _readonly_csr(snapshot, scipy_sparse)
+        # This canonical snapshot already owns its three CSR buffers.
+        return _readonly_csr(snapshot, scipy_sparse, copy_values=False)
     try:
         snapshot = np.array(values, copy=True, order="C")
     except (TypeError, ValueError, OverflowError) as exc:
@@ -90,7 +91,12 @@ def _restore_readonly_csr(
     return _readonly_csr(matrix, scipy_sparse)
 
 
-def _readonly_csr(values: Any, scipy_sparse: Any) -> Any:
+def _readonly_csr(
+    values: Any,
+    scipy_sparse: Any,
+    *,
+    copy_values: bool = True,
+) -> Any:
     """Return a CSR snapshot whose public mutation paths are disabled."""
 
     global _readonly_csr_type
@@ -151,7 +157,7 @@ def _readonly_csr(values: Any, scipy_sparse: Any) -> Any:
         # tests); the subclass only adds the read-only mutation guard.
         _readonly_csr_type.__name__ = scipy_sparse.csr_matrix.__name__
         _readonly_csr_type.__qualname__ = scipy_sparse.csr_matrix.__qualname__
-    return _readonly_csr_type(values, copy=True)
+    return _readonly_csr_type(values, copy=copy_values)
 
 
 class DescriptorLevel(str, Enum):

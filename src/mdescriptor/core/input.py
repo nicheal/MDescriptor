@@ -115,6 +115,49 @@ class StructureBatch:
     def atoms(self) -> int:
         return len(self.numbers)
 
+    def _slice_view(self, start: int, stop: int) -> StructureBatch:
+        """Return a read-only view for a complete structure range.
+
+        This private path is only for already validated batches. Public
+        construction keeps its copy-and-validate boundary; block slicing
+        reuses the validated buffers and owns only the rebased offsets.
+        """
+
+        if start < 0 or stop < start or stop > self.structures:
+            raise ValueError("structure slice is outside the batch")
+        atom_start = int(self.offsets[start])
+        atom_stop = int(self.offsets[stop])
+        numbers = self.numbers[atom_start:atom_stop]
+        positions = self.positions[atom_start:atom_stop]
+        cells = self.cells[start:stop]
+        pbc = self.pbc[start:stop]
+        offsets = np.asarray(
+            self.offsets[start : stop + 1] - atom_start,
+            dtype=np.int64,
+            order="C",
+        )
+        spins = None if self.spins is None else self.spins[atom_start:atom_stop]
+        charge_spin = None if self.charge_spin is None else self.charge_spin[start:stop]
+        for value in (numbers, positions, cells, pbc, offsets, spins, charge_spin):
+            if value is not None:
+                value.setflags(write=False)
+
+        # Block slicing has always returned the base value object.  Keep that
+        # contract instead of manufacturing a potentially incomplete subclass.
+        view = object.__new__(StructureBatch)
+        for name, field in {
+            "numbers": numbers,
+            "positions": positions,
+            "cells": cells,
+            "pbc": pbc,
+            "offsets": offsets,
+            "ids": self.ids[start:stop],
+            "spins": spins,
+            "charge_spin": charge_spin,
+        }.items():
+            object.__setattr__(view, name, field)
+        return view
+
     @classmethod
     def from_ase(cls, structures: Sequence[Any] | Any, ids: Sequence[str] | None = None) -> StructureBatch:
         try:

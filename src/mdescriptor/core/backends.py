@@ -18,6 +18,7 @@ from .control import ComputeControl, _unwrap_native_control
 from .errors import (
     CancelledError,
     MDescriptorError,
+    is_cuda_cancelled_error,
     translate_backend_error,
 )
 from .input import StructureBatch
@@ -160,7 +161,7 @@ class CudaBackend:
             RuntimeError,
             AttributeError,
         ) as exc:
-            if isinstance(exc, RuntimeError) and _looks_cancelled(exc):
+            if is_cuda_cancelled_error(exc):
                 raise CancelledError("descriptor computation was cancelled") from exc
             raise translate_backend_error(
                 exc,
@@ -342,11 +343,6 @@ def _execution_num_threads(options: Mapping[str, Any]) -> Any:
     return getattr(execution, "num_threads", None)
 
 
-def _looks_cancelled(value: BaseException) -> bool:
-    text = str(value).lower()
-    return "cancel" in text
-
-
 class _CudaBlockControl(ComputeControl):
     """Control adapter that prevents a native block from resetting progress."""
 
@@ -376,23 +372,7 @@ class _CudaBlockControl(ComputeControl):
 
 
 def _slice_structure_batch(batch: StructureBatch, start: int, stop: int) -> StructureBatch:
-    atom_start = int(batch.offsets[start])
-    atom_stop = int(batch.offsets[stop])
-    offsets = batch.offsets[start : stop + 1] - atom_start
-    spins = None if batch.spins is None else batch.spins[atom_start:atom_stop]
-    charge_spin = (
-        None if batch.charge_spin is None else batch.charge_spin[start:stop]
-    )
-    return StructureBatch(
-        batch.numbers[atom_start:atom_stop],
-        batch.positions[atom_start:atom_stop],
-        batch.cells[start:stop],
-        batch.pbc[start:stop],
-        offsets,
-        batch.ids[start:stop],
-        spins,
-        charge_spin,
-    )
+    return batch._slice_view(start, stop)
 
 
 def _combine_cuda_block_results(results: list[Any]) -> Any:

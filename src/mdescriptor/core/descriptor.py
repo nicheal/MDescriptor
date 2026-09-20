@@ -108,7 +108,7 @@ class Descriptor(ABC):
             self._validate_batch(batch)
         except DescriptorInputError:
             raise
-        except (ImportError, TypeError, ValueError) as exc:
+        except (TypeError, ValueError) as exc:
             raise DescriptorInputError(
                 str(exc), path=_input_error_path(str(exc))
             ) from exc

@@ -3,6 +3,7 @@
 #include "descriptor.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -76,7 +77,8 @@ struct MtpOptions {
     // text .mtp potential instead of the generic compact basis below.
     std::string potential_path;
     // Content identity supplied by the model resolver.  The native model
-    // cache must not identify mutable files by path alone.
+    // cache must not identify mutable files by path alone.  Without
+    // model_data this remains a caller-trusted legacy cache identity.
     std::string model_digest;
     double min_dist = 0.0;
     double max_dist = 5.0;
@@ -84,6 +86,9 @@ struct MtpOptions {
     int radial_funcs_count = 1;
     int max_rank = 2;
     int num_threads = 0;
+    // Immutable bytes supplied by the model resolver.  When present, native
+    // parsing must not reopen potential_path.
+    std::optional<std::string> model_data;
 };
 
 struct OfficialMtpModel;

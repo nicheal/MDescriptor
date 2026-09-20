@@ -135,7 +135,7 @@ class TorchCheckpointUnpickler(pickle.Unpickler):
         return np.frombuffer(raw, dtype=dtype.newbyteorder("<")).astype(dtype)
 
 
-def load_torch_checkpoint(path: str) -> Any:
+def load_torch_checkpoint(path: str, content: bytes | None = None) -> Any:
     """Load a ``torch.save`` checkpoint without torch.
 
     Parameters
@@ -150,7 +150,8 @@ def load_torch_checkpoint(path: str) -> Any:
         The unpickled object with every tensor replaced by a NumPy array
         (little-endian, native dtype) and unknown objects by :class:`Stub`.
     """
-    with zipfile.ZipFile(path) as archive:
+    source: str | io.BytesIO = path if content is None else io.BytesIO(content)
+    with zipfile.ZipFile(source) as archive:
         pkl_entries = [n for n in archive.namelist() if n.endswith("/data.pkl")]
         if not pkl_entries:
             raise ValueError(f"{path} is not a zip-format torch checkpoint")

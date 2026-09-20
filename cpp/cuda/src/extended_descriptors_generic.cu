@@ -63,7 +63,7 @@ __global__ void generic_moment_kernel(
     }
     for (I64 edge = begin; edge < end; ++edge) {
         const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
-        if (distance < min_dist || distance > max_dist) continue;
+        if (distance <= 0.0 || distance < min_dist || distance > max_dist) continue;
         const int type = species_index(numbers[graph_atoms[edge]], species, species_count);
         if (type < 0) continue;
         const double reduced = (distance - min_dist) / fmax(max_dist - min_dist, 1e-12);
@@ -431,8 +431,9 @@ py::dict compute_generic_moment_descriptor(
             mtp_radial_basis_size, moment_workspace, moments_scratch, output);
         check_cuda(cudaGetLastError(), "generic CUDA descriptor kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, name, options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, name, options, false,
         host_row_offsets(host_batch));
 }
 

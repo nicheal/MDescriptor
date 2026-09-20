@@ -41,9 +41,8 @@ private:
     DeviceBatch device_batch_;
     DeviceBatch nep_expanded_batch_;
     DeviceNeighborGraph device_graph_;
-    // A context owns one stream and reusable buffers.  Serialize calls per
-    // backend instance so concurrent public compute() calls cannot resize or
-    // overwrite those resources while another launch is in flight.
+    // A context owns one stream and reusable buffers. Serialize compute() and
+    // close() so resources cannot be released while a launch is in flight.
     mutable std::mutex compute_mutex_;
     bool closed_ = false;
 };

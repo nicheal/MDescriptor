@@ -64,14 +64,15 @@ py::dict compute_atomic_composition(
         batch.numbers(), batch.offsets(), batch.structures(), batch.atoms(),
         device_species.get(), static_cast<int>(species.size()), per_system, output);
     check_cuda(cudaGetLastError(), "CUDA atomic composition kernel launch failed");
-    const auto values = download_output_with_gil_release(context, size);
+    const auto values = download_output_with_gil_release(
+        context, size, rows, columns);
     std::vector<I64> offsets;
     if (!per_system) {
         offsets.assign(
             host_batch.offsets,
             host_batch.offsets + static_cast<std::size_t>(host_batch.structures + 1));
     }
-    return atom_result(values, rows, columns, name, options, per_system, offsets);
+    return atom_result(values, columns, name, options, per_system, offsets);
 }
 
 py::dict compute_sorted_distances(
@@ -105,8 +106,9 @@ py::dict compute_sorted_distances(
         device_species.get(), static_cast<int>(species.size()), max_neighbors,
         separate, cutoff, batch.atoms(), output);
     check_cuda(cudaGetLastError(), "CUDA sorted distance kernel launch failed");
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), columns, name, options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), columns);
+    return atom_result(values, columns, name, options, false,
         host_row_offsets(host_batch));
 }
 
@@ -181,7 +183,8 @@ py::dict compute_spherical_pair(
             device_gamma_b.get(), device_orthonormalization.get(), records.get(), output);
         check_cuda(cudaGetLastError(), "CUDA spherical pair kernel launch failed");
     }
-    auto values = download_output_with_gil_release(context, output_size);
+    auto values = download_output_with_gil_release(
+        context, output_size, edges, columns);
     auto records_host = download(
         records.get(), records_size, context, "could not download CUDA pair records");
     // DeviceNeighborGraph already emitted the public cell-list order.  Keep
@@ -198,7 +201,7 @@ py::dict compute_spherical_pair(
             host_batch.offsets[structure + 1])]);
     }
     py::dict result;
-    result["values"] = values_array(values, edges, columns);
+    result["values"] = values;
     result["level"] = "pair";
     result["row_offsets"] = i64_array(row_offsets);
     py::array_t<double> pair_records({

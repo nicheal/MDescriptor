@@ -108,6 +108,26 @@ std::vector<double> CudaExecutionContext::download_output_slice(
     return result;
 }
 
+void CudaExecutionContext::download_output_into(double* destination, std::size_t count) {
+    if (closed_) {
+        throw std::runtime_error("CUDA execution context is closed");
+    }
+    if (count == 0) {
+        return;
+    }
+    if (destination == nullptr) {
+        throw std::invalid_argument("CUDA output destination must not be null");
+    }
+    if (output_ == nullptr || count > output_capacity_) {
+        throw std::runtime_error("CUDA output buffer is not large enough");
+    }
+    check_cuda(
+        cudaMemcpyAsync(
+            destination, output_, count * sizeof(double), cudaMemcpyDeviceToHost, stream_),
+        "could not copy descriptor data from the CUDA device");
+    synchronize();
+}
+
 void CudaExecutionContext::synchronize() {
     if (!closed_ && stream_ != nullptr) {
         check_cuda(cudaStreamSynchronize(stream_), "CUDA stream synchronization failed");

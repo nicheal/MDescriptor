@@ -144,17 +144,21 @@ def _info(
     cooperative_cancel: bool = True,
     devices: tuple[str, ...] = ("cpu",),
     asset: dict[str, Any] | None = None,
+    device_limits: dict[str, Any] | None = None,
 ) -> DescriptorInfo:
+    execution: dict[str, Any] = {
+        "devices": list(devices),
+        "num_threads": True,
+        "cooperative_cancel": cooperative_cancel,
+    }
+    if device_limits is not None:
+        execution["device_limits"] = device_limits
     return DescriptorInfo(
         display_name,
         description,
         category,
         parameters,
-        {
-            "devices": list(devices),
-            "num_threads": True,
-            "cooperative_cancel": cooperative_cancel,
-        },
+        execution,
         {
             "periodicity": list(periodicity),
             "mixed_periodicity": set(periodicity) == set(_ALL_PERIODICITY),
@@ -164,6 +168,50 @@ def _info(
         {"dtypes": ["float32", "float64"], "sparse": True},
         asset or _asset(AssetPolicy.NONE),
     )
+
+
+_MATRIX_CUDA_LIMITS = {
+    "cuda": {
+        "parameter_limits": {
+            "n_atoms_max": {
+                "maximum": 256,
+                "description": "CUDA matrix workspaces support at most 256 atoms.",
+            }
+        },
+        "input_limits": {
+            "n_atoms_max": {
+                "maximum": 256,
+                "when": "n_atoms_max_omitted",
+            }
+        },
+    }
+}
+_C00PS_CUDA_LIMITS = {
+    "cuda": {
+        "parameter_limits": {
+            "l_max": {
+                "maximum": 20,
+                "description": "CUDA C00PS angular workspaces support l_max through 20.",
+            }
+        }
+    }
+}
+_MBTR_CUDA_LIMITS = {
+    "cuda": {
+        "conditional_limits": {
+            "global_valle_oganov_non_atomic_species": {
+                "parameter": "species",
+                "maximum_items": 64,
+                "normalization": "valle_oganov",
+                "geometry": "non_atomic_number",
+                "scope": "global",
+                "description": (
+                    "CUDA Valle-Oganov normalization uses a 64-entry species-count buffer."
+                ),
+            }
+        }
+    }
+}
 
 
 _DESCRIPTOR_INFO = {
@@ -549,6 +597,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         devices=("cpu", "cuda"),
+        device_limits=_MATRIX_CUDA_LIMITS,
     ),
     "SineMatrix": _info(
         "Sine Matrix",
@@ -576,6 +625,7 @@ _DESCRIPTOR_INFO = {
         },
         periodicity=_PERIODIC_ONLY,
         devices=("cpu", "cuda"),
+        device_limits=_MATRIX_CUDA_LIMITS,
     ),
     "EwaldSumMatrix": _info(
         "Ewald Sum Matrix",
@@ -632,6 +682,7 @@ _DESCRIPTOR_INFO = {
         },
         periodicity=_PERIODIC_ONLY,
         devices=("cpu", "cuda"),
+        device_limits=_MATRIX_CUDA_LIMITS,
     ),
     "MBTR": _info(
         "MBTR",
@@ -676,6 +727,7 @@ _DESCRIPTOR_INFO = {
         },
         periodicity=_PERIODIC_ONLY,
         devices=("cpu", "cuda"),
+        device_limits=_MBTR_CUDA_LIMITS,
     ),
     "LMBTR": _info(
         "Local MBTR",
@@ -789,6 +841,7 @@ _DESCRIPTOR_INFO = {
         },
         periodicity=_PERIODIC_ONLY,
         devices=("cpu", "cuda"),
+        device_limits=_MBTR_CUDA_LIMITS,
     ),
     "AtomicComposition": _info(
         "Atomic Composition",
@@ -1441,6 +1494,7 @@ _DESCRIPTOR_INFO = {
             ),
         },
         devices=("cpu", "cuda"),
+        device_limits=_C00PS_CUDA_LIMITS,
     ),
     "NEP": _info(
         "NEP",

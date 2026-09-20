@@ -220,6 +220,109 @@ def _canonicalize_legacy_options(options: Mapping[str, Any], name: str) -> dict[
     return canonical
 
 
+def _device_limits(
+    execution: Mapping[str, Any] | None, device: str
+) -> Mapping[str, Any]:
+    if not isinstance(execution, Mapping):
+        return {}
+    declared = execution.get("device_limits")
+    if not isinstance(declared, Mapping):
+        return {}
+    limits = declared.get(device)
+    return limits if isinstance(limits, Mapping) else {}
+
+
+def _device_parameter_error(
+    descriptor: str,
+    parameter: str,
+    value: Any,
+    maximum: Any,
+    device: str,
+    *,
+    maximum_key: str = "maximum",
+) -> DescriptorConfigError:
+    return DescriptorConfigError(
+        f"{descriptor} {parameter}={value!r} exceeds the {device} limit of {maximum}",
+        code="invalid_parameter",
+        path=["parameters", parameter],
+        details={
+            "device": device,
+            "provided": value,
+            maximum_key: maximum,
+        },
+    )
+
+
+def _global_valle_oganov_non_atomic(name: str, options: Mapping[str, Any]) -> bool:
+    normalization = options.get("normalization")
+    if normalization is None:
+        normalization = "valle_oganov" if name == "ValleOganov" else "none"
+    if normalization != "valle_oganov":
+        return False
+    if name == "ValleOganov":
+        return True
+    geometry = options.get("geometry")
+    if not isinstance(geometry, Mapping):
+        geometry = {}
+    return str(geometry.get("function", "distance")) != "atomic_number"
+
+
+def _validate_device_parameters(
+    descriptor: str,
+    options: Mapping[str, Any],
+    device: str,
+    execution: Mapping[str, Any] | None,
+) -> None:
+    if device != "cuda":
+        return
+    limits = _device_limits(execution, device)
+    parameter_limits = limits.get("parameter_limits")
+    if isinstance(parameter_limits, Mapping):
+        for parameter, rule in parameter_limits.items():
+            if not isinstance(rule, Mapping) or parameter not in options:
+                continue
+            value = options[parameter]
+            maximum = rule.get("maximum")
+            if (
+                value is not None
+                and isinstance(maximum, (int, float))
+                and not isinstance(maximum, bool)
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and value > maximum
+            ):
+                raise _device_parameter_error(
+                    descriptor, str(parameter), value, maximum, device
+                )
+
+    conditional_limits = limits.get("conditional_limits")
+    if (
+        descriptor not in {"MBTR", "ValleOganov"}
+        or not _global_valle_oganov_non_atomic(descriptor, options)
+        or not isinstance(conditional_limits, Mapping)
+    ):
+        return
+    rule = conditional_limits.get("global_valle_oganov_non_atomic_species")
+    if not isinstance(rule, Mapping):
+        return
+    maximum_items = rule.get("maximum_items")
+    species = options.get(str(rule.get("parameter", "species")))
+    if (
+        isinstance(maximum_items, int)
+        and not isinstance(maximum_items, bool)
+        and isinstance(species, (list, tuple))
+        and len(species) > maximum_items
+    ):
+        raise _device_parameter_error(
+            descriptor,
+            str(rule.get("parameter", "species")),
+            len(species),
+            maximum_items,
+            device,
+            maximum_key="maximum_items",
+        )
+
+
 def _accepts_keyword(parameters: Mapping[str, inspect.Parameter], name: str) -> bool:
     parameter = parameters.get(name)
     return parameter is not None or any(
@@ -275,6 +378,7 @@ class DescriptorAdapter(Descriptor):
 
         super().__init__()
         options = _canonicalize_legacy_options(options, self.name)
+        self._device_options = dict(options)
         if validate_public:
             self._validate_public_parameters(options)
         kwargs = dict(options)
@@ -318,6 +422,12 @@ class DescriptorAdapter(Descriptor):
                 path=["execution", "device"],
                 details={"supported": list(supported_devices)},
             )
+        _validate_device_parameters(
+            self.name,
+            options,
+            self._execution_options.device,
+            execution_capabilities,
+        )
         if self._output_options.sparse:
             try:
                 import scipy.sparse  # noqa: F401
@@ -344,6 +454,11 @@ class DescriptorAdapter(Descriptor):
             # This implementation identity is deliberately absent from the
             # public constructor and configuration snapshot.
             kwargs["model_digest"] = resolved_model_digest
+        resolved_model_content = getattr(self, "_resolved_model_content", None)
+        if resolved_model_content is not None and _accepts_keyword(parameters, "model_data"):
+            # Pass the resolver's immutable snapshot to native model parsers;
+            # the public configuration keeps only the original model resource.
+            kwargs["model_data"] = resolved_model_content
         if (
             self._execution_options.num_threads is not None
             and self._execution_options.device == "cpu"
@@ -451,6 +566,17 @@ class DescriptorAdapter(Descriptor):
                             path=configuration_path,
                         ) from exc
                 backend_options["_cuda_feature_count"] = resolved_features
+                # The CUDA NEP backend reconstructs its native parser; MTP
+                # and Python-backed models already hand CUDA a parsed payload.
+                if self.name == "NEP":
+                    if resolved_model_digest is not None and _accepts_keyword(
+                        parameters, "model_digest"
+                    ):
+                        backend_options["model_digest"] = resolved_model_digest
+                    if resolved_model_content is not None and _accepts_keyword(
+                        parameters, "model_data"
+                    ):
+                        backend_options["model_data"] = resolved_model_content
                 backend = CudaBackend(
                     self.name,
                     backend_options,
@@ -597,6 +723,44 @@ class DescriptorAdapter(Descriptor):
             capabilities.get("charge_spin", False)
         ):
             raise _unsupported_input(self.name, "charge_spin", True)
+        self._validate_device_input(batch)
+
+    def _validate_device_input(self, batch: StructureBatch) -> None:
+        if self._execution_options.device != "cuda":
+            return
+        execution = getattr(self, "_registry_execution_capabilities", None)
+        if execution is None:
+            execution = _builtin_info_field(self.name, "execution")
+        limits = _device_limits(execution, "cuda")
+        input_limits = limits.get("input_limits")
+        if not isinstance(input_limits, Mapping):
+            return
+        rule = input_limits.get("n_atoms_max")
+        if not isinstance(rule, Mapping):
+            return
+        maximum = rule.get("maximum")
+        if not isinstance(maximum, int) or isinstance(maximum, bool):
+            return
+        if self._device_options.get("n_atoms_max") is not None:
+            return
+        required = max(
+            (
+                int(batch.offsets[index + 1] - batch.offsets[index])
+                for index in range(batch.structures)
+            ),
+            default=0,
+        )
+        if required > maximum:
+            raise DescriptorInputError(
+                f"{self.name} CUDA execution supports at most {maximum} atoms per structure",
+                code="unsupported_input",
+                path=["input", "n_atoms_max"],
+                details={
+                    "device": "cuda",
+                    "provided": required,
+                    "maximum": maximum,
+                },
+            )
 
     def _adapt_result(self, result: DescriptorResult) -> DescriptorResult:
         adapted = self._apply_execution_metadata(result)

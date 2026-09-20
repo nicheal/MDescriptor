@@ -185,8 +185,9 @@ py::dict compute_ace_descriptor(
             d_term_coefficients.get(), features, batch.atoms(), coefficient_workspace, output);
         check_cuda(cudaGetLastError(), "ACE CUDA kernel launch failed");
     }
-    const auto values = download_output_with_gil_release(context, size);
-    return atom_result(values, batch.atoms(), features, "ACE", options, false,
+    const auto values = download_output_with_gil_release(
+        context, size, batch.atoms(), features);
+    return atom_result(values, features, "ACE", options, false,
         host_row_offsets(host_batch));
 }
 

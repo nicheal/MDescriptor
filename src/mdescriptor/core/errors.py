@@ -124,6 +124,17 @@ def is_native_cancelled_error(value: BaseException) -> bool:
     return isinstance(native_type, type) and isinstance(value, native_type)
 
 
+def is_cuda_cancelled_error(value: BaseException) -> bool:
+    """Return whether ``value`` is the CUDA plugin cancellation exception."""
+
+    try:
+        cuda_module = importlib.import_module("mdescriptor._cuda")
+    except (ImportError, OSError):
+        return False
+    cuda_type = getattr(cuda_module, "CudaCancelledError", None)
+    return isinstance(cuda_type, type) and isinstance(value, cuda_type)
+
+
 def _error_path(value: Any) -> tuple[str | int, ...] | None:
     if value is None:
         return None

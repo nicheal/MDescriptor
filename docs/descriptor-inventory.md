@@ -57,6 +57,13 @@ Each built-in parameter schema also exposes a GUI-facing ``display_name`` and
 ``description``.  The mapping key remains the canonical constructor name and
 must be used when serializing values.
 
+When a backend has a device-only capacity, the same metadata exposes
+`execution.device_limits`.  CUDA matrix descriptors require
+`n_atoms_max <= 256`, C00PSMLFF requires `l_max <= 20`, and global MBTR or
+ValleOganov Valle–Oganov normalization supports at most 64 species on the
+non-`atomic_number` path.  CPU configurations keep their wider native
+limits; an omitted matrix width is checked against the actual input batch.
+
 The canonical algorithm imports are:
 
 ```python

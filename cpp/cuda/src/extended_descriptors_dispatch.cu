@@ -73,7 +73,7 @@ py::dict compute_extended_descriptor(
     const py::object& control,
     RotationalPlanCache* rotational_plan_cache) {
     if (cancelled(control)) {
-        throw std::runtime_error("descriptor computation cancelled");
+        throw CudaCancelledError();
     }
     const auto index = extended_descriptor_index(name);
     if (index >= kExtendedDescriptorRegistry.size()) {
