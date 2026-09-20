@@ -1,4 +1,4 @@
-#include "extended_descriptors_common.cuh"
+#include "extended_descriptors_rotational.cuh"
 
 py::dict compute_rotational_descriptor(
     CudaExecutionContext& context,

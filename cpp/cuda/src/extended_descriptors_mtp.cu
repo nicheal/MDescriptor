@@ -1,6 +1,96 @@
 #include "extended_dispatch.hpp"
 #include "extended_descriptors_common.cuh"
 
+namespace {
+
+__device__ void mtp4_radial_basis_device(
+    double r_sq,
+    int kind,
+    int basis_size,
+    double min_dist,
+    double max_dist,
+    double max_dist_sq,
+    double max_dist_sq_minus_eps,
+    double exp_ratio,
+    double zeroth,
+    const double* recursive,
+    const double* vdw_damped_params,
+    int self_species,
+    int neighbor_species,
+    double* output) {
+    if (kind == 3) {
+        const double r_sq_3 = r_sq * r_sq * r_sq;
+        const double self_radius = vdw_damped_params[2 + self_species];
+        const double neighbor_radius = vdw_damped_params[2 + neighbor_species];
+        const double damp = vdw_damped_params[0] * (self_radius + neighbor_radius)
+            + vdw_damped_params[1];
+        const double damp_sq = damp * damp;
+        const double damp_6 = damp_sq * damp_sq * damp_sq;
+        output[0] = 100.0 / (r_sq_3 + damp_6);
+        if (basis_size > 1) {
+            output[1] = 100.0 / (r_sq_3 * r_sq + damp_6 * damp_sq);
+        }
+        return;
+    }
+    if (kind == 2) {
+        const double min_dist_sq = min_dist * min_dist;
+        if (r_sq <= min_dist_sq * 1.02) {
+            for (int index = 0; index < basis_size; ++index) output[index] = 0.0;
+            output[0] = 2.5;
+            return;
+        }
+        if (r_sq >= max_dist_sq) {
+            for (int index = 0; index < basis_size; ++index) output[index] = 0.0;
+            return;
+        }
+        const double x_sq = min_dist_sq / r_sq;
+        const double my_exp = exp(1.0 / (x_sq - 1.0));
+        const double mult = x_sq * x_sq * x_sq * my_exp;
+        output[0] = 2.5 * pow(1.0 - 2.71828182845904524 * my_exp, 3.0);
+        if (basis_size == 1) return;
+        output[1] = 102.295067549833082 * mult;
+        double previous = 0.0;
+        for (int index = 1; index < basis_size - 1; ++index) {
+            output[index + 1] = recursive[index * 3]
+                * ((x_sq + recursive[index * 3 + 1]) * output[index]
+                    + recursive[index * 3 + 2] * previous);
+            previous = output[index];
+        }
+        return;
+    }
+    if (kind == 1) {
+        if (r_sq >= max_dist_sq) {
+            for (int index = 0; index < basis_size; ++index) output[index] = 0.0;
+            return;
+        }
+        const double radius = sqrt(r_sq);
+        const double ksi = (2.0 * radius - (min_dist + max_dist)) / (max_dist - min_dist);
+        const double edge = radius - max_dist;
+        output[0] = edge * edge;
+        if (basis_size > 1) output[1] = ksi * edge * edge;
+        for (int index = 2; index < basis_size; ++index) {
+            output[index] = 2.0 * ksi * output[index - 1] - output[index - 2];
+        }
+        return;
+    }
+    if (r_sq >= max_dist_sq_minus_eps) {
+        for (int index = 0; index < basis_size; ++index) output[index] = 0.0;
+        return;
+    }
+    const double x_sq = r_sq / max_dist_sq;
+    const double mult = exp(exp_ratio / (1.0 - x_sq));
+    output[0] = zeroth * mult;
+    double previous = 0.0;
+    for (int index = 0; index < basis_size - 1; ++index) {
+        output[index + 1] = recursive[index * 3]
+            * ((x_sq + recursive[index * 3 + 1]) * output[index]
+                + recursive[index * 3 + 2] * previous);
+        previous = output[index];
+    }
+}
+
+} // namespace
+
 __global__ void mtp4_cuda_kernel(
     const I32* numbers,
     const I64* graph_offsets,

@@ -1,5 +1,65 @@
 #include "extended_descriptors_common.cuh"
 
+namespace {
+
+std::vector<double> numeric_values_option(
+    const py::dict& options, const char* key, double fallback) {
+    const py::str name(key);
+    if (!options.contains(name) || options[name].is_none()) return {fallback};
+    if (py::isinstance<py::array>(options[name])) {
+        const auto values = F64Array::ensure(options[name]);
+        if (!values || values.ndim() != 1) {
+            throw std::invalid_argument(std::string(key) + " must be a one-dimensional array");
+        }
+        return std::vector<double>(
+            values.data(), values.data() + static_cast<std::size_t>(values.shape(0)));
+    }
+    try {
+        if (py::isinstance<py::sequence>(options[name])
+            && !py::isinstance<py::str>(options[name])) {
+            return py::cast<std::vector<double>>(options[name]);
+        }
+        return {py::cast<double>(options[name])};
+    } catch (const py::cast_error&) {
+        throw std::invalid_argument(std::string(key) + " must be a number or numeric array");
+    }
+}
+
+std::vector<I32> integer_vector_option(
+    const py::dict& options, const char* key, I32 fallback, std::size_t count) {
+    const py::str name(key);
+    if (!options.contains(name) || options[name].is_none()) {
+        return std::vector<I32>(count, fallback);
+    }
+    try {
+        if (py::isinstance<py::sequence>(options[name])
+            && !py::isinstance<py::str>(options[name])) {
+            auto values = py::cast<std::vector<I32>>(options[name]);
+            if (values.size() != count) {
+                throw std::invalid_argument(std::string(key) + " must have one value per species");
+            }
+            return values;
+        }
+        return std::vector<I32>(count, py::cast<I32>(options[name]));
+    } catch (const py::cast_error&) {
+        throw std::invalid_argument(std::string(key) + " must be an integer or integer array");
+    }
+}
+
+__device__ double chebyshev_device(int order, double x) {
+    if (order <= 0) return 1.0;
+    double previous = 1.0;
+    double current = x;
+    for (int index = 2; index <= order; ++index) {
+        const double next = 2.0 * x * current - previous;
+        previous = current;
+        current = next;
+    }
+    return current;
+}
+
+} // namespace
+
 __global__ void generic_moment_kernel(
     const I32* numbers,
     const I64* graph_offsets,

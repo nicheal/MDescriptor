@@ -1,5 +1,33 @@
 #include "extended_descriptors_common.cuh"
 
+namespace {
+
+std::vector<std::vector<double>> nested_payload_vectors(
+    const py::dict& payload,
+    const char* key) {
+    const py::str name(key);
+    if (!payload.contains(name) || payload[name].is_none()) return {};
+    py::sequence sequence;
+    try {
+        sequence = py::cast<py::sequence>(payload[name]);
+    } catch (const py::cast_error&) {
+        throw std::invalid_argument(std::string(key) + " must be a sequence of numeric arrays");
+    }
+    std::vector<std::vector<double>> result;
+    result.reserve(static_cast<std::size_t>(sequence.size()));
+    for (py::ssize_t index = 0; index < sequence.size(); ++index) {
+        const auto values = F64Array::ensure(sequence[index]);
+        if (!values || values.ndim() != 1) {
+            throw std::invalid_argument(std::string(key) + " must contain one-dimensional arrays");
+        }
+        result.emplace_back(
+            values.data(), values.data() + static_cast<std::size_t>(values.shape(0)));
+    }
+    return result;
+}
+
+} // namespace
+
 __device__ double c00_spherical_bessel(int angular, double x) {
     const double absolute = fabs(x);
     if (absolute < 1e-4) {

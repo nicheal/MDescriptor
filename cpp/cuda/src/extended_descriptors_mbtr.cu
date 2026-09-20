@@ -168,6 +168,92 @@ __global__ void mbtr_row_kernel(
         species_count, 0.0, geometry, grid_n, true);
 }
 
+__device__ void accumulate_mbtr_channel_center(
+    const I32* atom_types,
+    const I64* graph_offsets,
+    const I32* graph_atoms,
+    const I32* graph_shifts,
+    const double* graph_displacements,
+    const double* graph_distance2,
+    int species_count,
+    int geometry,
+    int weighting,
+    double grid_min,
+    double grid_max,
+    double grid_sigma,
+    int grid_n,
+    bool normalize_gaussians,
+    double scale,
+    double threshold,
+    double r_cut,
+    double sharpness,
+    I64 center,
+    I64 channel,
+    double* target) {
+    const int center_type = atom_types[center];
+    if (center_type < 0) return;
+    const I64 graph_begin = graph_offsets[center];
+    const I64 graph_end = graph_offsets[center + 1];
+    const int pair_count = species_count * (species_count + 1) / 2;
+    if (geometry == mbtr::kGeometryDistance
+        || geometry == mbtr::kGeometryInverseDistance) {
+        for (I64 first = graph_begin; first < graph_end; ++first) {
+            const I32 first_atom = graph_atoms[first];
+            const bool periodic = graph_shifts[first * 3] != 0
+                || graph_shifts[first * 3 + 1] != 0
+                || graph_shifts[first * 3 + 2] != 0;
+            if (!periodic && first_atom < center) continue;
+            const int first_type = atom_types[first_atom];
+            if (first_type < 0
+                || channel != pair_channel_device(center_type, first_type, species_count)) {
+                continue;
+            }
+            const double distance = sqrt(fmax(0.0, graph_distance2[first]));
+            if (distance <= 1e-12) continue;
+            const double value = geometry == mbtr::kGeometryDistance
+                ? distance : 1.0 / distance;
+            const double pair_weight = mbtr_weight_device(
+                weighting, scale, threshold, r_cut, sharpness, distance, 0.0, 0.0)
+                * (periodic ? 0.5 : 1.0);
+            add_histogram_device(
+                target, value, pair_weight, grid_min, grid_max, grid_sigma,
+                grid_n, normalize_gaussians);
+        }
+        return;
+    }
+    for (I64 first = graph_begin; first < graph_end; ++first) {
+        const double first_distance = sqrt(fmax(0.0, graph_distance2[first]));
+        if (first_distance <= 1e-12) continue;
+        const int first_type = atom_types[graph_atoms[first]];
+        if (first_type < 0) continue;
+        for (I64 second = graph_begin; second < first; ++second) {
+            const int second_type = atom_types[graph_atoms[second]];
+            if (first_type < 0 || second_type < 0) continue;
+            const int output_channel = center_type * pair_count
+                + pair_channel_device(first_type, second_type, species_count);
+            if (channel != output_channel) continue;
+            const double second_distance = sqrt(fmax(0.0, graph_distance2[second]));
+            if (second_distance <= 1e-12) continue;
+            const double dx = graph_displacements[first * 3] - graph_displacements[second * 3];
+            const double dy = graph_displacements[first * 3 + 1] - graph_displacements[second * 3 + 1];
+            const double dz = graph_displacements[first * 3 + 2] - graph_displacements[second * 3 + 2];
+            const double third_distance = sqrt(dx * dx + dy * dy + dz * dz);
+            const double cosine = fmin(1.0, fmax(-1.0,
+                (first_distance * first_distance + second_distance * second_distance
+                    - third_distance * third_distance)
+                    / (2.0 * first_distance * second_distance)));
+            const double value = geometry == mbtr::kGeometryCosine ? cosine
+                : acos(cosine) * 180.0 / kPi;
+            const double weight = mbtr_weight_device(
+                weighting, scale, threshold, r_cut, sharpness,
+                first_distance, second_distance, third_distance);
+            add_histogram_device(
+                target, value, weight, grid_min, grid_max, grid_sigma,
+                grid_n, normalize_gaussians);
+        }
+    }
+}
+
 // Each thread owns one complete channel of one output row.  Its contribution
 // loop follows the old row kernel's center/edge order, so the additions within
 // every (row, channel, bin) remain deterministic and use the same summation
@@ -214,72 +300,95 @@ __global__ void mbtr_channel_kernel(
         }
         return;
     }
-    const int pair_count = species_count * (species_count + 1) / 2;
     // A non-local MBTR row is one structure, so all of its centers contribute
     // to the selected channel of the same target histogram.
     for (I64 center = begin; center < end; ++center) {
-        const int center_type = atom_types[center];
-        if (center_type < 0) continue;
-        const I64 graph_begin = graph_offsets[center];
-        const I64 graph_end = graph_offsets[center + 1];
-        if (geometry == mbtr::kGeometryDistance
-            || geometry == mbtr::kGeometryInverseDistance) {
-            for (I64 first = graph_begin; first < graph_end; ++first) {
-                const I32 first_atom = graph_atoms[first];
-                const bool periodic = graph_shifts[first * 3] != 0
-                    || graph_shifts[first * 3 + 1] != 0
-                    || graph_shifts[first * 3 + 2] != 0;
-                if (!periodic && first_atom < center) continue;
-                const int first_type = atom_types[first_atom];
-                if (first_type < 0
-                    || channel != pair_channel_device(center_type, first_type, species_count)) {
-                    continue;
-                }
-                const double distance = sqrt(fmax(0.0, graph_distance2[first]));
-                if (distance <= 1e-12) continue;
-                const double value = geometry == mbtr::kGeometryDistance
-                    ? distance : 1.0 / distance;
-                const double pair_weight = mbtr_weight_device(
-                    weighting, scale, threshold, r_cut, sharpness, distance, 0.0, 0.0)
-                    * (periodic ? 0.5 : 1.0);
-                add_histogram_device(
-                    target, value, pair_weight, grid_min, grid_max, grid_sigma,
-                    grid_n, normalize_gaussians);
-            }
-        } else {
-            for (I64 first = graph_begin; first < graph_end; ++first) {
-                const double first_distance = sqrt(fmax(0.0, graph_distance2[first]));
-                if (first_distance <= 1e-12) continue;
-                const int first_type = atom_types[graph_atoms[first]];
-                if (first_type < 0) continue;
-                for (I64 second = graph_begin; second < first; ++second) {
-                    const int second_type = atom_types[graph_atoms[second]];
-                    if (first_type < 0 || second_type < 0) continue;
-                    const int output_channel = center_type * pair_count
-                        + pair_channel_device(first_type, second_type, species_count);
-                    if (channel != output_channel) continue;
-                    const double second_distance = sqrt(fmax(0.0, graph_distance2[second]));
-                    if (second_distance <= 1e-12) continue;
-                    const double dx = graph_displacements[first * 3] - graph_displacements[second * 3];
-                    const double dy = graph_displacements[first * 3 + 1] - graph_displacements[second * 3 + 1];
-                    const double dz = graph_displacements[first * 3 + 2] - graph_displacements[second * 3 + 2];
-                    const double third_distance = sqrt(dx * dx + dy * dy + dz * dz);
-                    const double cosine = fmin(1.0, fmax(-1.0,
-                        (first_distance * first_distance + second_distance * second_distance
-                            - third_distance * third_distance)
-                            / (2.0 * first_distance * second_distance)));
-                    const double value = geometry == mbtr::kGeometryCosine ? cosine
-                        : acos(cosine) * 180.0 / kPi;
-                    const double weight = mbtr_weight_device(
-                        weighting, scale, threshold, r_cut, sharpness,
-                        first_distance, second_distance, third_distance);
-                    add_histogram_device(
-                        target, value, weight, grid_min, grid_max, grid_sigma,
-                        grid_n, normalize_gaussians);
-                }
-            }
-        }
+        accumulate_mbtr_channel_center(
+            atom_types, graph_offsets, graph_atoms, graph_shifts,
+            graph_displacements, graph_distance2, species_count, geometry,
+            weighting, grid_min, grid_max, grid_sigma, grid_n,
+            normalize_gaussians, scale, threshold, r_cut, sharpness,
+            center, channel, target);
     }
+}
+
+constexpr int kChannelCenterSplitMaxSpecies = 4;
+constexpr I64 kChannelCenterChunk = 1;
+
+// For small non-local channel counts, split the center range into deterministic
+// private histograms.  The reduction visits centers in order, preserving the
+// serial summation order without atomics.
+__global__ void mbtr_channel_center_kernel(
+    const I32* atom_types,
+    const I64* offsets,
+    const I64* graph_offsets,
+    const I32* graph_atoms,
+    const I32* graph_shifts,
+    const double* graph_displacements,
+    const double* graph_distance2,
+    int species_count,
+    int geometry,
+    int weighting,
+    double grid_min,
+    double grid_max,
+    double grid_sigma,
+    int grid_n,
+    bool normalize_gaussians,
+    double scale,
+    double threshold,
+    double r_cut,
+    double sharpness,
+    I64 structures,
+    I64 channels,
+    I64 center_chunks,
+    double* partial) {
+    const I64 work = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const I64 slots_per_row = channels * center_chunks;
+    if (work >= structures * slots_per_row) return;
+    const I64 row = work / slots_per_row;
+    const I64 remainder = work - row * slots_per_row;
+    const I64 channel = remainder / center_chunks;
+    const I64 center_chunk = remainder - channel * center_chunks;
+    double* target = partial
+        + ((row * channels + channel) * center_chunks + center_chunk) * grid_n;
+    for (int bin = 0; bin < grid_n; ++bin) target[bin] = 0.0;
+    const I64 begin = offsets[row];
+    const I64 end = offsets[row + 1];
+    const I64 center_begin = begin + center_chunk * kChannelCenterChunk;
+    const I64 center_limit = center_begin + kChannelCenterChunk;
+    const I64 center_end = end < center_limit ? end : center_limit;
+    for (I64 center = center_begin; center < center_end; ++center) {
+        accumulate_mbtr_channel_center(
+            atom_types, graph_offsets, graph_atoms, graph_shifts,
+            graph_displacements, graph_distance2, species_count, geometry,
+            weighting, grid_min, grid_max, grid_sigma, grid_n,
+            normalize_gaussians, scale, threshold, r_cut, sharpness,
+            center, channel, target);
+    }
+}
+
+__global__ void mbtr_channel_reduce_kernel(
+    const double* partial,
+    I64 structures,
+    I64 channels,
+    I64 center_chunks,
+    int grid_n,
+    I64 features,
+    double* output) {
+    const I64 work = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const I64 bins_per_row = channels * grid_n;
+    if (work >= structures * bins_per_row) return;
+    const I64 row = work / bins_per_row;
+    const I64 remainder = work - row * bins_per_row;
+    const I64 channel = remainder / grid_n;
+    const int bin = static_cast<int>(remainder - channel * grid_n);
+    double value = 0.0;
+    for (I64 center_chunk = 0; center_chunk < center_chunks; ++center_chunk) {
+        const I64 partial_index =
+            ((row * channels + channel) * center_chunks + center_chunk) * grid_n + bin;
+        value += partial[partial_index];
+    }
+    output[row * features + channel * grid_n + bin] = value;
 }
 
 __global__ void mbtr_normalize_kernel(
@@ -472,6 +581,7 @@ py::dict compute_mbtr_descriptor(
     if (geometry != mbtr::kGeometryAtomicNumber) {
         graph.build_dpa(context, batch, host_batch, r_cut, true, false, false);
     }
+    DeviceBuffer<double> channel_partials;
     if (rows > 0 && channels > 0) {
         constexpr unsigned block_size = 64;
         if (local) {
@@ -484,15 +594,72 @@ py::dict compute_mbtr_descriptor(
                 batch.structures(), batch.atoms(), features, output);
             check_cuda(cudaGetLastError(), "CUDA local MBTR kernel launch failed");
         } else {
-            const I64 work = rows * channels;
-            mbtr_channel_kernel<<<static_cast<unsigned>((work + block_size - 1) / block_size),
-                block_size, 0, context.stream()>>>(
-                batch.numbers(), d_atom_types.get(), batch.offsets(), graph.offsets(),
-                graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(),
-                species_count, geometry, weighting, grid_min, grid_max,
-                grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut, sharpness,
-                batch.structures(), channels, features, output);
-            check_cuda(cudaGetLastError(), "CUDA MBTR channel kernel launch failed");
+            I64 max_atoms_per_structure = 0;
+            if (geometry != mbtr::kGeometryAtomicNumber
+                && species_count <= kChannelCenterSplitMaxSpecies) {
+                for (I64 structure = 0; structure < rows; ++structure) {
+                    max_atoms_per_structure = std::max(
+                        max_atoms_per_structure,
+                        host_batch.offsets[structure + 1] - host_batch.offsets[structure]);
+                }
+            }
+            const I64 center_chunks = max_atoms_per_structure > 0
+                ? (max_atoms_per_structure + kChannelCenterChunk - 1)
+                    / kChannelCenterChunk
+                : 0;
+            constexpr std::size_t max_partial_bytes = 64U * 1024U * 1024U;
+            constexpr std::size_t max_partial_elements =
+                max_partial_bytes / sizeof(double);
+            std::size_t partial_elements = static_cast<std::size_t>(rows);
+            bool use_center_split = center_chunks > 0
+                && partial_elements <= max_partial_elements;
+            const std::size_t partial_extents[3]{
+                static_cast<std::size_t>(channels),
+                static_cast<std::size_t>(center_chunks),
+                static_cast<std::size_t>(grid_n),
+            };
+            for (const std::size_t extent : partial_extents) {
+                if (!use_center_split || extent == 0
+                    || partial_elements > max_partial_elements / extent) {
+                    use_center_split = false;
+                    break;
+                }
+                partial_elements *= extent;
+            }
+            if (use_center_split) {
+                channel_partials.allocate(
+                    partial_elements, "could not allocate MBTR channel partial output");
+                const I64 work = rows * channels * center_chunks;
+                mbtr_channel_center_kernel<<<
+                    static_cast<unsigned>((work + block_size - 1) / block_size),
+                    block_size, 0, context.stream()>>>(
+                    d_atom_types.get(), batch.offsets(), graph.offsets(), graph.atoms(),
+                    graph.shifts(), graph.displacements(), graph.distance2(),
+                    species_count, geometry, weighting, grid_min, grid_max,
+                    grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut,
+                    sharpness, rows, channels, center_chunks, channel_partials.get());
+                check_cuda(
+                    cudaGetLastError(), "CUDA MBTR channel center kernel launch failed");
+                const I64 reduction_work = rows * channels * grid_n;
+                mbtr_channel_reduce_kernel<<<
+                    static_cast<unsigned>((reduction_work + block_size - 1) / block_size),
+                    block_size, 0, context.stream()>>>(
+                    channel_partials.get(), rows, channels, center_chunks,
+                    grid_n, features, output);
+                check_cuda(
+                    cudaGetLastError(), "CUDA MBTR channel reduction kernel launch failed");
+            } else {
+                const I64 work = rows * channels;
+                mbtr_channel_kernel<<<
+                    static_cast<unsigned>((work + block_size - 1) / block_size),
+                    block_size, 0, context.stream()>>>(
+                    batch.numbers(), d_atom_types.get(), batch.offsets(), graph.offsets(),
+                    graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(),
+                    species_count, geometry, weighting, grid_min, grid_max,
+                    grid_sigma, grid_n, normalize_gaussians, scale, threshold, r_cut, sharpness,
+                    batch.structures(), channels, features, output);
+                check_cuda(cudaGetLastError(), "CUDA MBTR channel kernel launch failed");
+            }
         }
         if (!local && normalization != mbtr::kNormalizationNone) {
             mbtr_normalize_kernel<<<static_cast<unsigned>((rows + block_size - 1) / block_size),

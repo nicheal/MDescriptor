@@ -1,4 +1,4 @@
-#include "extended_descriptors_common.cuh"
+#include "extended_descriptors_basic.cuh"
 
 template <int MaxAngular>
 void launch_spherical_pair_exact(

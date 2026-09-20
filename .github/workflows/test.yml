@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
@@ -48,9 +49,11 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ runner.temp }}
-        # pytest discovers pyproject.toml (addopts -m "not reference") via the
-        # workspace argument even from runner.temp, so no explicit -m is needed.
-        run: python -m pytest --import-mode=importlib --strict-markers "${{ github.workspace }}/tests"
+        # This hosted matrix is the CPU gate. CUDA coverage runs only in the
+        # separate self-hosted workflow and is never counted here.
+        run: >-
+          python -m pytest --import-mode=importlib --strict-markers
+          -m "not reference and not gpu" "${{ github.workspace }}/tests"
 
   coverage:
     name: Python branch coverage
@@ -71,7 +74,7 @@ jobs:
         run: >-
           python -m pytest --import-mode=importlib
           --strict-markers --cov=mdescriptor --cov-report=term-missing
-          --cov-report=xml tests
+          --cov-report=xml -m "not reference and not gpu" tests
 
   cpp-test:
     name: C++ public API / ${{ matrix.os }}

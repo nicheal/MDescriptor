@@ -1,5 +1,37 @@
 #include "extended_descriptors_common.cuh"
 
+namespace {
+
+__device__ void ace_radial_values(
+    double distance,
+    double transform_a,
+    double transform_p,
+    double transform_r0,
+    double t_left,
+    double t_right,
+    int p_left,
+    int p_right,
+    const double* radial_a,
+    const double* radial_b,
+    const double* radial_c,
+    int radial_count,
+    double* result) {
+    for (int index = 0; index < radial_count; ++index) result[index] = 0.0;
+    const double t = pow((transform_a + transform_r0)
+        / (transform_a + distance), transform_p);
+    if ((p_left > 0 && t < t_left) || (p_right > 0 && t > t_right)) return;
+    const double envelope = pow(t - t_left, p_left) * pow(t - t_right, p_right);
+    result[0] = radial_a[0] * envelope;
+    if (radial_count == 1) return;
+    result[1] = (radial_a[1] * t + radial_b[1]) * result[0];
+    for (int n = 2; n < radial_count; ++n) {
+        result[n] = (radial_a[n] * t + radial_b[n]) * result[n - 1]
+            + radial_c[n] * result[n - 2];
+    }
+}
+
+} // namespace
+
 __global__ void ace_cuda_kernel(
     const I32* numbers,
     const I64* graph_offsets,

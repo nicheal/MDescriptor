@@ -1,4 +1,4 @@
-#include "extended_descriptors_common.cuh"
+#include "extended_descriptors_soap.cuh"
 
 py::dict compute_extended_soap(
     CudaExecutionContext& context,

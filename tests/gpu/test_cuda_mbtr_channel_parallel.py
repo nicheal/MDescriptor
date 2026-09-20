@@ -38,6 +38,19 @@ def _batch(*, permute_first: bool = False) -> StructureBatch:
     )
 
 
+def _batch_for_species(species: list[int]) -> StructureBatch:
+    base = _batch()
+    numbers = np.resize(np.asarray(species, dtype=np.int32), base.numbers.size)
+    return StructureBatch(
+        numbers,
+        base.positions,
+        base.cells,
+        base.pbc,
+        base.offsets,
+        base.ids,
+    )
+
+
 @pytest.mark.gpu
 @pytest.mark.parametrize(
     ("descriptor_type", "parameters"),
@@ -61,6 +74,20 @@ def _batch(*, permute_first: bool = False) -> StructureBatch:
                 "weighting": {"function": "smooth_cutoff", "r_cut": 3.0},
                 "normalization": "n_atoms",
             },
+        ),
+        (
+            MBTR,
+            {
+                "species": [1],
+                "geometry": {"function": "distance"},
+                "grid": {"min": 0.0, "max": 6.0, "n": 20, "sigma": 0.2},
+                "weighting": {"function": "smooth_cutoff", "r_cut": 3.0},
+                "normalization": "none",
+            },
+        ),
+        (
+            ValleOganov,
+            {"species": [1, 6], "function": "angle", "n": 20, "sigma": 0.5, "r_cut": 3.0},
         ),
         (
             MBTR,
@@ -102,7 +129,14 @@ def test_cuda_mbtr_channel_split_matches_cpu_and_repeats(
     descriptor_type: type[object], parameters: dict[str, object]
 ) -> None:
     load_cuda_for_tests()
-    batch = _batch()
+    declared_species = parameters["species"]
+    assert isinstance(declared_species, list)
+    base = _batch()
+    batch = (
+        base
+        if set(np.unique(base.numbers)).issubset(declared_species)
+        else _batch_for_species(declared_species)
+    )
     cpu = descriptor_type(**parameters, execution=ExecutionOptions(device="cpu", num_threads=1))
     gpu = descriptor_type(**parameters, execution=ExecutionOptions(device="cuda"))
     try:

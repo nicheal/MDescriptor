@@ -1,0 +1,119 @@
+name: GPU Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cuda:
+    name: CUDA / self-hosted GPU
+    # A fork PR must not execute untrusted checkout code on a persistent
+    # self-hosted runner. Maintainer branches and push/manual runs are trusted.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - ${{ vars.MDESCRIPTOR_GPU_RUNNER_LABEL || 'gpu' }}
+    timeout-minutes: 60
+    env:
+      CUDA_ARCHITECTURES: ${{ vars.MDESCRIPTOR_CUDA_ARCHITECTURES || 'native' }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      PYTHONUNBUFFERED: '1'
+      PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install test and CUDA build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            'pytest>=8' 'pytest-cov>=7' 'numpy>=1.23' \
+            'array-api-compat>=1.8' 'packaging>=23' 'ase>=3.22' 'scipy>=1.11' \
+            'scipy-openblas32==0.3.34.106.0' 'pybind11>=2.13,<3' \
+            'setuptools-scm>=8' 'scikit-build-core>=1.0' 'cmake>=3.24' ninja
+
+      - name: Verify GPU and CUDA toolchain
+        run: |
+          {
+            echo "runner=${RUNNER_NAME}"
+            echo "os=${RUNNER_OS}"
+            nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader
+            nvcc --version
+            cmake --version | head -1
+          } | tee gpu-environment.txt
+
+      - name: Configure CUDA build
+        run: |
+          cmake -S . -B build-cuda -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMDESCRIPTOR_BUILD_CUDA=ON \
+            -DMDESCRIPTOR_BUNDLE_CUDA_RUNTIME=ON \
+            -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
+            -DPython_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -Dpybind11_DIR="$(python -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+
+      - name: Build current native and CUDA extensions
+        run: cmake --build build-cuda --parallel 2
+
+      - name: Verify exact extension artifacts
+        run: |
+          python - <<'PY'
+          from importlib.machinery import EXTENSION_SUFFIXES
+          from pathlib import Path
+
+          build = Path('build-cuda').resolve()
+          for stem in ('_native', '_cuda'):
+              matches = [
+                  build / f'{stem}{suffix}'
+                  for suffix in EXTENSION_SUFFIXES
+                  if (build / f'{stem}{suffix}').is_file()
+              ]
+              if len(matches) != 1:
+                  raise SystemExit(f'{stem}: expected one extension in {build}, found {matches}')
+              print(matches[0])
+          PY
+
+      - name: Run strict CUDA tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/run_gpu_tests.py \
+            --plugin-dir build-cuda \
+            --native-dir build-cuda 2>&1 | tee gpu-test.log
+
+      - name: Upload GPU diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gpu-diagnostics-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            gpu-environment.txt
+            gpu-test.log
+            build-cuda/_native*
+            build-cuda/_cuda*

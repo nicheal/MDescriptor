@@ -1,4 +1,4 @@
-#include "extended_descriptors_common.cuh"
+#include "extended_descriptors_matrix.cuh"
 #include "mdescriptor/detail/math3.hpp"
 
 namespace {
