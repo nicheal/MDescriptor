@@ -729,20 +729,15 @@ NeighborGraph build_neighbor_graph(
         return graph;
     }
     std::vector<LocalGraph> local(static_cast<std::size_t>(batch.structures));
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(detail::resolved_thread_count(num_threads))
-#endif
-    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
-        if (control && control->cancelled()) {
-            continue;
-        }
-        local[static_cast<std::size_t>(structure)] = build_structure_graph(
-            batch, structure, cutoff, control, num_threads, include_boundary,
-            use_scaled_periodic_images, store_shifts);
-    }
-    if (control && control->cancelled()) {
-        throw CancelledError();
-    }
+    detail::run_captured_structures(
+        batch.structures,
+        detail::resolved_thread_count(num_threads),
+        control,
+        [&](std::int64_t structure) {
+            local[static_cast<std::size_t>(structure)] = build_structure_graph(
+                batch, structure, cutoff, control, num_threads, include_boundary,
+                use_scaled_periodic_images, store_shifts);
+        });
 
     for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
         const std::int64_t begin = batch.offsets[structure];

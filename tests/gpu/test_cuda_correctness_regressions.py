@@ -40,6 +40,19 @@ def _ewald_batch() -> StructureBatch:
     )
 
 
+def _atomic_mbtr_batch() -> StructureBatch:
+    return StructureBatch.from_ase(
+        [
+            Atoms(
+                numbers=[1],
+                positions=[[0.0, 0.0, 0.0]],
+                cell=np.diag([8.0, 8.0, 8.0]),
+                pbc=True,
+            )
+        ]
+    )
+
+
 @pytest.mark.gpu
 def test_cuda_ewald_fresh_context_matches_cpu() -> None:
     """Ewald's matrix and scratch slices must survive workspace allocation."""
@@ -103,6 +116,32 @@ def test_cuda_valle_oganov_rejects_more_than_64_species(
         )
     assert caught.value.code == "invalid_parameter"
     assert list(caught.value.path or ()) == ["parameters", "species"]
+
+
+@pytest.mark.gpu
+def test_cuda_valle_oganov_atomic_number_65_species_matches_cpu() -> None:
+    """Atomic geometry does not need the non-atomic species-count buffer."""
+
+    load_cuda_for_tests()
+    parameters = {
+        "species": list(range(1, 66)),
+        "geometry": {"function": "atomic_number"},
+        "n": 2,
+        "r_cut": 2.0,
+    }
+    batch = _atomic_mbtr_batch()
+    cpu = ValleOganov(**parameters, execution=ExecutionOptions(device="cpu", num_threads=1))
+    gpu = ValleOganov(**parameters, execution=ExecutionOptions(device="cuda"))
+    try:
+        expected = cpu.compute(batch).values
+        actual = gpu.compute(batch).values
+        assert expected.shape == actual.shape == (1, 130)
+        assert np.isfinite(expected).all()
+        assert np.isfinite(actual).all()
+        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+    finally:
+        cpu.close()
+        gpu.close()
 
 
 @pytest.mark.gpu

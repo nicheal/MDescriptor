@@ -267,8 +267,6 @@ def _global_valle_oganov_non_atomic(name: str, options: Mapping[str, Any]) -> bo
         normalization = "valle_oganov" if name == "ValleOganov" else "none"
     if normalization != "valle_oganov":
         return False
-    if name == "ValleOganov":
-        return True
     geometry = options.get("geometry")
     if not isinstance(geometry, Mapping):
         geometry = {}

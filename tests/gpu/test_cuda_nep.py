@@ -217,3 +217,24 @@ def test_cuda_nep_isolated_batch_matches_cpu() -> None:
     finally:
         cpu.close()
         gpu.close()
+
+
+@pytest.mark.gpu
+@pytest.mark.model
+def test_cuda_nep_result_survives_reuse_and_close() -> None:
+    """NEP values remain valid after the backend reuses and releases its context."""
+
+    load_cuda_for_tests()
+    descriptor = NEP(model=NEP_MODEL, execution=ExecutionOptions(device="cuda"))
+    first_batch = _mixed_periodic_isolated_batch()
+    second_batch = _isolated_batch()
+    try:
+        first = descriptor.compute(first_batch)
+        snapshot = np.asarray(first.values).copy()
+        second = descriptor.compute(second_batch)
+        assert second.values.shape == first.values.shape
+        np.testing.assert_array_equal(first.values, snapshot)
+    finally:
+        descriptor.close()
+
+    np.testing.assert_array_equal(first.values, snapshot)

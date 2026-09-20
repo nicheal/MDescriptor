@@ -503,9 +503,8 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             }
             device_graph_.build_nep(
                 *context_, *compute_batch, compute_view, cutoff);
-            const auto computed = compute_nep(
+            values = compute_nep(
                 *context_, *compute_batch, device_graph_, *nep_model_);
-            values = computed;
         }
         check_cancelled(control);
         for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {

@@ -100,6 +100,13 @@ def test_conditional_cuda_species_limit_does_not_restrict_other_paths():
             normalization="none",
             execution=_cuda(),
         ),
+        ValleOganov(
+            species=list(range(1, 66)),
+            geometry={"function": "atomic_number"},
+            n=2,
+            r_cut=2.0,
+            execution=_cuda(),
+        ),
         LMBTR(
             species=list(range(1, 66)),
             normalization="valle_oganov",
@@ -155,6 +162,22 @@ def test_cpu_keeps_wider_matrix_angular_and_species_ranges():
     finally:
         for descriptor, _ in cases:
             descriptor.close()
+
+
+def test_valle_oganov_atomic_geometry_keeps_the_wider_species_range():
+    parameters = {
+        "species": list(range(1, 66)),
+        "geometry": {"function": "atomic_number"},
+        "n": 2,
+        "r_cut": 2.0,
+    }
+    descriptor = ValleOganov(**parameters)
+    try:
+        result = descriptor.compute(_batch())
+        assert result.values.shape == (1, 130)
+        assert np.isfinite(result.values).all()
+    finally:
+        descriptor.close()
 
 
 def test_device_limits_are_static_gui_metadata():
