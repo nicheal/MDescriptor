@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from tests._cuda import load_cuda_for_tests
 
-from mdescriptor import ComputeControl, StructureBatch
+from mdescriptor import ComputeControl, ExecutionOptions, OutputOptions, StructureBatch
+from mdescriptor.descriptors import AtomicComposition
 
 
 def _module_path(module_name: str, environment_name: str) -> Path:
@@ -60,6 +61,17 @@ def _empty_batch() -> StructureBatch:
         np.zeros((2, 3), dtype=np.int32),
         np.asarray([0, 0, 0], dtype=np.int64),
         ("empty-0", "empty-1"),
+    )
+
+
+def _many_structure_batch(structures: int) -> StructureBatch:
+    return StructureBatch(
+        np.ones(structures, dtype=np.int32),
+        np.zeros((structures, 3), dtype=np.float64),
+        np.tile(np.eye(3, dtype=np.float64) * 20.0, (structures, 1, 1)),
+        np.zeros((structures, 3), dtype=np.int32),
+        np.arange(structures + 1, dtype=np.int64),
+        tuple(str(index) for index in range(structures)),
     )
 
 
@@ -163,3 +175,31 @@ def test_cuda_extended_output_empty_array_owns_its_shape() -> None:
         assert values.size == 0
     finally:
         backend.close()
+
+
+@pytest.mark.gpu
+def test_public_cuda_multiblock_result_survives_reuse_and_close() -> None:
+    """The public snapshot remains valid after combined CUDA blocks are reused."""
+
+    load_cuda_for_tests()
+    descriptor = AtomicComposition(
+        species=[1],
+        per_system=False,
+        output=OutputOptions(dtype="float32"),
+        execution=ExecutionOptions(device="cuda"),
+    )
+    first_batch = _many_structure_batch(33)
+    second_batch = _many_structure_batch(34)
+    try:
+        first = descriptor.compute(first_batch)
+        snapshot = np.asarray(first.values).copy()
+        assert snapshot.shape == (33, 1)
+        assert first.values.dtype == np.float32
+        assert first.values.flags.writeable is False
+        second = descriptor.compute(second_batch)
+        assert second.values.shape == (34, 1)
+    finally:
+        descriptor.close()
+
+    np.testing.assert_array_equal(first.values, snapshot)
+    np.testing.assert_array_equal(first.values, 1.0)

@@ -22,7 +22,11 @@ from .errors import (
     translate_backend_error,
 )
 from .input import StructureBatch
-from .result import DescriptorResult, pair_samples
+from .result import (
+    DescriptorResult,
+    _owned_dense_values,
+    pair_samples,
+)
 
 
 class BackendKernel(Protocol):
@@ -375,6 +379,29 @@ def _slice_structure_batch(batch: StructureBatch, start: int, stop: int) -> Stru
     return batch._slice_view(start, stop)
 
 
+def _combine_cuda_values(values: list[np.ndarray]) -> np.ndarray:
+    """Concatenate block matrices directly into one C-contiguous allocation."""
+
+    first = values[0]
+    if all(
+        value.ndim == 2 and value.shape[1] == first.shape[1]
+        for value in values
+    ):
+        try:
+            dtype = np.result_type(*values)
+            output = np.empty(
+                (sum(int(value.shape[0]) for value in values), int(first.shape[1])),
+                dtype=dtype,
+                order="C",
+            )
+            return np.concatenate(values, axis=0, out=output)
+        except (TypeError, ValueError):
+            # Preserve NumPy's established error/compatibility behavior for
+            # unusual dtypes whose ``out`` path cannot be used.
+            pass
+    return np.concatenate(values, axis=0)
+
+
 def _combine_cuda_block_results(results: list[Any]) -> Any:
     if not results:
         return {}
@@ -384,7 +411,19 @@ def _combine_cuda_block_results(results: list[Any]) -> Any:
         raise TypeError("CUDA backend returned inconsistent block results")
     first = dict(results[0])
     values = [np.asarray(result["values"]) for result in results]
-    first["values"] = np.concatenate(values, axis=0)
+    # Preallocate the final C matrix so F-order, strided, and mixed block
+    # inputs remain compatible without a second full layout-normalization
+    # copy.  The token is used only for this fresh internal allocation;
+    # arbitrary single-block/plugin mappings remain copy-isolated.
+    combined_values = _combine_cuda_values(values)
+    if (
+        combined_values.ndim == 2
+        and combined_values.flags.c_contiguous
+        and combined_values.flags.owndata
+    ):
+        first["values"] = _owned_dense_values(combined_values)
+    else:
+        first["values"] = combined_values
 
     if any("row_offsets" in result for result in results):
         combined_offsets = [0]

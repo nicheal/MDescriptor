@@ -286,25 +286,21 @@ __global__ void mbtr_normalize_kernel(
     const I32* atom_types,
     const double* cells,
     const I64* offsets,
-    const I64* atom_structures,
     int species_count,
     int geometry,
     int normalization,
     int grid_n,
-    bool local,
     I64 structures,
-    I64 atoms,
     I64 features,
     double* output) {
     const I64 row = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    const I64 rows = local ? atoms : structures;
-    if (row >= rows) return;
-    const I64 structure = local ? atom_structures[row] : row;
+    if (row >= structures) return;
+    const I64 structure = row;
     const int atom_count = static_cast<int>(offsets[structure + 1] - offsets[structure]);
     int species_counts[64]{};
     const bool needs_species_counts = normalization
         == mdescriptor::detail::mbtr::kNormalizationValleOganov
-        && !local && geometry != mbtr::kGeometryAtomicNumber;
+        && geometry != mbtr::kGeometryAtomicNumber;
     if (needs_species_counts && species_count <= 64) {
         for (I64 atom = offsets[structure]; atom < offsets[structure + 1]; ++atom) {
             const int type = atom_types[atom];
@@ -312,12 +308,12 @@ __global__ void mbtr_normalize_kernel(
         }
     }
     double volume = 0.0;
-    if (!local && geometry != mbtr::kGeometryAtomicNumber) {
+    if (geometry != mbtr::kGeometryAtomicNumber) {
         volume = cell_volume_device(cells + structure * 9);
     }
     normalize_mbtr_device(
         output + row * features, features, normalization, atom_count,
-        species_counts, species_count, volume, geometry, grid_n, local);
+        species_counts, species_count, volume, geometry, grid_n, false);
 }
 
 py::dict mbtr_config_option(const py::dict& options) {
@@ -502,9 +498,8 @@ py::dict compute_mbtr_descriptor(
             mbtr_normalize_kernel<<<static_cast<unsigned>((rows + block_size - 1) / block_size),
                 block_size, 0, context.stream()>>>(
                 d_atom_types.get(), batch.cells(), batch.offsets(),
-                nullptr,
-                species_count, geometry, normalization, grid_n, local,
-                batch.structures(), batch.atoms(), features, output);
+                species_count, geometry, normalization, grid_n,
+                batch.structures(), features, output);
             check_cuda(cudaGetLastError(), "CUDA MBTR normalization kernel launch failed");
         }
     }

@@ -39,6 +39,14 @@ class MDescriptorError(Exception):
         return result
 
 
+class _InputValidationError(ValueError):
+    """Internal input error that carries the field validated at the source."""
+
+    def __init__(self, message: str, path: tuple[str | int, ...]) -> None:
+        self.path = path
+        super().__init__(message)
+
+
 class DescriptorConfigError(MDescriptorError, ValueError):
     """A descriptor option or capability declaration is invalid."""
 

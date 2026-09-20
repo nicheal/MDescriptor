@@ -63,6 +63,36 @@ def _batch(*, permute_first: bool = False) -> StructureBatch:
             },
         ),
         (
+            MBTR,
+            {
+                "species": [1, 6, 8, 14],
+                "geometry": {"function": "atomic_number"},
+                "grid": {"min": 1.0, "max": 16.0, "n": 20, "sigma": 0.2},
+                "weighting": {"function": "unity"},
+                "normalization": "none",
+            },
+        ),
+        (
+            MBTR,
+            {
+                "species": [1, 6, 8, 14],
+                "geometry": {"function": "inverse_distance"},
+                "grid": {"min": 0.0, "max": 2.0, "n": 20, "sigma": 0.2},
+                "weighting": {"function": "inverse_square", "r_cut": 3.0},
+                "normalization": "none",
+            },
+        ),
+        (
+            MBTR,
+            {
+                "species": [1, 6, 8, 14],
+                "geometry": {"function": "cosine"},
+                "grid": {"min": -1.0, "max": 1.0, "n": 20, "sigma": 0.05},
+                "weighting": {"function": "smooth_cutoff", "r_cut": 3.0},
+                "normalization": "l2",
+            },
+        ),
+        (
             ValleOganov,
             {"species": [1, 6, 8, 14], "function": "angle", "n": 20, "sigma": 0.5, "r_cut": 3.0},
         ),

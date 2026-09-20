@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <stdexcept>
 
@@ -39,24 +40,95 @@ struct ExtendedAtom {
     Vec3 position;
 };
 
+void check_atom_index_range(std::int64_t atoms) {
+    if (atoms < 0 || atoms > std::numeric_limits<std::int32_t>::max()) {
+        throw std::invalid_argument("neighbor atom index exceeds int32 range");
+    }
+}
+
+std::int32_t checked_atom_index(std::int64_t atom) {
+    if (atom < 0 || atom > std::numeric_limits<std::int32_t>::max()) {
+        throw std::invalid_argument("neighbor atom index exceeds int32 range");
+    }
+    return static_cast<std::int32_t>(atom);
+}
+
+std::int32_t checked_atom_index(std::size_t atom) {
+    if (atom > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
+        throw std::invalid_argument("neighbor atom index exceeds int32 range");
+    }
+    return static_cast<std::int32_t>(atom);
+}
+
+int checked_grid_dimension(double range, double cutoff, int minimum) {
+    const double cells = range / cutoff;
+    if (!std::isfinite(range) || range < 0.0
+        || !std::isfinite(cells)
+        || cells > static_cast<double>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("neighbor cell-grid dimension exceeds integer range");
+    }
+    return std::max(minimum, static_cast<int>(cells));
+}
+
+std::size_t checked_cell_count(const std::array<int, 3>& dimensions) {
+    std::size_t count = 1;
+    for (const int dimension : dimensions) {
+        if (dimension < 1) {
+            throw std::invalid_argument("neighbor cell-grid dimension must be positive");
+        }
+        const auto factor = static_cast<std::size_t>(dimension);
+        if (count > std::numeric_limits<std::size_t>::max() / factor) {
+            throw std::invalid_argument("neighbor cell-grid is too large");
+        }
+        count *= factor;
+    }
+    if (count == std::numeric_limits<std::size_t>::max()) {
+        throw std::invalid_argument("neighbor cell-grid is too large");
+    }
+    return count;
+}
+
+int checked_periodic_bound(double bound) {
+    if (!std::isfinite(bound) || bound < 0.0
+        || bound > static_cast<double>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("periodic image range exceeds integer range");
+    }
+    return static_cast<int>(bound);
+}
+
+std::int32_t checked_image_shift(std::int64_t shift) {
+    if (shift < -std::numeric_limits<std::int32_t>::max()
+        || shift > std::numeric_limits<std::int32_t>::max()) {
+        throw std::invalid_argument("periodic image shift exceeds int32 range");
+    }
+    return static_cast<std::int32_t>(shift);
+}
+
 struct CellGrid {
     Vec3 minimum;
     Vec3 maximum;
     Vec3 spacing;
     std::array<int, 3> dimensions{1, 1, 1};
-    std::vector<std::int32_t> offsets;
+    std::vector<std::size_t> offsets;
     std::vector<std::int32_t> atoms;
 
-    int index(int x, int y, int z) const noexcept {
-        return x + dimensions[0] * (y + dimensions[1] * z);
+    std::size_t index(int x, int y, int z) const noexcept {
+        return static_cast<std::size_t>(x)
+            + static_cast<std::size_t>(dimensions[0]) * (
+                static_cast<std::size_t>(y)
+                + static_cast<std::size_t>(dimensions[1]) * static_cast<std::size_t>(z));
     }
 
     int coordinate(double value, int axis) const noexcept {
         const double origin = axis == 0 ? minimum.x : axis == 1 ? minimum.y : minimum.z;
         const double width = axis == 0 ? spacing.x : axis == 1 ? spacing.y : spacing.z;
         const int dimension = dimensions[axis];
-        const int cell = static_cast<int>((value - origin) / width);
-        return std::max(0, std::min(dimension - 1, cell));
+        const double scaled = (value - origin) / width;
+        if (!(scaled > 0.0)) return 0;
+        if (!std::isfinite(scaled) || scaled >= static_cast<double>(dimension)) {
+            return dimension - 1;
+        }
+        return static_cast<int>(scaled);
     }
 };
 
@@ -64,6 +136,9 @@ CellGrid build_grid(const std::vector<ExtendedAtom>& extended, double cutoff) {
     CellGrid grid;
     if (extended.empty()) {
         return grid;
+    }
+    if (extended.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
+        throw std::invalid_argument("neighbor extended atom index exceeds int32 range");
     }
     grid.minimum = grid.maximum = extended.front().position;
     for (const ExtendedAtom& atom : extended) {
@@ -88,34 +163,32 @@ CellGrid build_grid(const std::vector<ExtendedAtom>& extended, double cutoff) {
     };
     double* spacing[3] = {&grid.spacing.x, &grid.spacing.y, &grid.spacing.z};
     for (int axis = 0; axis < 3; ++axis) {
-        grid.dimensions[axis] = std::max(1, static_cast<int>(ranges[axis] / cutoff));
+        grid.dimensions[axis] = checked_grid_dimension(ranges[axis], cutoff, 1);
         *spacing[axis] = std::max(cutoff, ranges[axis] / grid.dimensions[axis]);
     }
 
-    const std::size_t cell_count = static_cast<std::size_t>(grid.dimensions[0])
-        * static_cast<std::size_t>(grid.dimensions[1])
-        * static_cast<std::size_t>(grid.dimensions[2]);
-    std::vector<std::int32_t> counts(cell_count, 0);
+    const std::size_t cell_count = checked_cell_count(grid.dimensions);
+    std::vector<std::size_t> counts(cell_count, 0);
     for (const ExtendedAtom& atom : extended) {
-        const int cell = grid.index(
+        const std::size_t cell = grid.index(
             grid.coordinate(atom.position.x, 0),
             grid.coordinate(atom.position.y, 1),
             grid.coordinate(atom.position.z, 2));
-        ++counts[static_cast<std::size_t>(cell)];
+        ++counts[cell];
     }
     grid.offsets.resize(cell_count + 1, 0);
     for (std::size_t cell = 0; cell < cell_count; ++cell) {
         grid.offsets[cell + 1] = grid.offsets[cell] + counts[cell];
     }
     grid.atoms.resize(extended.size());
-    std::vector<std::int32_t> fill(cell_count, 0);
+    std::vector<std::size_t> fill(cell_count, 0);
     for (std::size_t index = 0; index < extended.size(); ++index) {
         const ExtendedAtom& atom = extended[index];
-        const int cell = grid.index(
+        const std::size_t cell = grid.index(
             grid.coordinate(atom.position.x, 0),
             grid.coordinate(atom.position.y, 1),
             grid.coordinate(atom.position.z, 2));
-        grid.atoms[static_cast<std::size_t>(grid.offsets[cell] + fill[cell]++)] = static_cast<std::int32_t>(index);
+        grid.atoms[grid.offsets[cell] + fill[cell]++] = checked_atom_index(index);
     }
     return grid;
 }
@@ -155,7 +228,11 @@ LocalGraph build_compact_periodic_graph(
     bool include_boundary) {
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
+    if (begin < 0 || end < begin || end > batch.atoms) {
+        throw std::invalid_argument("invalid neighbor atom range");
+    }
     const std::int64_t atom_count = end - begin;
+    check_atom_index_range(atom_count);
     const double lengths[3] = {
         cell.a[0][0], cell.a[1][1], cell.a[2][2],
     };
@@ -184,37 +261,33 @@ LocalGraph build_compact_periodic_graph(
     CellGrid grid;
     grid.minimum = {0.0, 0.0, 0.0};
     for (int axis = 0; axis < 3; ++axis) {
-        grid.dimensions[axis] = std::max(
-            2, static_cast<int>(lengths[axis] / cutoff));
+        grid.dimensions[axis] = checked_grid_dimension(lengths[axis], cutoff, 2);
         double* spacing = axis == 0 ? &grid.spacing.x
             : axis == 1 ? &grid.spacing.y : &grid.spacing.z;
         *spacing = lengths[axis] / grid.dimensions[axis];
     }
-    const std::size_t cell_count = static_cast<std::size_t>(grid.dimensions[0])
-        * static_cast<std::size_t>(grid.dimensions[1])
-        * static_cast<std::size_t>(grid.dimensions[2]);
-    std::vector<std::int32_t> counts(cell_count, 0);
+    const std::size_t cell_count = checked_cell_count(grid.dimensions);
+    std::vector<std::size_t> counts(cell_count, 0);
     for (const Vec3& atom : wrapped_positions) {
-        const int cell = grid.index(
+        const std::size_t cell = grid.index(
             grid.coordinate(atom.x, 0),
             grid.coordinate(atom.y, 1),
             grid.coordinate(atom.z, 2));
-        ++counts[static_cast<std::size_t>(cell)];
+        ++counts[cell];
     }
     grid.offsets.resize(cell_count + 1, 0);
     for (std::size_t cell = 0; cell < cell_count; ++cell) {
         grid.offsets[cell + 1] = grid.offsets[cell] + counts[cell];
     }
     grid.atoms.resize(static_cast<std::size_t>(atom_count));
-    std::vector<std::int32_t> fill(cell_count, 0);
+    std::vector<std::size_t> fill(cell_count, 0);
     for (std::int64_t local = 0; local < atom_count; ++local) {
         const Vec3& atom = wrapped_positions[static_cast<std::size_t>(local)];
-        const int cell = grid.index(
+        const std::size_t cell = grid.index(
             grid.coordinate(atom.x, 0),
             grid.coordinate(atom.y, 1),
             grid.coordinate(atom.z, 2));
-        grid.atoms[static_cast<std::size_t>(grid.offsets[cell] + fill[cell]++)] =
-            static_cast<std::int32_t>(local);
+        grid.atoms[grid.offsets[cell] + fill[cell]++] = checked_atom_index(local);
     }
 
     const double cutoff2 = cutoff * cutoff;
@@ -256,8 +329,8 @@ LocalGraph build_compact_periodic_graph(
                         x -= grid.dimensions[0];
                         x_shift = 1;
                     }
-                    const int cell = grid.index(x, y, z);
-                    for (std::int32_t offset = grid.offsets[cell];
+                    const std::size_t cell = grid.index(x, y, z);
+                    for (std::size_t offset = grid.offsets[cell];
                          offset < grid.offsets[cell + 1]; ++offset) {
                         const std::int32_t neighbor = grid.atoms[offset];
                         Vec3 displacement = wrapped_positions[
@@ -282,7 +355,7 @@ LocalGraph build_compact_periodic_graph(
             visit_candidates(local, [&](std::int32_t neighbor, const Vec3& displacement) {
                 const double distance2 = norm2(displacement);
                 if (!within_cutoff(distance2)) return;
-                result.atoms.push_back(begin + neighbor);
+                result.atoms.push_back(checked_atom_index(begin + neighbor));
                 result.displacements.push_back(displacement.x);
                 result.displacements.push_back(displacement.y);
                 result.displacements.push_back(displacement.z);
@@ -327,7 +400,7 @@ LocalGraph build_compact_periodic_graph(
         visit_candidates(local, [&](std::int32_t neighbor, const Vec3& displacement) {
             const double distance2 = norm2(displacement);
             if (!within_cutoff(distance2)) return;
-            result.atoms[static_cast<std::size_t>(output)] = begin + neighbor;
+            result.atoms[static_cast<std::size_t>(output)] = checked_atom_index(begin + neighbor);
             result.displacements[static_cast<std::size_t>(output) * 3 + 0] = displacement.x;
             result.displacements[static_cast<std::size_t>(output) * 3 + 1] = displacement.y;
             result.displacements[static_cast<std::size_t>(output) * 3 + 2] = displacement.z;
@@ -358,7 +431,11 @@ LocalGraph build_structure_graph(
     bool store_shifts) {
     const std::int64_t begin = batch.offsets[structure];
     const std::int64_t end = batch.offsets[structure + 1];
+    if (begin < 0 || end < begin || end > batch.atoms) {
+        throw std::invalid_argument("invalid neighbor atom range");
+    }
     const std::int64_t atom_count = end - begin;
+    check_atom_index_range(atom_count);
     const bool periodic = batch.pbc[structure * 3 + 0] == 1
         && batch.pbc[structure * 3 + 1] == 1
         && batch.pbc[structure * 3 + 2] == 1;
@@ -376,38 +453,44 @@ LocalGraph build_structure_graph(
             batch, structure, cell, cutoff, control, num_threads, include_boundary);
     }
     Mat3 inv;
-    double bounds[3] = {0.0, 0.0, 0.0};
+    int bounds[3] = {0, 0, 0};
     if (periodic) {
         inv = inverse(cell);
-        bounds[0] = std::floor(cutoff * std::sqrt(
+        bounds[0] = checked_periodic_bound(std::floor(cutoff * std::sqrt(
             inv.a[0][0] * inv.a[0][0] + inv.a[1][0] * inv.a[1][0]
-            + inv.a[2][0] * inv.a[2][0]) + 1.0);
-        bounds[1] = std::floor(cutoff * std::sqrt(
+            + inv.a[2][0] * inv.a[2][0]) + 1.0));
+        bounds[1] = checked_periodic_bound(std::floor(cutoff * std::sqrt(
             inv.a[0][1] * inv.a[0][1] + inv.a[1][1] * inv.a[1][1]
-            + inv.a[2][1] * inv.a[2][1]) + 1.0);
-        bounds[2] = std::floor(cutoff * std::sqrt(
+            + inv.a[2][1] * inv.a[2][1]) + 1.0));
+        bounds[2] = checked_periodic_bound(std::floor(cutoff * std::sqrt(
             inv.a[0][2] * inv.a[0][2] + inv.a[1][2] * inv.a[1][2]
-            + inv.a[2][2] * inv.a[2][2]) + 1.0);
+            + inv.a[2][2] * inv.a[2][2]) + 1.0));
     }
 
     std::vector<ExtendedAtom> extended;
-    auto append_cell = [&](int n0, int n1, int n2) {
-        const Vec3 shift = n0 * row(cell, 0) + n1 * row(cell, 1) + n2 * row(cell, 2);
+    auto append_cell = [&](std::int64_t n0, std::int64_t n1, std::int64_t n2) {
+        const Vec3 shift = static_cast<double>(n0) * row(cell, 0)
+            + static_cast<double>(n1) * row(cell, 1)
+            + static_cast<double>(n2) * row(cell, 2);
         for (std::int64_t atom = begin; atom < end; ++atom) {
             const Vec3 original = position(batch, atom);
             const bool is_original_cell = n0 == 0 && n1 == 0 && n2 == 0;
             Vec3 image_position = original + shift;
-            std::int32_t image_shift[3] = {n0, n1, n2};
+            std::int32_t image_shift[3] = {
+                checked_image_shift(n0),
+                checked_image_shift(n1),
+                checked_image_shift(n2),
+            };
             if (use_scaled_periodic_images && !is_original_cell) {
                 const Vec3 fractional = fractional_position(original, inv)
                     - Vec3{static_cast<double>(n0), static_cast<double>(n1), static_cast<double>(n2)};
                 image_position = cartesian_position(fractional, cell);
-                image_shift[0] = -n0;
-                image_shift[1] = -n1;
-                image_shift[2] = -n2;
+                image_shift[0] = checked_image_shift(-n0);
+                image_shift[1] = checked_image_shift(-n1);
+                image_shift[2] = checked_image_shift(-n2);
             }
             extended.push_back({
-                static_cast<std::int32_t>(atom),
+                checked_atom_index(atom),
                 {image_shift[0], image_shift[1], image_shift[2]},
                 image_position,
             });
@@ -415,13 +498,16 @@ LocalGraph build_structure_graph(
     };
     if (!periodic) {
         for (std::int64_t atom = begin; atom < end; ++atom) {
-            extended.push_back({static_cast<std::int32_t>(atom), {0, 0, 0}, position(batch, atom)});
+            extended.push_back({checked_atom_index(atom), {0, 0, 0}, position(batch, atom)});
         }
     } else if (use_scaled_periodic_images) {
         append_cell(0, 0, 0);
-        for (int n0 = -static_cast<int>(bounds[0]); n0 <= static_cast<int>(bounds[0]); ++n0) {
-            for (int n1 = -static_cast<int>(bounds[1]); n1 <= static_cast<int>(bounds[1]); ++n1) {
-                for (int n2 = -static_cast<int>(bounds[2]); n2 <= static_cast<int>(bounds[2]); ++n2) {
+        for (std::int64_t n0 = -static_cast<std::int64_t>(bounds[0]);
+             n0 <= static_cast<std::int64_t>(bounds[0]); ++n0) {
+            for (std::int64_t n1 = -static_cast<std::int64_t>(bounds[1]);
+                 n1 <= static_cast<std::int64_t>(bounds[1]); ++n1) {
+                for (std::int64_t n2 = -static_cast<std::int64_t>(bounds[2]);
+                     n2 <= static_cast<std::int64_t>(bounds[2]); ++n2) {
                     if (n0 == 0 && n1 == 0 && n2 == 0) {
                         continue;
                     }
@@ -430,9 +516,12 @@ LocalGraph build_structure_graph(
             }
         }
     } else {
-        for (int n0 = -static_cast<int>(bounds[0]); n0 <= static_cast<int>(bounds[0]); ++n0) {
-            for (int n1 = -static_cast<int>(bounds[1]); n1 <= static_cast<int>(bounds[1]); ++n1) {
-                for (int n2 = -static_cast<int>(bounds[2]); n2 <= static_cast<int>(bounds[2]); ++n2) {
+        for (std::int64_t n0 = -static_cast<std::int64_t>(bounds[0]);
+             n0 <= static_cast<std::int64_t>(bounds[0]); ++n0) {
+            for (std::int64_t n1 = -static_cast<std::int64_t>(bounds[1]);
+                 n1 <= static_cast<std::int64_t>(bounds[1]); ++n1) {
+                for (std::int64_t n2 = -static_cast<std::int64_t>(bounds[2]);
+                     n2 <= static_cast<std::int64_t>(bounds[2]); ++n2) {
                     append_cell(n0, n1, n2);
                 }
             }
@@ -473,8 +562,8 @@ LocalGraph build_structure_graph(
         for (int z = std::max(0, iz - 1); z <= std::min(grid.dimensions[2] - 1, iz + 1); ++z) {
             for (int y = std::max(0, iy - 1); y <= std::min(grid.dimensions[1] - 1, iy + 1); ++y) {
                 for (int x = std::max(0, ix - 1); x <= std::min(grid.dimensions[0] - 1, ix + 1); ++x) {
-                    const int cell_index = grid.index(x, y, z);
-                    for (std::int32_t offset = grid.offsets[cell_index];
+                    const std::size_t cell_index = grid.index(x, y, z);
+                    for (std::size_t offset = grid.offsets[cell_index];
                          offset < grid.offsets[cell_index + 1]; ++offset) {
                         const ExtendedAtom& neighbor = extended[static_cast<std::size_t>(grid.atoms[offset])];
                         visit(neighbor, neighbor.position - center_position);
@@ -622,6 +711,7 @@ NeighborGraph build_neighbor_graph(
     if (!std::isfinite(cutoff) || cutoff <= 0.0) {
         throw std::invalid_argument("neighbor cutoff must be finite and positive");
     }
+    check_atom_index_range(batch.atoms);
     NeighborGraph graph;
     graph.offsets_.resize(static_cast<std::size_t>(batch.atoms) + 1, 0);
     if (batch.structures == 0) {

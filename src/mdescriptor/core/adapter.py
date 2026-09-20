@@ -8,6 +8,8 @@ from copy import copy
 from os import PathLike, fspath
 from typing import Any, ClassVar, cast
 
+import numpy as np
+
 from ..registry.info import (
     LEGACY_PARAMETER_ALIASES,
     _validate_parameter_value,
@@ -29,7 +31,13 @@ from .options import (
     ExecutionOptions,
     OutputOptions,
 )
-from .result import DescriptorResult, _json_safe, _metadata_v1, format_values
+from .result import (
+    DescriptorResult,
+    _json_safe,
+    _metadata_v1,
+    _owned_dense_values,
+    format_values,
+)
 
 # The registry is the canonical declaration of constructor options; kernels
 # remain private implementation details, so their signatures are never used as
@@ -337,6 +345,19 @@ def _apply_output(result: DescriptorResult, options: OutputOptions) -> Descripto
     output = {"dtype": options.dtype, "sparse": options.sparse}
     if values is result.values and result.metadata.get("output") == output:
         return result
+    if (
+        not options.sparse
+        and values is not result.values
+        and isinstance(values, np.ndarray)
+        and values.ndim == 2
+        and values.flags.c_contiguous
+        and values.flags.owndata
+    ):
+        # ``format_values`` has just produced the internal dense output.  The
+        # private token lets ``_replace_output`` retain it without a second
+        # full matrix copy; public DescriptorResult construction still copies
+        # every ordinary caller-provided array.
+        values = _owned_dense_values(values)
     return result._replace_output(values, output)
 
 
@@ -891,7 +912,7 @@ class DescriptorAdapter(Descriptor):
             raise
         except ValueError as exc:
             raise DescriptorInputError(
-                str(exc), path=_input_error_path(str(exc))
+                str(exc), path=_input_error_path(exc)
             ) from exc
         return self._adapt_result(raw_result)
 

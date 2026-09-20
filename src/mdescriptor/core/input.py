@@ -9,6 +9,8 @@ from typing import Any, TypeAlias
 
 import numpy as np
 
+from .errors import _InputValidationError
+
 # Per-frame fields handed to the shared packer: ``(numbers, positions, cell,
 # pbc, id, spins, charge_spin)``.  ``None`` marks an absent optional spin field.
 _FrameFields = tuple[Any, Any, Any, Any, Any, Any, Any]
@@ -58,40 +60,52 @@ class StructureBatch:
         )
 
         if numbers.ndim != 1 or np.any(numbers <= 0):
-            raise ValueError("numbers must be a one-dimensional array of positive atomic numbers")
+            raise _input_error(
+                "numbers must be a one-dimensional array of positive atomic numbers",
+                "numbers",
+            )
         if positions.shape != (len(numbers), 3):
-            raise ValueError("positions must have shape (total_atoms, 3)")
+            raise _input_error("positions must have shape (total_atoms, 3)", "positions")
         if cells.ndim != 3 or cells.shape[1:] != (3, 3):
-            raise ValueError("cells must have shape (structures, 3, 3)")
+            raise _input_error("cells must have shape (structures, 3, 3)", "cells")
         if pbc.ndim != 2 or pbc.shape[1:] != (3,):
-            raise ValueError("pbc must have shape (structures, 3)")
+            raise _input_error("pbc must have shape (structures, 3)", "pbc")
         if offsets.ndim != 1 or len(offsets) != len(ids) + 1:
-            raise ValueError("offsets must have one entry per structure plus a sentinel")
+            raise _input_error(
+                "offsets must have one entry per structure plus a sentinel", "offsets"
+            )
         if len(cells) != len(ids) or len(pbc) != len(ids):
-            raise ValueError("structure arrays and ids have inconsistent lengths")
+            raise _input_error(
+                "structure arrays and ids have inconsistent lengths", "structures"
+            )
         if len(offsets) and (offsets[0] != 0 or offsets[-1] != len(numbers)):
-            raise ValueError("offsets must start at zero and end at total_atoms")
+            raise _input_error("offsets must start at zero and end at total_atoms", "offsets")
         if np.any(offsets[1:] < offsets[:-1]):
-            raise ValueError("offsets must be monotonic")
-        if not np.isfinite(positions).all() or not np.isfinite(cells).all():
-            raise ValueError("positions and cells must be finite")
+            raise _input_error("offsets must be monotonic", "offsets")
+        if not np.isfinite(positions).all():
+            raise _input_error("positions and cells must be finite", "positions")
+        if not np.isfinite(cells).all():
+            raise _input_error("positions and cells must be finite", "cells")
         if np.any((pbc != 0) & (pbc != 1)):
-            raise ValueError("pbc must contain only 0 or 1")
+            raise _input_error("pbc must contain only 0 or 1", "pbc")
         for index, matrix in enumerate(cells):
             flags = pbc[index]
             if bool(np.all(flags == 1)):
                 if abs(float(np.linalg.det(matrix))) < 1e-14:
-                    raise ValueError("periodic cells must be nonsingular")
+                    raise _input_error("periodic cells must be nonsingular", "cells")
             elif not bool(np.all(flags == 0)):
-                raise ValueError("mixed periodicity is not supported; use all-zero or all-one pbc")
+                raise _input_error(
+                    "mixed periodicity is not supported; use all-zero or all-one pbc",
+                    "pbc",
+                )
         if spins is not None and (spins.ndim != 2 or spins.shape != (len(numbers), 3)):
-            raise ValueError("spins must have shape (total_atoms, 3)")
+            raise _input_error("spins must have shape (total_atoms, 3)", "spins")
         if charge_spin is not None and (charge_spin.ndim != 2 or charge_spin.shape != (len(ids), 2)):
-            raise ValueError("charge_spin must have shape (structures, 2)")
+            raise _input_error("charge_spin must have shape (structures, 2)", "charge_spin")
         if spins is not None and not np.isfinite(spins).all():
-            raise ValueError("spins must be finite")
+            raise _input_error("spins must be finite", "spins")
         if charge_spin is not None and not np.isfinite(charge_spin).all():
-            raise ValueError("charge_spin must be finite")
+            raise _input_error("charge_spin must be finite", "charge_spin")
 
         for name, value in {
             "numbers": numbers,
@@ -169,7 +183,7 @@ class StructureBatch:
         else:
             structures = list(structures)
         if ids is not None and len(ids) != len(structures):
-            raise ValueError("ids must have one entry per structure")
+            raise _input_error("ids must have one entry per structure", "ids")
 
         def read_ase_frame(atoms: Any, index: int) -> _FrameFields:
             if not isinstance(atoms, Atoms):
@@ -228,21 +242,26 @@ class StructureBatch:
             frame_values = list(frames)
 
         def read_frame_frame(frame: Any, index: int) -> _FrameFields:
-            numbers = np.asarray(_frame_field(frame, "numbers", index=index))
+            numbers = _frame_array(frame, "numbers", index=index)
+            assert numbers is not None
             try:
                 len(numbers)
             except TypeError as exc:
-                raise ValueError(f"frame {index} numbers must be one-dimensional") from exc
-            spin = _frame_field(frame, "spins", aliases=("spin",), default=None)
-            charge_spin = _frame_field(frame, "charge_spin", default=None)
+                raise _input_error(
+                    f"frame {index} numbers must be one-dimensional", "numbers"
+                ) from exc
+            spin = _frame_array(
+                frame, "spins", aliases=("spin",), index=index, default=None
+            )
+            charge_spin = _frame_array(frame, "charge_spin", index=index, default=None)
             return (
                 numbers,
-                np.asarray(_frame_field(frame, "positions", index=index)),
-                np.asarray(_frame_field(frame, "cell", aliases=("cells",), index=index)),
-                np.asarray(_frame_field(frame, "pbc", index=index)),
+                _frame_array(frame, "positions", index=index),
+                _frame_array(frame, "cell", aliases=("cells",), index=index),
+                _frame_array(frame, "pbc", index=index),
                 _frame_field(frame, "id", index=index),
-                None if spin is None else np.asarray(spin),
-                None if charge_spin is None else np.asarray(charge_spin),
+                spin,
+                charge_spin,
             )
 
         return _pack_frames(frame_values, read_frame_frame)
@@ -292,16 +311,24 @@ def _pack_frames(
         offsets.append(offsets[-1] + len(numbers))
 
     return StructureBatch(
-        np.concatenate(number_parts) if number_parts else np.empty(0, dtype=np.int32),
-        np.concatenate(position_parts, axis=0)
+        _join_frame_arrays(number_parts, "numbers")
+        if number_parts
+        else np.empty(0, dtype=np.int32),
+        _join_frame_arrays(position_parts, "positions")
         if position_parts
         else np.empty((0, 3), dtype=np.float64),
-        np.stack(cell_parts) if cell_parts else np.empty((0, 3, 3), dtype=np.float64),
-        np.stack(pbc_parts) if pbc_parts else np.empty((0, 3), dtype=np.int32),
+        _join_frame_arrays(cell_parts, "cells", stack=True)
+        if cell_parts
+        else np.empty((0, 3, 3), dtype=np.float64),
+        _join_frame_arrays(pbc_parts, "pbc", stack=True)
+        if pbc_parts
+        else np.empty((0, 3), dtype=np.int32),
         np.asarray(offsets),
         tuple(generated_ids),
-        np.concatenate(spin_parts, axis=0) if have_spins else None,
-        np.stack(frame_charge_spin) if have_charge_spin else None,
+        _join_frame_arrays(spin_parts, "spins") if have_spins else None,
+        _join_frame_arrays(frame_charge_spin, "charge_spin", stack=True)
+        if have_charge_spin
+        else None,
     )
 
 
@@ -323,9 +350,9 @@ def _array_snapshot(value: Any, dtype: Any, name: str) -> np.ndarray:
     try:
         array = np.array(value, dtype=dtype, order="C", copy=True)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be a numeric array") from exc
+        raise _input_error(f"{name} must be a numeric array", name) from exc
     if not np.isfinite(array).all():
-        raise ValueError(f"{name} must be finite")
+        raise _input_error(f"{name} must be finite", name)
     return array
 
 
@@ -353,7 +380,39 @@ def _frame_field(
     if default is not ...:
         return default
     location = "" if index is None else f" {index}"
-    raise ValueError(f"frame{location} is missing required field {name!r}")
+    field = {"cell": "cells", "id": "ids"}.get(name, name)
+    raise _input_error(
+        f"frame{location} is missing required field {name!r}", field
+    )
+
+
+def _frame_array(
+    frame: Any,
+    name: str,
+    *,
+    index: int,
+    aliases: Sequence[str] = (),
+    default: Any = ...,
+) -> np.ndarray | None:
+    value = _frame_field(
+        frame, name, index=index, aliases=aliases, default=default
+    )
+    if value is None and default is None:
+        return None
+    field = "cells" if name == "cell" else name
+    try:
+        return np.asarray(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise _input_error(f"frame {index} {field} must be an array", field) from exc
+
+
+def _join_frame_arrays(
+    parts: list[np.ndarray], name: str, *, stack: bool = False
+) -> np.ndarray:
+    try:
+        return np.stack(parts) if stack else np.concatenate(parts, axis=0)
+    except (TypeError, ValueError) as exc:
+        raise _input_error(str(exc), name) from exc
 
 
 def _integer_snapshot(
@@ -366,24 +425,28 @@ def _integer_snapshot(
     try:
         raw = np.asarray(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be an integer array") from exc
+        raise _input_error(f"{name} must be an integer array", name) from exc
     if raw.dtype.kind == "b":
         if not allow_bool:
-            raise ValueError(f"{name} must contain integers, not booleans")
+            raise _input_error(f"{name} must contain integers, not booleans", name)
     elif raw.dtype.kind in "iu":
         pass
     elif raw.dtype.kind == "f":
         if not np.isfinite(raw).all() or not np.equal(raw, np.trunc(raw)).all():
-            raise ValueError(f"{name} must contain finite integers")
+            raise _input_error(f"{name} must contain finite integers", name)
     else:
-        raise ValueError(f"{name} must contain integers")
+        raise _input_error(f"{name} must contain integers", name)
 
     limits = np.iinfo(dtype)
     if raw.size and (np.any(raw < limits.min) or np.any(raw > limits.max)):
-        raise ValueError(f"{name} contains values outside {dtype} range")
+        raise _input_error(f"{name} contains values outside {dtype} range", name)
     try:
         return np.array(raw, dtype=dtype, order="C", copy=True)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be an integer array") from exc
+        raise _input_error(f"{name} must be an integer array", name) from exc
+
+
+def _input_error(message: str, field: str) -> _InputValidationError:
+    return _InputValidationError(message, ("input", field))
 
 __all__ = ["StructureBatch", "StructureInput", "coerce_batch"]

@@ -7,7 +7,12 @@ import pytest
 from ase import Atoms
 from tests._cuda import load_cuda_for_tests
 
-from mdescriptor import ExecutionOptions, MDescriptorError, StructureBatch
+from mdescriptor import (
+    DescriptorConfigError,
+    ExecutionOptions,
+    MDescriptorError,
+    StructureBatch,
+)
 from mdescriptor.descriptors import MBTR, MTP, EwaldSumMatrix, ValleOganov
 
 
@@ -87,9 +92,50 @@ def test_cuda_ewald_fresh_context_matches_cpu() -> None:
 def test_cuda_valle_oganov_rejects_more_than_64_species(
     descriptor_type, parameters: dict[str, object]
 ) -> None:
-    """The fixed per-thread normalization buffer must reject species 65."""
+    """The public schema rejects species 65 before backend construction."""
 
     load_cuda_for_tests()
+    with pytest.raises(DescriptorConfigError) as caught:
+        descriptor_type(
+            species=list(range(1, 66)),
+            **parameters,
+            execution=ExecutionOptions(device="cuda"),
+        )
+    assert caught.value.code == "invalid_parameter"
+    assert list(caught.value.path or ()) == ["parameters", "species"]
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize(
+    ("descriptor_name", "options"),
+    [
+        (
+            "ValleOganov",
+            {"function": "distance", "n": 4, "r_cut": 3.0},
+        ),
+        (
+            "ValleOganov",
+            {"function": "angle", "n": 4, "r_cut": 3.0},
+        ),
+        (
+            "MBTR",
+            {
+                "geometry": {"function": "distance"},
+                "grid": {"min": 0.0, "max": 3.0, "n": 4, "sigma": 0.1},
+                "weighting": {"function": "inverse_square", "r_cut": 3.0},
+                "normalization": "valle_oganov",
+            },
+        ),
+    ],
+)
+def test_cuda_native_valle_oganov_guard_rejects_more_than_64_species(
+    descriptor_name: str, options: dict[str, object]
+) -> None:
+    """The native guard remains active behind the public schema."""
+
+    load_cuda_for_tests()
+    from mdescriptor._cuda import CudaBackend
+
     batch = StructureBatch.from_ase(
         [
             Atoms(
@@ -100,17 +146,15 @@ def test_cuda_valle_oganov_rejects_more_than_64_species(
             )
         ]
     )
-    descriptor = descriptor_type(
-        species=list(range(1, 66)),
-        **parameters,
-        execution=ExecutionOptions(device="cuda"),
+    backend = CudaBackend(
+        descriptor_name,
+        {"species": list(range(1, 66)), **options},
     )
     try:
-        with pytest.raises(MDescriptorError) as caught:
-            descriptor.compute(batch)
-        assert caught.value.code == "backend_error"
+        with pytest.raises(ValueError, match="at most 64 species"):
+            backend.compute(batch)
     finally:
-        descriptor.close()
+        backend.close()
 
 
 @pytest.mark.gpu

@@ -68,14 +68,17 @@ def _load_extensions() -> tuple[Path, Path]:
     return native_path, cuda_path
 
 
-def _batch():
+def _batch(species_count: int, actual_species_count: int):
     from mdescriptor import StructureBatch
 
     structures = 8
     atoms_per_structure = 192
     rng = np.random.default_rng(20260920)
     cell = np.eye(3, dtype=np.float64) * 18.0
-    numbers = np.resize(np.asarray([1, 6, 8, 14], dtype=np.int32), atoms_per_structure)
+    all_species = np.asarray([1, 6, 8, 14, 16, 17, 29, 47], dtype=np.int32)
+    if not 1 <= actual_species_count <= species_count <= len(all_species):
+        raise ValueError("actual species must be within the declared species list")
+    numbers = np.resize(all_species[:actual_species_count], atoms_per_structure)
     positions = np.concatenate(
         [rng.random((atoms_per_structure, 3)) * 18.0 for _ in range(structures)]
     )
@@ -89,21 +92,22 @@ def _batch():
     )
 
 
-def _cases():
+def _cases(species_count: int):
     from mdescriptor import ExecutionOptions
     from mdescriptor.descriptors import LMBTR, MBTR, ValleOganov
 
+    species = [1, 6, 8, 14, 16, 17, 29, 47][:species_count]
     serial = ExecutionOptions(device="cpu", num_threads=1)
     cuda = ExecutionOptions(device="cuda")
     common_distance = {
-        "species": [1, 6, 8, 14],
+        "species": species,
         "geometry": {"function": "distance"},
         "grid": {"min": 0.0, "max": 6.0, "n": 24, "sigma": 0.2},
         "weighting": {"function": "smooth_cutoff", "r_cut": 4.0, "sharpness": 2.0},
         "normalization": "none",
     }
     common_angle = {
-        "species": [1, 6, 8, 14],
+        "species": species,
         "geometry": {"function": "angle"},
         "grid": {"min": 0.0, "max": 180.0, "n": 24, "sigma": 0.2},
         "weighting": {"function": "smooth_cutoff", "r_cut": 4.0, "sharpness": 2.0},
@@ -115,11 +119,11 @@ def _cases():
         ("LMBTR-distance", LMBTR, common_distance),
         ("LMBTR-angle", LMBTR, common_angle),
         ("ValleOganov-distance", ValleOganov, {
-            "species": [1, 6, 8, 14], "function": "distance", "n": 24,
+            "species": species, "function": "distance", "n": 24,
             "sigma": 0.2, "r_cut": 4.0,
         }),
         ("ValleOganov-angle", ValleOganov, {
-            "species": [1, 6, 8, 14], "function": "angle", "n": 24,
+            "species": species, "function": "angle", "n": 24,
             "sigma": 0.2, "r_cut": 4.0,
         }),
     ], serial, cuda
@@ -147,43 +151,58 @@ def _measure(descriptor, batch, warmup: int, repeat: int):
 
 def main() -> None:
     native_path, cuda_path = _load_extensions()
-    batch = _batch()
-    cases, serial_options, cuda_options = _cases()
+    species_counts = tuple(
+        int(value) for value in os.environ["MDESCRIPTOR_BENCH_SPECIES_COUNTS"].split(",")
+    )
+    sparse_at = int(os.environ["MDESCRIPTOR_BENCH_SPARSE_AT"])
+    sparse_actual = int(os.environ["MDESCRIPTOR_BENCH_SPARSE_ACTUAL"])
     warmup = int(os.environ["MDESCRIPTOR_BENCH_WARMUP"])
     repeat = int(os.environ["MDESCRIPTOR_BENCH_REPEAT"])
     records = []
-    for name, descriptor_type, parameters in cases:
-        cpu = descriptor_type(**parameters, execution=serial_options)
-        gpu = descriptor_type(**parameters, execution=cuda_options)
-        try:
-            cpu_ms, cpu_values, cpu_samples, cpu_stable = _measure(
-                cpu, batch, warmup, repeat
-            )
-            gpu_ms, gpu_values, gpu_samples, gpu_stable = _measure(
-                gpu, batch, warmup, repeat
-            )
-        finally:
-            cpu.close()
-            gpu.close()
-        delta = np.abs(gpu_values - cpu_values)
-        records.append({
-            "name": name,
-            "rows": int(gpu_values.shape[0]),
-            "features": int(gpu_values.shape[1]),
-            "cpu_median_ms": cpu_ms,
-            "gpu_median_ms": gpu_ms,
-            "gpu_over_cpu": gpu_ms / cpu_ms,
-            "cpu_samples_ms": cpu_samples,
-            "gpu_samples_ms": gpu_samples,
-            "max_abs_cpu_gpu": float(np.max(delta, initial=0.0)),
-            "finite": bool(np.isfinite(gpu_values).all()),
-            "cpu_repeat_stable": cpu_stable,
-            "gpu_repeat_stable": gpu_stable,
-            "sha256": hashlib.sha256(gpu_values.tobytes()).hexdigest(),
-        })
+    for declared_species in species_counts:
+        actual_species = (
+            sparse_actual if declared_species == sparse_at else declared_species
+        )
+        batch = _batch(declared_species, actual_species)
+        cases, serial_options, cuda_options = _cases(declared_species)
+        for name, descriptor_type, parameters in cases:
+            cpu = descriptor_type(**parameters, execution=serial_options)
+            gpu = descriptor_type(**parameters, execution=cuda_options)
+            try:
+                cpu_ms, cpu_values, cpu_samples, cpu_stable = _measure(
+                    cpu, batch, warmup, repeat
+                )
+                gpu_ms, gpu_values, gpu_samples, gpu_stable = _measure(
+                    gpu, batch, warmup, repeat
+                )
+            finally:
+                cpu.close()
+                gpu.close()
+            delta = np.abs(gpu_values - cpu_values)
+            records.append({
+                "name": name,
+                "declared_species": declared_species,
+                "actual_species": actual_species,
+                "rows": int(gpu_values.shape[0]),
+                "features": int(gpu_values.shape[1]),
+                "cpu_median_ms": cpu_ms,
+                "gpu_median_ms": gpu_ms,
+                "gpu_over_cpu": gpu_ms / cpu_ms,
+                "cpu_samples_ms": cpu_samples,
+                "gpu_samples_ms": gpu_samples,
+                "max_abs_cpu_gpu": float(np.max(delta, initial=0.0)),
+                "finite": bool(np.isfinite(gpu_values).all()),
+                "cpu_repeat_stable": cpu_stable,
+                "gpu_repeat_stable": gpu_stable,
+                "sha256": hashlib.sha256(gpu_values.tobytes()).hexdigest(),
+            })
     print("MBTR_BUILD=" + json.dumps({
         "native": str(native_path), "cuda": str(cuda_path),
-        "warmup": warmup, "repeat": repeat, "records": records,
+        "warmup": warmup, "repeat": repeat,
+        "species_counts": species_counts,
+        "sparse_declared_species": sparse_at,
+        "sparse_actual_species": sparse_actual,
+        "records": records,
     }, sort_keys=True))
 
 
@@ -191,7 +210,14 @@ main()
 '''
 
 
-def _run(build: Path, warmup: int, repeat: int) -> dict[str, object]:
+def _run(
+    build: Path,
+    warmup: int,
+    repeat: int,
+    species_counts: str,
+    sparse_declared_species: int,
+    sparse_actual_species: int,
+) -> dict[str, object]:
     environment = os.environ.copy()
     build = build.expanduser().resolve()
     environment.update({
@@ -201,6 +227,9 @@ def _run(build: Path, warmup: int, repeat: int) -> dict[str, object]:
         "MDESCRIPTOR_EXPECTED_NATIVE_PLUGIN_DIR": str(build),
         "MDESCRIPTOR_BENCH_WARMUP": str(warmup),
         "MDESCRIPTOR_BENCH_REPEAT": str(repeat),
+        "MDESCRIPTOR_BENCH_SPECIES_COUNTS": species_counts,
+        "MDESCRIPTOR_BENCH_SPARSE_AT": str(sparse_declared_species),
+        "MDESCRIPTOR_BENCH_SPARSE_ACTUAL": str(sparse_actual_species),
         "OMP_NUM_THREADS": "1",
         "OMP_DYNAMIC": "FALSE",
         "OPENBLAS_NUM_THREADS": "1",
@@ -225,11 +254,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--species-counts", default="1,2,4,8")
+    parser.add_argument("--sparse-declared-species", type=int, default=8)
+    parser.add_argument("--sparse-actual-species", type=int, default=2)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     if args.warmup < 0 or args.repeat <= 0:
         parser.error("warmup must be non-negative and repeat must be positive")
-    payload = _run(args.build, args.warmup, args.repeat)
+    try:
+        species_counts = tuple(
+            int(value.strip()) for value in args.species_counts.split(",") if value.strip()
+        )
+    except ValueError:
+        parser.error("species-counts must be a comma-separated list of integers")
+    if not species_counts or any(value < 1 or value > 8 for value in species_counts):
+        parser.error("species-counts must contain values from 1 through 8")
+    if not 1 <= args.sparse_actual_species <= args.sparse_declared_species <= 8:
+        parser.error("sparse species counts must satisfy 1 <= actual <= declared <= 8")
+    payload = _run(
+        args.build,
+        args.warmup,
+        args.repeat,
+        ",".join(str(value) for value in species_counts),
+        args.sparse_declared_species,
+        args.sparse_actual_species,
+    )
     rendered = json.dumps(payload, indent=2, sort_keys=True)
     print(rendered)
     if args.output:

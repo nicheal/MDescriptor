@@ -28,6 +28,39 @@ RESULT_SCHEMA_VERSION = 1
 _readonly_csr_type: type[Any] | None = None
 
 
+class _OwnedDenseValues:
+    """Private handoff for a fresh dense array at an internal result seam.
+
+    The wrapper is deliberately required in addition to NumPy's ``OWNDATA``
+    flag.  A public caller may retain an owning array and pass it to
+    ``DescriptorResult``; only code that created this token at a controlled
+    internal boundary may avoid the public snapshot copy.
+    """
+
+    __slots__ = ("array",)
+
+    def __init__(self, array: Any) -> None:
+        if not isinstance(array, np.ndarray):
+            raise TypeError("owned descriptor values must be a NumPy array")
+        if array.ndim != 2 or not array.flags.c_contiguous or not array.flags.owndata:
+            raise ValueError("owned descriptor values must be a C-contiguous owning matrix")
+        array.setflags(write=False)
+        self.array = array
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return (int(self.array.shape[0]), int(self.array.shape[1]))
+
+    def __array__(self, dtype: Any = None) -> np.ndarray:
+        return np.asarray(self.array, dtype=dtype)
+
+
+def _owned_dense_values(array: Any) -> _OwnedDenseValues:
+    """Mark a fresh internal dense result for one-copy result construction."""
+
+    return _OwnedDenseValues(array)
+
+
 def format_values(values: Any, *, dtype: str = "float64", sparse: bool = False) -> Any:
     """Apply the single dense/CSR output representation contract."""
 
@@ -53,6 +86,12 @@ def format_values(values: Any, *, dtype: str = "float64", sparse: bool = False) 
 
 def _snapshot_values(values: Any) -> Any:
     """Take ownership of dense/CSR values at the result seam."""
+
+    if isinstance(values, _OwnedDenseValues):
+        # The token is issued only after an internal producer has established
+        # that this exact array owns its storage.  Keep the same array while
+        # retaining the public read-only result contract.
+        return values.array
 
     try:
         scipy_sparse = importlib.import_module("scipy.sparse")
@@ -444,14 +483,16 @@ class DescriptorResult:
 
         if tuple(getattr(values, "shape", ())) != self.shape:
             raise ValueError("formatted descriptor values changed the result shape")
-        values = _snapshot_values(values)
+        # ``self.values`` is already a validated, read-only snapshot.  Reuse
+        # that exact array without treating it as externally exclusive.
+        snapshot = values if values is self.values else _snapshot_values(values)
         updated = copy(self)
         metadata = dict(self.metadata)
         metadata["output"] = {
             "dtype": output["dtype"],
             "sparse": output["sparse"],
         }
-        object.__setattr__(updated, "values", values)
+        object.__setattr__(updated, "values", snapshot)
         object.__setattr__(updated, "metadata", metadata)
         return updated
 
