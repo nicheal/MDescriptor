@@ -14,6 +14,7 @@ from mdescriptor import (
     StructureBatch,
 )
 from mdescriptor.descriptors import MBTR, MTP, EwaldSumMatrix, ValleOganov
+from mdescriptor.descriptors._kernels.mbtr_config import resolve_mbtr_config
 
 
 def _ewald_batch() -> StructureBatch:
@@ -51,6 +52,62 @@ def _atomic_mbtr_batch() -> StructureBatch:
             )
         ]
     )
+
+
+def _native_mbtr_options(
+    descriptor_name: str, options: dict[str, object]
+) -> dict[str, object]:
+    species = tuple(range(1, 66))
+    if descriptor_name == "ValleOganov":
+        function = str(options["function"])
+        r_cut = float(options["r_cut"])
+        geometry = {"function": function}
+        grid = {
+            "min": 0.0,
+            "max": 180.0 if function == "angle" else r_cut,
+            "n": int(options["n"]),
+            "sigma": float(options.get("sigma", 0.1)),
+        }
+        weighting = {
+            "function": "smooth_cutoff"
+            if function == "angle"
+            else "inverse_square",
+            "r_cut": r_cut,
+        }
+    else:
+        geometry = options["geometry"]
+        grid = options["grid"]
+        weighting = options["weighting"]
+        assert isinstance(geometry, dict)
+        assert isinstance(grid, dict)
+        assert isinstance(weighting, dict)
+    config = resolve_mbtr_config(
+        species=species,
+        geometry=geometry,
+        grid=grid,
+        weighting=weighting,
+        periodic=True,
+        normalize_gaussians=True,
+        normalization="valle_oganov",
+        local=False,
+        num_threads=0,
+    )
+    return {"_cuda_payload": {"mbtr_config": config.cuda_payload()}}
+
+
+@pytest.mark.gpu
+def test_cuda_native_mbtr_requires_canonical_payload() -> None:
+    """The private CUDA entry point no longer reparses public MBTR options."""
+
+    load_cuda_for_tests()
+    from mdescriptor._cuda import CudaBackend
+
+    backend = CudaBackend("MBTR", {"species": [1]})
+    try:
+        with pytest.raises(ValueError, match="canonical _cuda_payload.mbtr_config"):
+            backend.compute(_atomic_mbtr_batch())
+    finally:
+        backend.close()
 
 
 @pytest.mark.gpu
@@ -187,7 +244,7 @@ def test_cuda_native_valle_oganov_guard_rejects_more_than_64_species(
     )
     backend = CudaBackend(
         descriptor_name,
-        {"species": list(range(1, 66)), **options},
+        _native_mbtr_options(descriptor_name, options),
     )
     try:
         with pytest.raises(ValueError, match="at most 64 species"):

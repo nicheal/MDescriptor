@@ -113,6 +113,7 @@ def test_mbtr_cuda_payload_contains_the_resolved_named_controls() -> None:
     )
     try:
         payload = descriptor._backend.options["_cuda_payload"]["mbtr_config"]
+        assert payload["schema_version"] == 1
         assert payload["species"] == [1, 8]
         assert payload["geometry"] == 2
         assert payload["weighting"] == 1

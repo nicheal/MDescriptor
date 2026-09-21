@@ -425,11 +425,14 @@ __global__ void mbtr_normalize_kernel(
         species_counts, species_count, volume, geometry, grid_n, false);
 }
 
-py::dict mbtr_config_option(const py::dict& options) {
+py::dict mbtr_config_option(
+    const py::dict& options,
+    const std::string& name) {
     const py::str payload_key("_cuda_payload");
     const py::str config_key("mbtr_config");
     if (!options.contains(payload_key) || options[payload_key].is_none()) {
-        return py::dict();
+        throw std::invalid_argument(
+            name + " requires a canonical _cuda_payload.mbtr_config");
     }
     py::dict payload;
     try {
@@ -438,13 +441,20 @@ py::dict mbtr_config_option(const py::dict& options) {
         throw std::invalid_argument("_cuda_payload must be an object");
     }
     if (!payload.contains(config_key) || payload[config_key].is_none()) {
-        return py::dict();
+        throw std::invalid_argument(
+            name + " requires a canonical _cuda_payload.mbtr_config");
     }
+    py::dict canonical;
     try {
-        return py::cast<py::dict>(payload[config_key]);
+        canonical = py::cast<py::dict>(payload[config_key]);
     } catch (const py::cast_error&) {
         throw std::invalid_argument("_cuda_payload.mbtr_config must be an object");
     }
+    if (option(canonical, "schema_version", 0) != 1) {
+        throw std::invalid_argument(
+            name + " _cuda_payload.mbtr_config has an unsupported schema_version");
+    }
+    return canonical;
 }
 
 py::dict compute_mbtr_descriptor(
@@ -454,88 +464,22 @@ py::dict compute_mbtr_descriptor(
     const detail::StructureBatchView& host_batch,
     const std::string& name,
     const py::dict& options) {
-    const py::dict canonical = mbtr_config_option(options);
-    const bool has_canonical = py::len(canonical) != 0;
-    const auto species = has_canonical ? species_option(canonical) : species_option(options);
+    const py::dict canonical = mbtr_config_option(options, name);
+    const auto species = species_option(canonical);
     if (species.empty()) throw std::invalid_argument(name + " species must not be empty");
-    int geometry = mbtr::kGeometryDistance;
-    int weighting = mbtr::kWeightingUnity;
-    int normalization = mbtr::kNormalizationNone;
-    double grid_min = 0.0;
-    double grid_max = 6.0;
-    double grid_sigma = 0.1;
-    int grid_n = 50;
-    double scale = 0.5;
-    double threshold = 1e-3;
-    double r_cut = 0.0;
-    double sharpness = 2.0;
-    bool normalize_gaussians = option(options, "normalize_gaussians", true);
-    bool local = name == "LMBTR";
-    if (has_canonical) {
-        geometry = option(canonical, "geometry", mbtr::kGeometryDistance);
-        weighting = option(canonical, "weighting", mbtr::kWeightingUnity);
-        normalization = option(canonical, "normalization", mbtr::kNormalizationNone);
-        grid_min = option(canonical, "grid_min", 0.0);
-        grid_max = option(canonical, "grid_max", 6.0);
-        grid_sigma = option(canonical, "grid_sigma", 0.1);
-        grid_n = option(canonical, "grid_n", 50);
-        normalize_gaussians = option(canonical, "normalize_gaussians", true);
-        scale = option(canonical, "scale", 0.5);
-        threshold = option(canonical, "threshold", 1e-3);
-        r_cut = option(canonical, "r_cut", 0.0);
-        sharpness = option(canonical, "sharpness", 2.0);
-        local = option(canonical, "local", local);
-    } else if (name == "ValleOganov") {
-        const std::string function = option(options, "function", std::string("distance"));
-        geometry = function == "angle" ? mbtr::kGeometryAngle : mbtr::kGeometryDistance;
-        grid_n = option(options, "n", 50);
-        grid_sigma = option(options, "sigma", 0.1);
-        r_cut = option(options, "r_cut", 6.0);
-        grid_min = 0.0;
-        grid_max = geometry == mbtr::kGeometryAngle ? 180.0 : r_cut;
-        weighting = geometry == mbtr::kGeometryAngle
-            ? mbtr::kWeightingSmoothCutoff : mbtr::kWeightingInverseSquare;
-        sharpness = 2.0;
-        normalization = mbtr::kNormalizationValleOganov;
-        const std::string normalization_name = option(
-            options, "normalization", std::string("valle_oganov"));
-        if (normalization_name == "none") normalization = mbtr::kNormalizationNone;
-        else if (normalization_name == "l2") normalization = mbtr::kNormalizationL2;
-        else if (normalization_name == "n_atoms") normalization = mbtr::kNormalizationNAtoms;
-    } else {
-        const py::dict geometry_object = child_dict(options, "geometry");
-        const py::dict grid_object = child_dict(options, "grid");
-        const py::dict weighting_object = child_dict(options, "weighting");
-        const std::string geometry_name = option(
-            geometry_object, "function", std::string("distance"));
-        if (geometry_name == "atomic_number") geometry = mbtr::kGeometryAtomicNumber;
-        else if (geometry_name == "distance") geometry = mbtr::kGeometryDistance;
-        else if (geometry_name == "inverse_distance") geometry = mbtr::kGeometryInverseDistance;
-        else if (geometry_name == "angle") geometry = mbtr::kGeometryAngle;
-        else if (geometry_name == "cosine") geometry = mbtr::kGeometryCosine;
-        else throw std::invalid_argument("unsupported CUDA MBTR geometry");
-        const std::string weighting_name = option(
-            weighting_object, "function", std::string("unity"));
-        if (weighting_name == "unity" || weighting_name == "none") weighting = mbtr::kWeightingUnity;
-        else if (weighting_name == "exp") weighting = mbtr::kWeightingExponential;
-        else if (weighting_name == "inverse_square") weighting = mbtr::kWeightingInverseSquare;
-        else if (weighting_name == "smooth_cutoff") weighting = mbtr::kWeightingSmoothCutoff;
-        else throw std::invalid_argument("unsupported CUDA MBTR weighting");
-        grid_min = option(grid_object, "min", 0.0);
-        grid_max = option(grid_object, "max", 6.0);
-        grid_sigma = option(grid_object, "sigma", 0.1);
-        grid_n = static_cast<int>(option(grid_object, "n", 50.0));
-        scale = option(weighting_object, "scale", 0.5);
-        threshold = option(weighting_object, "threshold", 1e-3);
-        const double default_cutoff = weighting == mbtr::kWeightingUnity ? 0.0 : grid_max;
-        r_cut = option(weighting_object, "r_cut", default_cutoff);
-        sharpness = option(weighting_object, "sharpness", 2.0);
-        const std::string normalization_name = option(
-            options, "normalization", std::string("none"));
-        if (normalization_name == "l2") normalization = mbtr::kNormalizationL2;
-        else if (normalization_name == "n_atoms") normalization = mbtr::kNormalizationNAtoms;
-        else if (normalization_name == "valle_oganov") normalization = mbtr::kNormalizationValleOganov;
-    }
+    const int geometry = option(canonical, "geometry", mbtr::kGeometryDistance);
+    const int weighting = option(canonical, "weighting", mbtr::kWeightingUnity);
+    const int normalization = option(canonical, "normalization", mbtr::kNormalizationNone);
+    const double grid_min = option(canonical, "grid_min", 0.0);
+    const double grid_max = option(canonical, "grid_max", 6.0);
+    const double grid_sigma = option(canonical, "grid_sigma", 0.1);
+    const int grid_n = option(canonical, "grid_n", 50);
+    const bool normalize_gaussians = option(canonical, "normalize_gaussians", true);
+    const double scale = option(canonical, "scale", 0.5);
+    const double threshold = option(canonical, "threshold", 1e-3);
+    double r_cut = option(canonical, "r_cut", 0.0);
+    const double sharpness = option(canonical, "sharpness", 2.0);
+    const bool local = option(canonical, "local", name == "LMBTR");
     if (geometry != mbtr::kGeometryAtomicNumber && r_cut <= 0.0) {
         r_cut = grid_max;
     }
