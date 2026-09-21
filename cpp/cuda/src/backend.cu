@@ -450,6 +450,7 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         }
         py::dict result;
         result["values"] = values_array(values, rows, 4);
+        result["_mdescriptor_owned_values"] = true;
         result["level"] = "pair";
         result["row_offsets"] = i64_array(row_offsets);
         result["pair_records"] = values_array(pair_records, rows, 5);
@@ -470,6 +471,7 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             }
             py::dict result;
             result["values"] = values_array({}, 0, feature_count_);
+            result["_mdescriptor_owned_values"] = true;
             result["level"] = "atom";
             result["row_offsets"] = arrays.offsets;
             result["labels"] = nep_labels(feature_count_);
@@ -483,7 +485,9 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                     + std::to_string(arrays.view.numbers[atom]));
             }
         }
-        std::vector<double> values;
+        py::array_t<double> values({
+            static_cast<py::ssize_t>(arrays.view.atoms),
+            static_cast<py::ssize_t>(feature_count_)});
         {
             py::gil_scoped_release release;
             const double cutoff = std::max(
@@ -503,15 +507,17 @@ py::object Backend::compute(py::object batch_object, py::object control) {
             }
             device_graph_.build_nep(
                 *context_, *compute_batch, compute_view, cutoff);
-            values = compute_nep(
-                *context_, *compute_batch, device_graph_, *nep_model_);
+            compute_nep_into(
+                *context_, *compute_batch, device_graph_, *nep_model_,
+                values.mutable_data());
         }
         check_cancelled(control);
         for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
             mark_completed(control);
         }
         py::dict result;
-        result["values"] = values_array(values, arrays.view.atoms, feature_count_);
+        result["values"] = std::move(values);
+        result["_mdescriptor_owned_values"] = true;
         result["level"] = "atom";
         result["row_offsets"] = arrays.offsets;
         result["labels"] = nep_labels(feature_count_);
@@ -521,7 +527,9 @@ py::object Backend::compute(py::object batch_object, py::object control) {
 
     if (name_ == "DPA4" || name_ == "DPA4C") {
         const auto type_indices = dpa_type_indices(options_, arrays, name_);
-        std::vector<double> values;
+        py::array_t<double> values({
+            static_cast<py::ssize_t>(arrays.view.atoms),
+            static_cast<py::ssize_t>(feature_count_)});
         if (arrays.view.atoms > 0) {
             py::gil_scoped_release release;
             device_graph_.build_dpa(
@@ -529,16 +537,23 @@ py::object Backend::compute(py::object batch_object, py::object control) {
                 name_ == "DPA4C" ? dpa4c_model_->cutoff() : dpa4_model_->cutoff(),
                 name_ == "DPA4",
                 name_ == "DPA4");
-            values = name_ == "DPA4C"
-                ? dpa4c_model_->compute(*context_, device_batch_, device_graph_, type_indices)
-                : dpa4_model_->compute(*context_, device_batch_, device_graph_, type_indices);
+            if (name_ == "DPA4C") {
+                dpa4c_model_->compute_into(
+                    *context_, device_batch_, device_graph_, type_indices,
+                    values.mutable_data());
+            } else {
+                dpa4_model_->compute_into(
+                    *context_, device_batch_, device_graph_, type_indices,
+                    values.mutable_data());
+            }
         }
         check_cancelled(control);
         for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
             mark_completed(control);
         }
         py::dict result;
-        result["values"] = values_array(values, arrays.view.atoms, feature_count_);
+        result["values"] = std::move(values);
+        result["_mdescriptor_owned_values"] = true;
         result["level"] = "atom";
         result["row_offsets"] = arrays.offsets;
         result["labels"] = dpa_labels(options_, name_, feature_count_);
@@ -547,9 +562,12 @@ py::object Backend::compute(py::object batch_object, py::object control) {
     }
 
     if (is_extended_descriptor(name_)) {
-        const auto result = compute_extended_descriptor(
+        auto result = compute_extended_descriptor(
             *context_, device_batch_, device_graph_, arrays.view,
             name_, options_, control, rotational_plan_.get());
+        if (result.contains("values")) {
+            result["_mdescriptor_owned_values"] = true;
+        }
         check_cancelled(control);
         for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
             mark_completed(control);
@@ -578,24 +596,27 @@ py::object Backend::compute(py::object batch_object, py::object control) {
         : mdescriptor::LocalDescriptorKind::SphericalExpansion;
     const auto features = mdescriptor::local_descriptor_feature_count(descriptor_options, kind);
     check_cancelled(control);
-    std::vector<double> values;
+    py::array_t<double> values({
+        static_cast<py::ssize_t>(arrays.view.atoms),
+        static_cast<py::ssize_t>(features)});
     {
         py::gil_scoped_release release;
         device_graph_.build_dpa(
             *context_, device_batch_, arrays.view, descriptor_options.cutoff,
             true, false, true, false, true, NeighborGraphOrdering::Canonical);
-        values = compute_local_descriptors(
+        compute_local_descriptors_into(
             *context_, device_batch_, device_graph_, species,
             descriptor_options.cutoff, descriptor_options.density_width,
             descriptor_options.max_radial, descriptor_options.max_angular,
-            static_cast<std::int32_t>(kind));
+            static_cast<std::int32_t>(kind), values.mutable_data());
     }
     check_cancelled(control);
     for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
         mark_completed(control);
     }
     py::dict result;
-    result["values"] = values_array(values, arrays.view.atoms, features);
+    result["values"] = std::move(values);
+    result["_mdescriptor_owned_values"] = true;
     result["level"] = "atom";
     result["row_offsets"] = arrays.offsets;
     result["labels"] = labels_option(options_, name_, features);

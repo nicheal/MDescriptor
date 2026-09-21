@@ -28,6 +28,8 @@ from .result import (
     pair_samples,
 )
 
+_NATIVE_OWNED_VALUES = "_mdescriptor_owned_values"
+
 
 class BackendKernel(Protocol):
     """The implementation-independent kernel protocol behind an adapter."""
@@ -410,6 +412,9 @@ def _combine_cuda_block_results(results: list[Any]) -> Any:
     if not all(isinstance(result, Mapping) for result in results):
         raise TypeError("CUDA backend returned inconsistent block results")
     first = dict(results[0])
+    # A multi-block result is re-owned by the combiner below; do not let the
+    # native single-block marker wrap the private token a second time.
+    first.pop(_NATIVE_OWNED_VALUES, None)
     values = [np.asarray(result["values"]) for result in results]
     # Preallocate the final C matrix so F-order, strided, and mixed block
     # inputs remain compatible without a second full layout-normalization
@@ -477,6 +482,10 @@ def _cuda_result(raw: Any, batch: StructureBatch, name: str) -> DescriptorResult
             "CUDA backend returned an incomplete result",
             code="backend_error",
         ) from exc
+    if raw.get(_NATIVE_OWNED_VALUES) is True:
+        # Only the trusted C++ CUDA binding emits this private marker.  Keep
+        # arbitrary plugin mappings on the defensive public snapshot path.
+        values = _owned_dense_values(values)
     row_offsets = raw.get("row_offsets")
     samples = raw.get("samples")
     if samples is None and "pair_records" in raw:

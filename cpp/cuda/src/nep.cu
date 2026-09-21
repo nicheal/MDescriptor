@@ -770,13 +770,17 @@ bool DeviceNepModel::supports_atomic_number(std::int32_t number) const noexcept 
         && host_type_lookup_[static_cast<std::size_t>(number)] >= 0;
 }
 
-std::vector<double> compute_nep(
+void compute_nep_into(
     CudaExecutionContext& context,
     const DeviceBatch& batch,
     const DeviceNeighborGraph& graph,
-    const DeviceNepModel& model) {
+    const DeviceNepModel& model,
+    double* host_output) {
     if (batch.atoms() <= 0 || model.dimension() <= 0) {
-        return {};
+        return;
+    }
+    if (host_output == nullptr) {
+        throw std::invalid_argument("CUDA NEP output destination must not be null");
     }
     const auto dimension = static_cast<std::size_t>(model.dimension());
     const auto expanded_atoms = static_cast<std::size_t>(batch.atoms());
@@ -816,7 +820,8 @@ std::vector<double> compute_nep(
         model.angular_pair_coefficients(), model.scalers(), batch.atoms(), output);
     check_cuda(cudaGetLastError(), "CUDA NEP descriptor kernel launch failed");
     if (!batch.expanded()) {
-        return context.download_output(expanded_count);
+        context.download_output_into(host_output, expanded_count);
+        return;
     }
 
     const auto reduction_blocks = static_cast<unsigned int>(
@@ -827,7 +832,7 @@ std::vector<double> compute_nep(
         batch.expansion_stride(), batch.expansion_replicas(), output,
         output + reduced_offset);
     check_cuda(cudaGetLastError(), "CUDA NEP replica reduction kernel launch failed");
-    return context.download_output_slice(reduced_offset, reduced_count);
+    context.download_output_slice_into(reduced_offset, host_output, reduced_count);
 }
 
 } // namespace mdescriptor::cuda

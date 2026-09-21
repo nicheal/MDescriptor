@@ -44,6 +44,19 @@ public:
     std::vector<double> download_output_slice(std::size_t offset, std::size_t count);
     // Copy the full output into caller-owned host storage and synchronize.
     void download_output_into(double* destination, std::size_t count);
+    // Copy a slice of the output into caller-owned host storage and synchronize.
+    void download_output_slice_into(
+        std::size_t offset,
+        double* destination,
+        std::size_t count);
+
+    // Upload immutable descriptor payloads once per backend lifetime.  Slots
+    // are owned by this execution context and are released by close().
+    void* static_payload_buffer(
+        std::size_t slot,
+        const void* source,
+        std::size_t bytes,
+        const char* operation);
 
     void synchronize();
     void close() noexcept;
@@ -58,6 +71,8 @@ private:
     std::size_t output_capacity_ = 0;
     unsigned char* workspace_ = nullptr;
     std::size_t workspace_capacity_ = 0;
+    std::vector<void*> static_payloads_;
+    std::vector<std::size_t> static_payload_sizes_;
     bool closed_ = false;
 };
 

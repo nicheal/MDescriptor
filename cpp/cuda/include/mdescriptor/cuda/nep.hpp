@@ -82,10 +82,11 @@ private:
     std::unique_ptr<DeviceArray> scalers_;
 };
 
-std::vector<double> compute_nep(
+void compute_nep_into(
     CudaExecutionContext& context,
     const DeviceBatch& batch,
     const DeviceNeighborGraph& graph,
-    const DeviceNepModel& model);
+    const DeviceNepModel& model,
+    double* output);
 
 } // namespace mdescriptor::cuda

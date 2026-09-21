@@ -45,11 +45,20 @@ def test_cuda_block_combination_accepts_mixed_layout_and_empty_blocks() -> None:
     )[:, ::-1]
     raw = _combine_cuda_block_results(
         [
-            {"values": fortran, "level": "structure"},
-            {"values": strided, "level": "structure"},
+            {
+                "values": fortran,
+                "level": "structure",
+                "_mdescriptor_owned_values": True,
+            },
+            {
+                "values": strided,
+                "level": "structure",
+                "_mdescriptor_owned_values": True,
+            },
         ]
     )
     combined = raw["values"].array
+    assert "_mdescriptor_owned_values" not in raw
     result = _cuda_result(raw, _batch(4), "fake")
 
     assert combined.flags.owndata is True
@@ -102,6 +111,23 @@ def test_arbitrary_cuda_mapping_is_still_copied() -> None:
 
     assert result.values is not values
     assert result.values[0, 0] == 1.0
+
+
+def test_native_cuda_mapping_reuses_explicitly_owned_values() -> None:
+    values = np.asarray([[1.0, 2.0], [3.0, 4.0]])
+    result = _cuda_result(
+        {
+            "values": values,
+            "level": "structure",
+            "labels": ("x", "y"),
+            "_mdescriptor_owned_values": True,
+        },
+        _batch(),
+        "native",
+    )
+
+    assert result.values is values
+    assert result.values.flags.writeable is False
 
 
 def test_adapter_dense_and_sparse_output_keep_their_contracts() -> None:

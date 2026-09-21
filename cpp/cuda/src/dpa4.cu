@@ -2799,11 +2799,12 @@ double DeviceDpa4Model::cutoff() const noexcept {
     return model_ == nullptr ? 0.0 : model_->rcut;
 }
 
-std::vector<double> DeviceDpa4Model::compute(
+void DeviceDpa4Model::compute_into(
     CudaExecutionContext& context,
     const DeviceBatch& batch,
     const DeviceNeighborGraph& graph,
-    const std::vector<std::int32_t>& type_indices) const {
+    const std::vector<std::int32_t>& type_indices,
+    double* host_output) const {
     if (model_ == nullptr) {
         throw std::runtime_error("DPA4 CUDA model is closed");
     }
@@ -2818,7 +2819,10 @@ std::vector<double> DeviceDpa4Model::compute(
         }
     }
     if (batch.atoms() == 0) {
-        return {};
+        return;
+    }
+    if (host_output == nullptr) {
+        throw std::invalid_argument("DPA4 CUDA output destination must not be null");
     }
     check_cuda(cudaSetDevice(context.device()), "could not select the DPA4 CUDA device");
     const std::size_t atoms = static_cast<std::size_t>(batch.atoms());
@@ -3044,8 +3048,7 @@ std::vector<double> DeviceDpa4Model::compute(
         state0, activation, batch.atoms(),
         device_data<float>(model_->top[kOutputLinear2]), output);
     launch_check(cudaGetLastError(), "DPA4 output head launch failed");
-    auto result = context.download_output(atoms * kChannels);
-    return result;
+    context.download_output_into(host_output, atoms * kChannels);
 }
 
 } // namespace mdescriptor::cuda

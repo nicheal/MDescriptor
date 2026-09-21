@@ -109,6 +109,13 @@ std::vector<double> CudaExecutionContext::download_output_slice(
 }
 
 void CudaExecutionContext::download_output_into(double* destination, std::size_t count) {
+    download_output_slice_into(0, destination, count);
+}
+
+void CudaExecutionContext::download_output_slice_into(
+    std::size_t offset,
+    double* destination,
+    std::size_t count) {
     if (closed_) {
         throw std::runtime_error("CUDA execution context is closed");
     }
@@ -118,14 +125,56 @@ void CudaExecutionContext::download_output_into(double* destination, std::size_t
     if (destination == nullptr) {
         throw std::invalid_argument("CUDA output destination must not be null");
     }
-    if (output_ == nullptr || count > output_capacity_) {
+    if (output_ == nullptr || offset > output_capacity_
+        || count > output_capacity_ - offset) {
         throw std::runtime_error("CUDA output buffer is not large enough");
     }
     check_cuda(
         cudaMemcpyAsync(
-            destination, output_, count * sizeof(double), cudaMemcpyDeviceToHost, stream_),
+            destination, output_ + offset, count * sizeof(double),
+            cudaMemcpyDeviceToHost, stream_),
         "could not copy descriptor data from the CUDA device");
     synchronize();
+}
+
+void* CudaExecutionContext::static_payload_buffer(
+    std::size_t slot,
+    const void* source,
+    std::size_t bytes,
+    const char* operation) {
+    if (closed_) {
+        throw std::runtime_error("CUDA execution context is closed");
+    }
+    if (bytes == 0) {
+        return nullptr;
+    }
+    if (source == nullptr) {
+        throw std::invalid_argument("CUDA static payload source must not be null");
+    }
+    if (slot >= static_payloads_.size()) {
+        static_payloads_.resize(slot + 1, nullptr);
+        static_payload_sizes_.resize(slot + 1, 0);
+    }
+    if (static_payloads_[slot] != nullptr) {
+        if (static_payload_sizes_[slot] != bytes) {
+            throw std::invalid_argument("CUDA static payload slot changed size");
+        }
+        return static_payloads_[slot];
+    }
+    check_cuda(cudaSetDevice(device_), "could not select the CUDA device");
+    void* allocation = nullptr;
+    check_cuda(cudaMalloc(&allocation, bytes), operation);
+    try {
+        check_cuda(
+            cudaMemcpy(allocation, source, bytes, cudaMemcpyHostToDevice),
+            operation);
+    } catch (...) {
+        (void)cudaFree(allocation);
+        throw;
+    }
+    static_payloads_[slot] = allocation;
+    static_payload_sizes_[slot] = bytes;
+    return allocation;
 }
 
 void CudaExecutionContext::synchronize() {
@@ -152,6 +201,11 @@ void CudaExecutionContext::close() noexcept {
         workspace_ = nullptr;
     }
     workspace_capacity_ = 0;
+    for (void* payload : static_payloads_) {
+        if (payload != nullptr) (void)cudaFree(payload);
+    }
+    static_payloads_.clear();
+    static_payload_sizes_.clear();
     if (stream_ != nullptr) {
         (void)cudaStreamDestroy(stream_);
         stream_ = nullptr;

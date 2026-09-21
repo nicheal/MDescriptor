@@ -27,13 +27,13 @@ public:
     double cutoff() const noexcept { return rcut_; }
 
     // type_indices is intentionally host-owned.  The implementation uploads
-    // it on the model's stream and returns host float64 values with shape
-    // (batch.atoms, feature_count_).
-    std::vector<double> compute(
+    // it on the model's stream and writes the host float64 result into output.
+    void compute_into(
         CudaExecutionContext& context,
         const DeviceBatch& batch,
         const DeviceNeighborGraph& graph,
-        const std::vector<std::int32_t>& type_indices) const;
+        const std::vector<std::int32_t>& type_indices,
+        double* output) const;
 
 public:
     struct DeviceArray;

@@ -699,14 +699,18 @@ void DeviceDpa4cModel::release() noexcept {
     layout_.reset();
 }
 
-std::vector<double> DeviceDpa4cModel::compute(
+void DeviceDpa4cModel::compute_into(
     CudaExecutionContext& context, const DeviceBatch& batch,
-    const DeviceNeighborGraph& graph, const std::vector<std::int32_t>& type_indices) const {
+    const DeviceNeighborGraph& graph, const std::vector<std::int32_t>& type_indices,
+    double* host_output) const {
     if (context.device() != device_) throw std::invalid_argument("DPA4C CUDA model and execution context use different devices");
     if (batch.atoms() < 0) throw std::invalid_argument("DPA4C CUDA received an invalid batch");
     if (type_indices.size() != static_cast<std::size_t>(batch.atoms())) throw std::invalid_argument("DPA4C CUDA type_indices must have one entry per atom");
     for (std::int32_t value : type_indices) if (value < 0 || value >= ntypes_) throw std::invalid_argument("DPA4C CUDA type index is outside the checkpoint type map");
-    if (batch.atoms() == 0) return {};
+    if (batch.atoms() == 0) return;
+    if (host_output == nullptr) {
+        throw std::invalid_argument("DPA4C CUDA output destination must not be null");
+    }
     if (graph.offsets() == nullptr) throw std::invalid_argument("DPA4C CUDA received an invalid neighbor graph");
     // The graph rows are already ordered by DeviceNeighborGraph::build_dpa;
     // the per-atom workspace therefore only needs the fixed descriptor state.
@@ -745,8 +749,7 @@ std::vector<double> DeviceDpa4cModel::compute(
         graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(), device_types,
         batch.atoms(), workspace, layout, model, output);
     check_cuda(cudaGetLastError(), "DPA4C CUDA descriptor kernel launch failed");
-    std::vector<double> result = context.download_output(output_count);
-    return result;
+    context.download_output_into(host_output, output_count);
 }
 
 } // namespace mdescriptor::cuda

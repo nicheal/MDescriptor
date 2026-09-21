@@ -438,7 +438,7 @@ __global__ void assemble_features(
 
 } // namespace
 
-std::vector<double> compute_local_descriptors(
+void compute_local_descriptors_into(
     CudaExecutionContext& context,
     const DeviceBatch& batch,
     const DeviceNeighborGraph& graph,
@@ -447,7 +447,8 @@ std::vector<double> compute_local_descriptors(
     double density_width,
     int max_radial,
     int max_angular,
-    std::int32_t kind) {
+    std::int32_t kind,
+    double* host_output) {
     if (max_angular < 0 || max_angular > 31) {
         throw std::invalid_argument("CUDA local descriptors support max_angular up to 31");
     }
@@ -485,6 +486,9 @@ std::vector<double> compute_local_descriptors(
         features / static_cast<std::int64_t>(species.size()));
     const std::size_t active_output_size = static_cast<std::size_t>(batch.atoms())
         * static_cast<std::size_t>(active_features);
+    if (output_size > 0 && host_output == nullptr) {
+        throw std::invalid_argument("CUDA local descriptor output destination must not be null");
+    }
 
     RadialBasisSet radial_bases;
     radial_bases.reset(max_radial, coefficient_max_angular, cutoff);
@@ -620,9 +624,9 @@ std::vector<double> compute_local_descriptors(
                 coefficient_data, output);
             check_cuda(cudaGetLastError(), "CUDA local descriptor kernel launch failed");
         }
-        return context.download_output(output_size);
+        context.download_output_into(host_output, output_size);
+        return;
     }
-    return {};
 }
 
 } // namespace mdescriptor::cuda

@@ -376,24 +376,30 @@ py::dict compute_c00ps_mlff_descriptor(
     }
     graph.build_dpa(context, batch, host_batch, cutoff, true, false, false);
 
-    DeviceBuffer<I32> d_species;
-    DeviceBuffer<I32> d_radial_counts;
-    DeviceBuffer<I64> d_zero_offsets;
-    DeviceBuffer<I64> d_norm_offsets;
-    DeviceBuffer<I64> d_table_offsets;
-    DeviceBuffer<double> d_zeros;
-    DeviceBuffer<double> d_norms;
-    DeviceBuffer<double> d_tables;
-    DeviceBuffer<I64> d_coefficient_offsets;
-    d_species.upload(species.data(), species.size(), context.stream(), "could not upload C00PS species");
-    d_radial_counts.upload(radial_counts.data(), radial_counts.size(), context.stream(), "could not upload C00PS radial counts");
-    d_zero_offsets.upload(zero_offsets.data(), zero_offsets.size(), context.stream(), "could not upload C00PS zero offsets");
-    d_norm_offsets.upload(norm_offsets.data(), norm_offsets.size(), context.stream(), "could not upload C00PS norm offsets");
-    d_table_offsets.upload(table_offsets.data(), table_offsets.size(), context.stream(), "could not upload C00PS table offsets");
-    d_zeros.upload(zeros.data(), zeros.size(), context.stream(), "could not upload C00PS zeros");
-    d_norms.upload(norms.data(), norms.size(), context.stream(), "could not upload C00PS norms");
-    d_tables.upload(tables.data(), tables.size(), context.stream(), "could not upload C00PS radial tables");
-    d_coefficient_offsets.upload(coefficient_offsets.data(), coefficient_offsets.size(), context.stream(), "could not upload C00PS coefficient offsets");
+    const auto* d_species = static_cast<const I32*>(context.static_payload_buffer(
+        0, species.data(), species.size() * sizeof(I32), "could not upload C00PS species"));
+    const auto* d_radial_counts = static_cast<const I32*>(context.static_payload_buffer(
+        1, radial_counts.data(), radial_counts.size() * sizeof(I32),
+        "could not upload C00PS radial counts"));
+    const auto* d_zero_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        2, zero_offsets.data(), zero_offsets.size() * sizeof(I64),
+        "could not upload C00PS zero offsets"));
+    const auto* d_norm_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        3, norm_offsets.data(), norm_offsets.size() * sizeof(I64),
+        "could not upload C00PS norm offsets"));
+    const auto* d_table_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        4, table_offsets.data(), table_offsets.size() * sizeof(I64),
+        "could not upload C00PS table offsets"));
+    const auto* d_zeros = static_cast<const double*>(context.static_payload_buffer(
+        5, zeros.data(), zeros.size() * sizeof(double), "could not upload C00PS zeros"));
+    const auto* d_norms = static_cast<const double*>(context.static_payload_buffer(
+        6, norms.data(), norms.size() * sizeof(double), "could not upload C00PS norms"));
+    const auto* d_tables = static_cast<const double*>(context.static_payload_buffer(
+        7, tables.data(), tables.size() * sizeof(double),
+        "could not upload C00PS radial tables"));
+    const auto* d_coefficient_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        8, coefficient_offsets.data(), coefficient_offsets.size() * sizeof(I64),
+        "could not upload C00PS coefficient offsets"));
     const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     auto* workspace = static_cast<double*>(context.workspace_buffer(
@@ -405,9 +411,9 @@ py::dict compute_c00ps_mlff_descriptor(
         c00ps_mlff_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(), graph.distance2(),
-            d_species.get(), static_cast<int>(species.size()), d_radial_counts.get(),
-            d_zero_offsets.get(), d_norm_offsets.get(), d_table_offsets.get(),
-            d_zeros.get(), d_norms.get(), d_tables.get(), d_coefficient_offsets.get(),
+            d_species, static_cast<int>(species.size()), d_radial_counts,
+            d_zero_offsets, d_norm_offsets, d_table_offsets,
+            d_zeros, d_norms, d_tables, d_coefficient_offsets,
             cutoff_kind, cutoff, sigma, include_radial, include_angular, normalize_radial,
             normalize_angular, super_vector, exclude_self, radial_weight, angular_weight,
             max_angular, table_width, features, batch.atoms(), coefficient_stride, workspace, output);

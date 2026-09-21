@@ -28,11 +28,12 @@ public:
 
     double cutoff() const noexcept;
 
-    std::vector<double> compute(
+    void compute_into(
         CudaExecutionContext& context,
         const DeviceBatch& batch,
         const DeviceNeighborGraph& graph,
-        const std::vector<std::int32_t>& type_indices) const;
+        const std::vector<std::int32_t>& type_indices,
+        double* output) const;
 
 private:
     void release() noexcept;

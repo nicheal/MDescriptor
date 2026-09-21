@@ -171,32 +171,44 @@ py::dict compute_ace_descriptor(
     }
     graph.build_dpa(context, batch, host_batch, cutoff, true, false, false);
 
-    DeviceBuffer<I32> d_species;
-    DeviceBuffer<I32> d_base_species;
-    DeviceBuffer<I32> d_base_radial;
-    DeviceBuffer<I32> d_base_angular;
-    DeviceBuffer<I32> d_base_magnetic;
-    DeviceBuffer<double> d_radial_a;
-    DeviceBuffer<double> d_radial_b;
-    DeviceBuffer<double> d_radial_c;
-    DeviceBuffer<I64> d_center_feature_offsets;
-    DeviceBuffer<I64> d_feature_term_offsets;
-    DeviceBuffer<I64> d_term_channel_offsets;
-    DeviceBuffer<I32> d_term_channels;
-    DeviceBuffer<double> d_term_coefficients;
-    d_species.upload(species.data(), species.size(), context.stream(), "could not upload ACE species");
-    d_base_species.upload(base_species.data(), base_species.size(), context.stream(), "could not upload ACE base species");
-    d_base_radial.upload(base_radial.data(), base_radial.size(), context.stream(), "could not upload ACE base radial indices");
-    d_base_angular.upload(base_angular.data(), base_angular.size(), context.stream(), "could not upload ACE base angular indices");
-    d_base_magnetic.upload(base_magnetic.data(), base_magnetic.size(), context.stream(), "could not upload ACE magnetic indices");
-    d_radial_a.upload(radial_a.data(), radial_a.size(), context.stream(), "could not upload ACE radial recurrence");
-    d_radial_b.upload(radial_b.data(), radial_b.size(), context.stream(), "could not upload ACE radial recurrence offset");
-    d_radial_c.upload(radial_c.data(), radial_c.size(), context.stream(), "could not upload ACE radial recurrence second offset");
-    d_center_feature_offsets.upload(center_feature_offsets.data(), center_feature_offsets.size(), context.stream(), "could not upload ACE center feature offsets");
-    d_feature_term_offsets.upload(feature_term_offsets.data(), feature_term_offsets.size(), context.stream(), "could not upload ACE feature term offsets");
-    d_term_channel_offsets.upload(term_channel_offsets.data(), term_channel_offsets.size(), context.stream(), "could not upload ACE term channel offsets");
-    d_term_channels.upload(term_channels.data(), term_channels.size(), context.stream(), "could not upload ACE term channels");
-    d_term_coefficients.upload(term_coefficients.data(), term_coefficients.size(), context.stream(), "could not upload ACE term coefficients");
+    const auto* d_species = static_cast<const I32*>(context.static_payload_buffer(
+        0, species.data(), species.size() * sizeof(I32), "could not upload ACE species"));
+    const auto* d_base_species = static_cast<const I32*>(context.static_payload_buffer(
+        1, base_species.data(), base_species.size() * sizeof(I32),
+        "could not upload ACE base species"));
+    const auto* d_base_radial = static_cast<const I32*>(context.static_payload_buffer(
+        2, base_radial.data(), base_radial.size() * sizeof(I32),
+        "could not upload ACE base radial indices"));
+    const auto* d_base_angular = static_cast<const I32*>(context.static_payload_buffer(
+        3, base_angular.data(), base_angular.size() * sizeof(I32),
+        "could not upload ACE base angular indices"));
+    const auto* d_base_magnetic = static_cast<const I32*>(context.static_payload_buffer(
+        4, base_magnetic.data(), base_magnetic.size() * sizeof(I32),
+        "could not upload ACE magnetic indices"));
+    const auto* d_radial_a = static_cast<const double*>(context.static_payload_buffer(
+        5, radial_a.data(), radial_a.size() * sizeof(double),
+        "could not upload ACE radial recurrence"));
+    const auto* d_radial_b = static_cast<const double*>(context.static_payload_buffer(
+        6, radial_b.data(), radial_b.size() * sizeof(double),
+        "could not upload ACE radial recurrence offset"));
+    const auto* d_radial_c = static_cast<const double*>(context.static_payload_buffer(
+        7, radial_c.data(), radial_c.size() * sizeof(double),
+        "could not upload ACE radial recurrence second offset"));
+    const auto* d_center_feature_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        8, center_feature_offsets.data(), center_feature_offsets.size() * sizeof(I64),
+        "could not upload ACE center feature offsets"));
+    const auto* d_feature_term_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        9, feature_term_offsets.data(), feature_term_offsets.size() * sizeof(I64),
+        "could not upload ACE feature term offsets"));
+    const auto* d_term_channel_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        10, term_channel_offsets.data(), term_channel_offsets.size() * sizeof(I64),
+        "could not upload ACE term channel offsets"));
+    const auto* d_term_channels = static_cast<const I32*>(context.static_payload_buffer(
+        11, term_channels.data(), term_channels.size() * sizeof(I32),
+        "could not upload ACE term channels"));
+    const auto* d_term_coefficients = static_cast<const double*>(context.static_payload_buffer(
+        12, term_coefficients.data(), term_coefficients.size() * sizeof(double),
+        "could not upload ACE term coefficients"));
     const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     auto* coefficient_workspace = static_cast<double*>(context.workspace_buffer(
@@ -207,14 +219,14 @@ py::dict compute_ace_descriptor(
         ace_cuda_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(),
-            d_species.get(), static_cast<int>(species.size()), d_base_species.get(), d_base_radial.get(),
-            d_base_angular.get(), d_base_magnetic.get(), static_cast<I64>(base_species.size()),
+            d_species, static_cast<int>(species.size()), d_base_species, d_base_radial,
+            d_base_angular, d_base_magnetic, static_cast<I64>(base_species.size()),
             max_radial, max_angular, transform_a, transform_p, transform_r0,
             py::cast<double>(payload["radial_t_left"]), py::cast<double>(payload["radial_t_right"]),
             py::cast<int>(payload["radial_p_left"]), py::cast<int>(payload["radial_p_right"]),
-            d_radial_a.get(), d_radial_b.get(), d_radial_c.get(), d_center_feature_offsets.get(),
-            d_feature_term_offsets.get(), d_term_channel_offsets.get(), d_term_channels.get(),
-            d_term_coefficients.get(), features, batch.atoms(), coefficient_workspace, output);
+            d_radial_a, d_radial_b, d_radial_c, d_center_feature_offsets,
+            d_feature_term_offsets, d_term_channel_offsets, d_term_channels,
+            d_term_coefficients, features, batch.atoms(), coefficient_workspace, output);
         check_cuda(cudaGetLastError(), "ACE CUDA kernel launch failed");
     }
     const auto values = download_output_with_gil_release(

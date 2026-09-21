@@ -271,32 +271,45 @@ py::dict compute_mtp4_descriptor(
     }
     graph.build_dpa(context, batch, host_batch, max_dist, true, false, false);
 
-    DeviceBuffer<I32> d_species;
-    DeviceBuffer<double> d_parameters;
-    DeviceBuffer<double> d_recursive;
-    DeviceBuffer<double> d_vdw_params;
-    DeviceBuffer<I32> d_moments;
-    DeviceBuffer<I32> d_eval_kinds;
-    DeviceBuffer<I32> d_eval_linear_ids;
-    DeviceBuffer<double> d_eval_linear_coefficients;
-    DeviceBuffer<I64> d_eval_product_offsets;
-    DeviceBuffer<I32> d_eval_product_left;
-    DeviceBuffer<I32> d_eval_product_right;
-    DeviceBuffer<double> d_eval_product_coefficients;
-    DeviceBuffer<I32> d_scalar_output_ids;
-    d_species.upload(species.data(), species.size(), context.stream(), "could not upload MLIP-4 species");
-    d_parameters.upload(model_parameters.data(), model_parameters.size(), context.stream(), "could not upload MLIP-4 radial parameters");
-    d_recursive.upload(radial_recursive.data(), radial_recursive.size(), context.stream(), "could not upload MLIP-4 radial recurrence");
-    d_vdw_params.upload(radial_vdw_params.data(), radial_vdw_params.size(), context.stream(), "could not upload MLIP-4 damped radial parameters");
-    d_moments.upload(moments.data(), moments.size(), context.stream(), "could not upload MLIP-4 moments");
-    d_eval_kinds.upload(eval_kinds.data(), eval_kinds.size(), context.stream(), "could not upload MLIP-4 evaluator kinds");
-    d_eval_linear_ids.upload(eval_linear_ids.data(), eval_linear_ids.size(), context.stream(), "could not upload MLIP-4 linear evaluator ids");
-    d_eval_linear_coefficients.upload(eval_linear_coefficients.data(), eval_linear_coefficients.size(), context.stream(), "could not upload MLIP-4 linear evaluator coefficients");
-    d_eval_product_offsets.upload(eval_product_offsets.data(), eval_product_offsets.size(), context.stream(), "could not upload MLIP-4 product evaluator offsets");
-    d_eval_product_left.upload(eval_product_left.data(), eval_product_left.size(), context.stream(), "could not upload MLIP-4 product evaluator left ids");
-    d_eval_product_right.upload(eval_product_right.data(), eval_product_right.size(), context.stream(), "could not upload MLIP-4 product evaluator right ids");
-    d_eval_product_coefficients.upload(eval_product_coefficients.data(), eval_product_coefficients.size(), context.stream(), "could not upload MLIP-4 product evaluator coefficients");
-    d_scalar_output_ids.upload(scalar_output_ids.data(), scalar_output_ids.size(), context.stream(), "could not upload MLIP-4 scalar output ids");
+    const auto* d_species = static_cast<const I32*>(context.static_payload_buffer(
+        0, species.data(), species.size() * sizeof(I32), "could not upload MLIP-4 species"));
+    const auto* d_parameters = static_cast<const double*>(context.static_payload_buffer(
+        1, model_parameters.data(), model_parameters.size() * sizeof(double),
+        "could not upload MLIP-4 radial parameters"));
+    const auto* d_recursive = static_cast<const double*>(context.static_payload_buffer(
+        2, radial_recursive.data(), radial_recursive.size() * sizeof(double),
+        "could not upload MLIP-4 radial recurrence"));
+    const auto* d_vdw_params = static_cast<const double*>(context.static_payload_buffer(
+        3, radial_vdw_params.data(), radial_vdw_params.size() * sizeof(double),
+        "could not upload MLIP-4 damped radial parameters"));
+    const auto* d_moments = static_cast<const I32*>(context.static_payload_buffer(
+        4, moments.data(), moments.size() * sizeof(I32), "could not upload MLIP-4 moments"));
+    const auto* d_eval_kinds = static_cast<const I32*>(context.static_payload_buffer(
+        5, eval_kinds.data(), eval_kinds.size() * sizeof(I32),
+        "could not upload MLIP-4 evaluator kinds"));
+    const auto* d_eval_linear_ids = static_cast<const I32*>(context.static_payload_buffer(
+        6, eval_linear_ids.data(), eval_linear_ids.size() * sizeof(I32),
+        "could not upload MLIP-4 linear evaluator ids"));
+    const auto* d_eval_linear_coefficients = static_cast<const double*>(context.static_payload_buffer(
+        7, eval_linear_coefficients.data(),
+        eval_linear_coefficients.size() * sizeof(double),
+        "could not upload MLIP-4 evaluator coefficients"));
+    const auto* d_eval_product_offsets = static_cast<const I64*>(context.static_payload_buffer(
+        8, eval_product_offsets.data(), eval_product_offsets.size() * sizeof(I64),
+        "could not upload MLIP-4 product evaluator offsets"));
+    const auto* d_eval_product_left = static_cast<const I32*>(context.static_payload_buffer(
+        9, eval_product_left.data(), eval_product_left.size() * sizeof(I32),
+        "could not upload MLIP-4 product evaluator left ids"));
+    const auto* d_eval_product_right = static_cast<const I32*>(context.static_payload_buffer(
+        10, eval_product_right.data(), eval_product_right.size() * sizeof(I32),
+        "could not upload MLIP-4 product evaluator right ids"));
+    const auto* d_eval_product_coefficients = static_cast<const double*>(context.static_payload_buffer(
+        11, eval_product_coefficients.data(),
+        eval_product_coefficients.size() * sizeof(double),
+        "could not upload MLIP-4 product evaluator coefficients"));
+    const auto* d_scalar_output_ids = static_cast<const I32*>(context.static_payload_buffer(
+        12, scalar_output_ids.data(), scalar_output_ids.size() * sizeof(I32),
+        "could not upload MLIP-4 scalar output ids"));
     const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     auto* workspace = static_cast<double*>(context.workspace_buffer(
@@ -307,13 +320,13 @@ py::dict compute_mtp4_descriptor(
         mtp4_cuda_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(), graph.distance2(),
-            d_species.get(), static_cast<int>(species.size()), radial_kind, radial_basis_size,
+            d_species, static_cast<int>(species.size()), radial_kind, radial_basis_size,
             radial_funcs_count, min_dist, max_dist, radial_maxdist_sq,
-            radial_maxdist_sq_minus_eps, radial_exp_ratio, radial_zeroth, d_recursive.get(),
-            d_vdw_params.get(), d_parameters.get(), radial_scaling, d_moments.get(), moment_count,
-            d_eval_kinds.get(), d_eval_linear_ids.get(), d_eval_linear_coefficients.get(), eval_count,
-            d_eval_product_offsets.get(), d_eval_product_left.get(), d_eval_product_right.get(),
-            d_eval_product_coefficients.get(), d_scalar_output_ids.get(), features, batch.atoms(),
+            radial_maxdist_sq_minus_eps, radial_exp_ratio, radial_zeroth, d_recursive,
+            d_vdw_params, d_parameters, radial_scaling, d_moments, moment_count,
+            d_eval_kinds, d_eval_linear_ids, d_eval_linear_coefficients, eval_count,
+            d_eval_product_offsets, d_eval_product_left, d_eval_product_right,
+            d_eval_product_coefficients, d_scalar_output_ids, features, batch.atoms(),
             workspace, output);
         check_cuda(cudaGetLastError(), "MLIP-4 MTP CUDA kernel launch failed");
     }
@@ -465,16 +478,20 @@ py::dict compute_mtp2_descriptor(
         throw std::invalid_argument("invalid MLIP-2 MTP CUDA evaluator payload");
     }
     graph.build_dpa(context, batch, host_batch, max_dist, true, false, false);
-    DeviceBuffer<I32> d_species;
-    DeviceBuffer<double> d_radial_coefficients;
-    DeviceBuffer<I32> d_alpha_basic;
-    DeviceBuffer<I32> d_alpha_times;
-    DeviceBuffer<I32> d_moment_mapping;
-    d_species.upload(species.data(), species.size(), context.stream(), "could not upload MLIP-2 species");
-    d_radial_coefficients.upload(radial_coefficients.data(), radial_coefficients.size(), context.stream(), "could not upload MLIP-2 radial coefficients");
-    d_alpha_basic.upload(alpha_basic.data(), alpha_basic.size(), context.stream(), "could not upload MLIP-2 basic indices");
-    d_alpha_times.upload(alpha_times.data(), alpha_times.size(), context.stream(), "could not upload MLIP-2 product indices");
-    d_moment_mapping.upload(moment_mapping.data(), moment_mapping.size(), context.stream(), "could not upload MLIP-2 moment mapping");
+    const auto* d_species = static_cast<const I32*>(context.static_payload_buffer(
+        0, species.data(), species.size() * sizeof(I32), "could not upload MLIP-2 species"));
+    const auto* d_radial_coefficients = static_cast<const double*>(context.static_payload_buffer(
+        1, radial_coefficients.data(), radial_coefficients.size() * sizeof(double),
+        "could not upload MLIP-2 radial coefficients"));
+    const auto* d_alpha_basic = static_cast<const I32*>(context.static_payload_buffer(
+        2, alpha_basic.data(), alpha_basic.size() * sizeof(I32),
+        "could not upload MLIP-2 basic indices"));
+    const auto* d_alpha_times = static_cast<const I32*>(context.static_payload_buffer(
+        3, alpha_times.data(), alpha_times.size() * sizeof(I32),
+        "could not upload MLIP-2 product indices"));
+    const auto* d_moment_mapping = static_cast<const I32*>(context.static_payload_buffer(
+        4, moment_mapping.data(), moment_mapping.size() * sizeof(I32),
+        "could not upload MLIP-2 moment mapping"));
     const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
     double* output = context.output_buffer(size);
     auto* workspace = static_cast<double*>(context.workspace_buffer(
@@ -486,10 +503,10 @@ py::dict compute_mtp2_descriptor(
         mtp2_cuda_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
             block_size, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(),
-            graph.distance2(), d_species.get(), species_count, radial_basis_size,
+            graph.distance2(), d_species, species_count, radial_basis_size,
             radial_funcs_count, alpha_moments_count, min_dist, max_dist, scaling, repulsive,
-            d_radial_coefficients.get(), d_alpha_basic.get(), static_cast<I64>(alpha_basic.size() / 4U),
-            d_alpha_times.get(), static_cast<I64>(alpha_times.size() / 4U), d_moment_mapping.get(),
+            d_radial_coefficients, d_alpha_basic, static_cast<I64>(alpha_basic.size() / 4U),
+            d_alpha_times, static_cast<I64>(alpha_times.size() / 4U), d_moment_mapping,
             features, batch.atoms(), workspace, output);
         check_cuda(cudaGetLastError(), "MLIP-2 MTP CUDA kernel launch failed");
     }
