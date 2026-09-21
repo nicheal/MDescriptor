@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from os import PathLike
 from typing import Any, ClassVar
 
@@ -185,10 +186,15 @@ class ModelBackedAdapter(DescriptorAdapter):
         try:
             super().close()
         finally:
-            if self.session is not None:
-                self.session.close()
-            self.loaded_model = None
-            self._preloaded_model_weights = None
+            try:
+                if self.session is not None:
+                    self.session.close()
+            finally:
+                self.loaded_model = None
+                self._preloaded_model_weights = None
+                self._resolved_model_content = None
+                if self.resolved_model is not None:
+                    self.resolved_model = replace(self.resolved_model, content=None)
 
     def _ensure_model_session(self) -> None:
         if self.session is not None:

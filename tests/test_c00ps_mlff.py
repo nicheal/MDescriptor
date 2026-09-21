@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
+from mdescriptor import ExecutionOptions
 from tests._public import C00PSMLFF, CancelledError, ComputeControl, StructureBatch
 
 
@@ -63,6 +64,31 @@ def test_c00ps_mlff_radial_or_angular_only_modes():
     assert radial.values.shape == (3, 8)
     # nrb(l) = [4, 3] for MRB=4 and l_max=1.
     assert angular.values.shape == (3, 8 * 9 // 2 + 6 * 7 // 2)
+
+
+def test_c00ps_mlff_parallel_centers_match_serial():
+    positions = np.column_stack(
+        [np.arange(32, dtype=np.float64) * 1.2, np.zeros((32, 2), dtype=np.float64)]
+    )
+    batch = StructureBatch.from_ase([Atoms(numbers=[1] * 32, positions=positions)])
+    serial = C00PSMLFF(
+        species=[1], r_cut=2.5, n_radial=2, l_max=1,
+        execution=ExecutionOptions(device="cpu", num_threads=1),
+    )
+    parallel = C00PSMLFF(
+        species=[1], r_cut=2.5, n_radial=2, l_max=1,
+        execution=ExecutionOptions(device="cpu", num_threads=4),
+    )
+    try:
+        np.testing.assert_allclose(
+            parallel.compute(batch).values,
+            serial.compute(batch).values,
+            rtol=0.0,
+            atol=1e-12,
+        )
+    finally:
+        serial.close()
+        parallel.close()
 
 
 def test_c00ps_mlff_uses_reference_gaussian_radial_basis():

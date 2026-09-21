@@ -1,6 +1,10 @@
 name: GPU Test
 
 on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +24,8 @@ jobs:
       - ${{ vars.MDESCRIPTOR_GPU_RUNNER_LABEL || 'gpu' }}
     timeout-minutes: 60
     env:
-      CUDA_ARCHITECTURES: ${{ vars.MDESCRIPTOR_CUDA_ARCHITECTURES || 'native' }}
+      # Keep the self-hosted gate aligned with the published wheel contract.
+      CUDA_ARCHITECTURES: ${{ vars.MDESCRIPTOR_CUDA_ARCHITECTURES || '75-real;80-real;86-real;90-real;90-virtual' }}
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
       PYTHONUNBUFFERED: '1'
       PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}

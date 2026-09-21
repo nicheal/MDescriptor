@@ -10,7 +10,7 @@ from ase import Atoms
 from tests._cuda import load_cuda_for_tests
 
 from mdescriptor import ExecutionOptions, StructureBatch
-from mdescriptor.descriptors import ACE, C00PSMLFF, MTP
+from mdescriptor.descriptors import ACE, C00PSMLFF, MTP, SphericalExpansionByPair
 
 
 def _batch(numbers: list[int]) -> StructureBatch:
@@ -35,6 +35,15 @@ def _descriptor(name: str):
     if name == "MTP":
         model = Path(__file__).parents[1] / "data" / "mlip4_test_mtp.json"
         return MTP(species=[13, 14], model=model, execution=execution)
+    if name == "SphericalExpansionByPair":
+        return SphericalExpansionByPair(
+            species=[1, 8],
+            cutoff=3.0,
+            density_width=0.5,
+            max_radial=2,
+            max_angular=2,
+            execution=execution,
+        )
     return C00PSMLFF(
         species=[1, 8], r_cut=3.0, n_radial=3, l_max=2, execution=execution
     )
@@ -43,7 +52,12 @@ def _descriptor(name: str):
 @pytest.mark.gpu
 @pytest.mark.parametrize(
     ("name", "numbers"),
-    [("ACE", [1, 8, 1]), ("MTP", [13, 14]), ("C00PSMLFF", [8, 1, 1])],
+    [
+        ("ACE", [1, 8, 1]),
+        ("MTP", [13, 14]),
+        ("C00PSMLFF", [8, 1, 1]),
+        ("SphericalExpansionByPair", [1, 8, 1]),
+    ],
 )
 def test_cuda_static_payload_reuse_and_descriptor_lifetime(
     name: str, numbers: list[int]
@@ -67,3 +81,33 @@ def test_cuda_static_payload_reuse_and_descriptor_lifetime(
         np.testing.assert_array_equal(replacement.compute(batch).values, snapshot)
     finally:
         replacement.close()
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize(
+    "overrides", [{}, {"include_angular": False}, {"radial_sigma": 0.0}]
+)
+def test_cuda_c00ps_self_correction_matches_cpu(
+    overrides: dict[str, object],
+) -> None:
+    load_cuda_for_tests()
+    batch = _batch([8, 1, 1])
+    parameters = {
+        "species": [1, 8],
+        "r_cut": 3.0,
+        "n_radial": 3,
+        "l_max": 2,
+        **overrides,
+    }
+    cpu = C00PSMLFF(**parameters, execution=ExecutionOptions(device="cpu", num_threads=1))
+    gpu = C00PSMLFF(**parameters, execution=ExecutionOptions(device="cuda"))
+    try:
+        np.testing.assert_allclose(
+            gpu.compute(batch).values,
+            cpu.compute(batch).values,
+            rtol=1e-10,
+            atol=1e-10,
+        )
+    finally:
+        cpu.close()
+        gpu.close()

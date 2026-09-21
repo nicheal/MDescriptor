@@ -330,7 +330,7 @@ MDescriptor  # CPU + CUDA 双后端 wheel
 Runtime 放在 `mdescriptor/.cuda_libs`，通过 `$ORIGIN/.cuda_libs` 加载
 （Windows 上 cudart64 DLL 与 `_cuda.pyd` 同目录）。宿主机 NVIDIA 驱动提供
 `libcuda`，不随 wheel 分发。构建时 `MDESCRIPTOR_BUILD_CUDA` 为三态开关：
-`AUTO`（默认，检测到 CUDA toolkit 即构建）、`ON`（强制，缺失即报错）、
+`AUTO`（默认，检测到 CUDA toolkit >= 12.0 才构建，旧版本回落 CPU）、`ON`（强制，缺失或版本过低即报错）、
 `OFF`（禁用）。发布 wheel 固定 SASS sm_75/80/86/90 外加 compute_90 PTX
 （更新架构由驱动 JIT），CI 矩阵使用 CUDA 12.8。
 

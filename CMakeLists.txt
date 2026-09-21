@@ -204,12 +204,14 @@ install(
 set(MDESCRIPTOR_BUILD_CUDA "AUTO" CACHE STRING
     "Build the CUDA backend: ON, OFF, or AUTO (build when a CUDA toolkit is detected)")
 set_property(CACHE MDESCRIPTOR_BUILD_CUDA PROPERTY STRINGS ON OFF AUTO)
+set(MDESCRIPTOR_CUDA_TOOLKIT_MIN_VERSION "12.0" CACHE STRING
+    "Minimum CUDA toolkit version for the CUDA backend")
 option(
     MDESCRIPTOR_BUNDLE_CUDA_RUNTIME
     "Bundle the CUDA runtime shared library beside the CUDA backend"
     ON)
 if(MDESCRIPTOR_BUILD_CUDA STREQUAL "AUTO")
-    find_package(CUDAToolkit QUIET)
+    find_package(CUDAToolkit ${MDESCRIPTOR_CUDA_TOOLKIT_MIN_VERSION} QUIET)
     set(MDESCRIPTOR_CUDA_ENABLED OFF)
     if(CUDAToolkit_FOUND)
         if(DEFINED ENV{CUDACXX} AND EXISTS "$ENV{CUDACXX}")
@@ -249,7 +251,7 @@ if(MDESCRIPTOR_CUDA_ENABLED)
             "Defaulting CMAKE_CUDA_ARCHITECTURES to ${CMAKE_CUDA_ARCHITECTURES}")
     endif()
     enable_language(CUDA)
-    find_package(CUDAToolkit REQUIRED)
+    find_package(CUDAToolkit ${MDESCRIPTOR_CUDA_TOOLKIT_MIN_VERSION} REQUIRED)
 
     set(MDESCRIPTOR_CUDA_SOURCES
         cpp/cuda/src/context.cu

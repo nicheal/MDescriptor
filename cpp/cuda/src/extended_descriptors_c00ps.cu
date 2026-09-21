@@ -2,28 +2,18 @@
 
 namespace {
 
-std::vector<std::vector<double>> nested_payload_vectors(
+F64Array flat_payload_array(
     const py::dict& payload,
     const char* key) {
     const py::str name(key);
-    if (!payload.contains(name) || payload[name].is_none()) return {};
-    py::sequence sequence;
-    try {
-        sequence = py::cast<py::sequence>(payload[name]);
-    } catch (const py::cast_error&) {
-        throw std::invalid_argument(std::string(key) + " must be a sequence of numeric arrays");
+    if (!payload.contains(name) || payload[name].is_none()) {
+        throw std::invalid_argument(std::string(key) + " must be a one-dimensional array");
     }
-    std::vector<std::vector<double>> result;
-    result.reserve(static_cast<std::size_t>(sequence.size()));
-    for (py::ssize_t index = 0; index < sequence.size(); ++index) {
-        const auto values = F64Array::ensure(sequence[index]);
-        if (!values || values.ndim() != 1) {
-            throw std::invalid_argument(std::string(key) + " must contain one-dimensional arrays");
-        }
-        result.emplace_back(
-            values.data(), values.data() + static_cast<std::size_t>(values.shape(0)));
+    const auto values = F64Array::ensure(payload[name]);
+    if (!values || values.ndim() != 1) {
+        throw std::invalid_argument(std::string(key) + " must be a one-dimensional array");
     }
-    return result;
+    return values;
 }
 
 } // namespace
@@ -123,7 +113,7 @@ __device__ double c00_radial_value(
         * basis / norms[norm_offsets[angular] + radial];
 }
 
-__global__ void c00ps_mlff_kernel(
+__global__ void c00ps_mlff_coefficient_kernel(
     const I32* numbers,
     const I64* graph_offsets,
     const I32* graph_atoms,
@@ -142,28 +132,28 @@ __global__ void c00ps_mlff_kernel(
     int cutoff_kind,
     double cutoff,
     double sigma,
-    bool include_radial,
     bool include_angular,
-    bool normalize_radial,
-    bool normalize_angular,
-    bool super_vector,
     bool exclude_self,
-    double radial_weight,
-    double angular_weight,
     int max_angular,
     int table_width,
-    I64 features,
     I64 atoms,
     I64 coefficient_stride,
-    double* workspace,
-    double* output) {
+    I64 self_correction_stride,
+    I64 radial_value_stride,
+    double* workspace) {
     const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (center >= atoms) return;
     const int center_type = species_index(numbers[center], species, species_count);
     if (center_type < 0) return;
     constexpr int MaxAngular = 20;
-    double* coefficients = workspace + center * coefficient_stride;
+    const I64 workspace_stride = coefficient_stride
+        + self_correction_stride + radial_value_stride;
+    double* center_workspace = workspace + center * workspace_stride;
+    double* coefficients = center_workspace;
+    double* self_correction = coefficients + coefficient_stride;
+    double* radial_values = self_correction + self_correction_stride;
     for (I64 index = 0; index < coefficient_stride; ++index) coefficients[index] = 0.0;
+    for (I64 index = 0; index < self_correction_stride; ++index) self_correction[index] = 0.0;
     const I64 begin = graph_offsets[center];
     const I64 end = graph_offsets[center + 1];
     for (I64 edge = begin; edge < end; ++edge) {
@@ -173,15 +163,22 @@ __global__ void c00ps_mlff_kernel(
         if (type < 0) continue;
         double harmonics[441]{};
         harmonic_values<MaxAngular>(graph_displacements + edge * 3, harmonics, max_angular);
+        I64 radial_offset = 0;
+        I64 correction_offset = 0;
         for (int angular = 0; angular <= max_angular; ++angular) {
             const int count = radial_counts[angular];
             const I64 coefficient_base = coefficient_offsets[angular]
                 + static_cast<I64>(type) * count * (2 * angular + 1);
+            double* edge_radial_values = radial_value_stride > 0
+                ? radial_values + radial_offset : nullptr;
             for (int radial = 0; radial < count; ++radial) {
                 const double value = c00_radial_value(
                     distance, angular, radial, cutoff_kind, cutoff, sigma,
                     zeros, norms, tables,
                     zero_offsets, norm_offsets, table_offsets, radial_counts, table_width);
+                if (exclude_self && include_angular && type == center_type) {
+                    edge_radial_values[radial] = value;
+                }
                 const I64 destination = coefficient_base
                     + static_cast<I64>(radial) * (2 * angular + 1);
                 for (int m = 0; m <= 2 * angular; ++m) {
@@ -189,8 +186,55 @@ __global__ void c00ps_mlff_kernel(
                         * harmonics[angular * angular + m];
                 }
             }
+            if (exclude_self && include_angular && type == center_type) {
+                const double addition = (2.0 * angular + 1.0) / (4.0 * kPi);
+                for (int first = 0; first < count; ++first) {
+                    for (int second = first; second < count; ++second) {
+                        const I64 pair_index = static_cast<I64>(first) * count
+                            - static_cast<I64>(first) * (first - 1) / 2
+                            + second - first;
+                        self_correction[correction_offset + pair_index] += addition
+                            * edge_radial_values[first] * edge_radial_values[second];
+                    }
+                }
+            }
+            radial_offset += count;
+            correction_offset += static_cast<I64>(count) * (count + 1) / 2;
         }
     }
+}
+
+__global__ void c00ps_mlff_spectrum_kernel(
+    const I32* numbers,
+    const I32* species,
+    int species_count,
+    const I32* radial_counts,
+    const I64* coefficient_offsets,
+    bool include_radial,
+    bool include_angular,
+    bool normalize_radial,
+    bool normalize_angular,
+    bool super_vector,
+    bool exclude_self,
+    double radial_weight,
+    double angular_weight,
+    int max_angular,
+    I64 features,
+    I64 atoms,
+    I64 coefficient_stride,
+    I64 self_correction_stride,
+    I64 radial_value_stride,
+    double* workspace,
+    double* output) {
+    const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (center >= atoms) return;
+    const int center_type = species_index(numbers[center], species, species_count);
+    if (center_type < 0) return;
+    const I64 workspace_stride = coefficient_stride
+        + self_correction_stride + radial_value_stride;
+    double* center_workspace = workspace + center * workspace_stride;
+    double* coefficients = center_workspace;
+    double* self_correction = coefficients + coefficient_stride;
     double* target = output + center * features;
     I64 output_index = 0;
     const int radial_channels = species_count * radial_counts[0];
@@ -213,6 +257,7 @@ __global__ void c00ps_mlff_kernel(
     if (include_angular) {
         const I64 angular_offset = include_radial ? radial_channels : 0;
         I64 angular_index = 0;
+        I64 correction_offset = 0;
         for (int angular = 0; angular <= max_angular; ++angular) {
             const int count = radial_counts[angular];
             const int channels = species_count * count;
@@ -232,27 +277,16 @@ __global__ void c00ps_mlff_kernel(
                         value += coefficients[first_base + m] * coefficients[second_base + m];
                     }
                     if (exclude_self && first_type == center_type && second_type == center_type) {
-                        const double addition = (2.0 * angular + 1.0) / (4.0 * kPi);
-                        for (I64 edge = begin; edge < end; ++edge) {
-                            const double distance = sqrt(fmax(0.0, graph_distance2[edge]));
-                            if (distance <= 1e-12 || distance > cutoff) continue;
-                            const int type = species_index(numbers[graph_atoms[edge]], species, species_count);
-                            if (type != center_type) continue;
-                            const double left = c00_radial_value(
-                                distance, angular, first_radial, cutoff_kind, cutoff, sigma,
-                                zeros, norms, tables,
-                                zero_offsets, norm_offsets, table_offsets, radial_counts, table_width);
-                            const double right = c00_radial_value(
-                                distance, angular, second_radial, cutoff_kind, cutoff, sigma,
-                                zeros, norms, tables,
-                                zero_offsets, norm_offsets, table_offsets, radial_counts, table_width);
-                            value -= addition * left * right;
-                        }
+                        const I64 local_pair_index = static_cast<I64>(first_radial) * count
+                            - static_cast<I64>(first_radial) * (first_radial - 1) / 2
+                            + second_radial - first_radial;
+                        value -= self_correction[correction_offset + local_pair_index];
                     }
                     const double pair_weight = first_radial == second_radial ? 1.0 : sqrt(2.0);
                     target[angular_offset + angular_index++] = pair_weight * prefactor * value;
                 }
             }
+            correction_offset += static_cast<I64>(count) * (count + 1) / 2;
         }
     }
     if (normalize_angular) {
@@ -299,9 +333,9 @@ py::dict compute_c00ps_mlff_descriptor(
     const py::dict payload = py::cast<py::dict>(options[payload_key]);
     const auto species = species_option(options);
     const auto radial_counts = py::cast<std::vector<I32>>(payload["radial_counts"]);
-    const auto zeros_nested = nested_payload_vectors(payload, "basis_zeros");
-    const auto norms_nested = nested_payload_vectors(payload, "basis_norms");
-    const auto tables_nested = nested_payload_vectors(payload, "basis_values");
+    const auto zeros_array = flat_payload_array(payload, "basis_zeros");
+    const auto norms_array = flat_payload_array(payload, "basis_norms");
+    const auto tables_array = flat_payload_array(payload, "basis_values");
     const int max_angular = option(options, "l_max", 4);
     const double cutoff = option(options, "r_cut", option(options, "cutoff", 6.0));
     const double sigma = option(options, "radial_sigma", 0.5);
@@ -309,9 +343,7 @@ py::dict compute_c00ps_mlff_descriptor(
     // cannot hold a higher runtime degree (same cap as the SOAP family).
     if (species.empty() || max_angular < 0 || max_angular > 20 || max_angular >= static_cast<int>(radial_counts.size())
         || cutoff <= 0.0 || sigma < 0.0
-        || zeros_nested.size() != radial_counts.size()
-        || norms_nested.size() != radial_counts.size()
-        || tables_nested.size() != radial_counts.size()) {
+        || radial_counts.empty()) {
         throw std::invalid_argument("invalid C00PSMLFF CUDA basis payload");
     }
     const bool include_radial = option(options, "include_radial", true);
@@ -327,22 +359,30 @@ py::dict compute_c00ps_mlff_descriptor(
         : cutoff_name == "rj" ? 2 : cutoff_name == "wmc" ? 3 : -1;
     if (cutoff_kind < 0) throw std::invalid_argument("invalid C00PSMLFF cutoff function");
 
+    const int table_width = 10001;
     std::vector<I64> zero_offsets(radial_counts.size(), 0);
     std::vector<I64> norm_offsets(radial_counts.size(), 0);
     std::vector<I64> table_offsets(radial_counts.size(), 0);
-    std::vector<double> zeros;
-    std::vector<double> norms;
-    std::vector<double> tables;
     I64 coefficient_stride = 0;
+    std::size_t basis_size = 0;
+    std::size_t table_size = 0;
     for (std::size_t angular = 0; angular < radial_counts.size(); ++angular) {
-        zero_offsets[angular] = static_cast<I64>(zeros.size());
-        norm_offsets[angular] = static_cast<I64>(norms.size());
-        table_offsets[angular] = static_cast<I64>(tables.size());
-        zeros.insert(zeros.end(), zeros_nested[angular].begin(), zeros_nested[angular].end());
-        norms.insert(norms.end(), norms_nested[angular].begin(), norms_nested[angular].end());
-        tables.insert(tables.end(), tables_nested[angular].begin(), tables_nested[angular].end());
-        coefficient_stride += static_cast<I64>(species.size()) * radial_counts[angular]
+        const I32 count = radial_counts[angular];
+        if (count <= 0) {
+            throw std::invalid_argument("invalid C00PSMLFF CUDA radial counts");
+        }
+        zero_offsets[angular] = static_cast<I64>(basis_size);
+        norm_offsets[angular] = static_cast<I64>(basis_size);
+        table_offsets[angular] = static_cast<I64>(table_size);
+        basis_size += static_cast<std::size_t>(count);
+        if (sigma > 0.0) table_size += static_cast<std::size_t>(count) * table_width;
+        coefficient_stride += static_cast<I64>(species.size()) * count
             * (2 * static_cast<int>(angular) + 1);
+    }
+    if (zeros_array.size() != static_cast<py::ssize_t>(basis_size)
+        || norms_array.size() != static_cast<py::ssize_t>(basis_size)
+        || tables_array.size() != static_cast<py::ssize_t>(table_size)) {
+        throw std::invalid_argument("invalid C00PSMLFF CUDA basis payload sizes");
     }
     std::vector<I64> coefficient_offsets(radial_counts.size(), 0);
     I64 coefficient_offset = 0;
@@ -351,15 +391,17 @@ py::dict compute_c00ps_mlff_descriptor(
         coefficient_offset += static_cast<I64>(species.size()) * radial_counts[angular]
             * (2 * static_cast<int>(angular) + 1);
     }
-    const int table_width = 10001;
-    if (sigma > 0.0) {
-        for (std::size_t angular = 0; angular < tables_nested.size(); ++angular) {
-            const std::size_t expected = static_cast<std::size_t>(radial_counts[angular]) * table_width;
-            if (tables_nested[angular].size() != expected) {
-                throw std::invalid_argument("C00PSMLFF CUDA radial table has an unexpected size");
-            }
+    I64 self_correction_stride = 0;
+    I64 radial_value_stride = 0;
+    if (include_angular && exclude_self) {
+        for (int angular = 0; angular <= max_angular; ++angular) {
+            const I64 count = radial_counts[static_cast<std::size_t>(angular)];
+            self_correction_stride += count * (count + 1) / 2;
+            radial_value_stride += count;
         }
     }
+    const I64 workspace_stride = coefficient_stride
+        + self_correction_stride + radial_value_stride;
     const I64 features = feature_count_option(options, 0);
     const I64 radial_features = include_radial
         ? static_cast<I64>(species.size()) * radial_counts[0] : 0;
@@ -391,32 +433,48 @@ py::dict compute_c00ps_mlff_descriptor(
         4, table_offsets.data(), table_offsets.size() * sizeof(I64),
         "could not upload C00PS table offsets"));
     const auto* d_zeros = static_cast<const double*>(context.static_payload_buffer(
-        5, zeros.data(), zeros.size() * sizeof(double), "could not upload C00PS zeros"));
+        5, zeros_array.data(), static_cast<std::size_t>(zeros_array.size()) * sizeof(double),
+        "could not upload C00PS zeros"));
     const auto* d_norms = static_cast<const double*>(context.static_payload_buffer(
-        6, norms.data(), norms.size() * sizeof(double), "could not upload C00PS norms"));
+        6, norms_array.data(), static_cast<std::size_t>(norms_array.size()) * sizeof(double),
+        "could not upload C00PS norms"));
     const auto* d_tables = static_cast<const double*>(context.static_payload_buffer(
-        7, tables.data(), tables.size() * sizeof(double),
+        7, tables_array.data(), static_cast<std::size_t>(tables_array.size()) * sizeof(double),
         "could not upload C00PS radial tables"));
     const auto* d_coefficient_offsets = static_cast<const I64*>(context.static_payload_buffer(
         8, coefficient_offsets.data(), coefficient_offsets.size() * sizeof(I64),
         "could not upload C00PS coefficient offsets"));
-    const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
+    const std::size_t size = checked_size_product(
+        static_cast<std::size_t>(batch.atoms()), static_cast<std::size_t>(features),
+        "C00PSMLFF CUDA output is too large");
     double* output = context.output_buffer(size);
-    auto* workspace = static_cast<double*>(context.workspace_buffer(
-        static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(coefficient_stride)
-        * sizeof(double)));
+    const std::size_t workspace_elements = checked_size_product(
+        static_cast<std::size_t>(batch.atoms()), static_cast<std::size_t>(workspace_stride),
+        "C00PSMLFF CUDA workspace is too large");
+    const std::size_t workspace_bytes = checked_size_product(
+        workspace_elements, sizeof(double), "C00PSMLFF CUDA workspace is too large");
+    auto* workspace = static_cast<double*>(context.workspace_buffer(workspace_bytes));
     if (size > 0) {
         zeroed_output(context, output, size, "could not clear C00PS output");
         constexpr unsigned block_size = 64;
-        c00ps_mlff_kernel<<<static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size),
+        const auto blocks = static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size);
+        c00ps_mlff_coefficient_kernel<<<blocks,
             block_size, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(), graph.distance2(),
             d_species, static_cast<int>(species.size()), d_radial_counts,
             d_zero_offsets, d_norm_offsets, d_table_offsets,
             d_zeros, d_norms, d_tables, d_coefficient_offsets,
-            cutoff_kind, cutoff, sigma, include_radial, include_angular, normalize_radial,
+            cutoff_kind, cutoff, sigma, include_angular, exclude_self,
+            max_angular, table_width, batch.atoms(), coefficient_stride,
+            self_correction_stride, radial_value_stride, workspace);
+        check_cuda(cudaGetLastError(), "CUDA C00PSMLFF kernel launch failed");
+        c00ps_mlff_spectrum_kernel<<<blocks,
+            block_size, 0, context.stream()>>>(
+            batch.numbers(), d_species, static_cast<int>(species.size()), d_radial_counts,
+            d_coefficient_offsets, include_radial, include_angular, normalize_radial,
             normalize_angular, super_vector, exclude_self, radial_weight, angular_weight,
-            max_angular, table_width, features, batch.atoms(), coefficient_stride, workspace, output);
+            max_angular, features, batch.atoms(), coefficient_stride,
+            self_correction_stride, radial_value_stride, workspace, output);
         check_cuda(cudaGetLastError(), "CUDA C00PSMLFF kernel launch failed");
     }
     const auto values = download_output_with_gil_release(

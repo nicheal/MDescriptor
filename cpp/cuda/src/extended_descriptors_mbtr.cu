@@ -26,6 +26,20 @@ __device__ double mbtr_weight_device(
         weighting, scale, threshold, r_cut, sharpness, first, second, third);
 }
 
+__device__ I64 structure_for_atom(
+    const I64* offsets,
+    I64 structures,
+    I64 atom) {
+    I64 begin = 0;
+    I64 end = structures;
+    while (begin < end) {
+        const I64 middle = begin + (end - begin) / 2;
+        if (offsets[middle + 1] <= atom) begin = middle + 1;
+        else end = middle;
+    }
+    return begin;
+}
+
 __device__ void normalize_mbtr_device(
     double* values,
     I64 features,
@@ -80,8 +94,7 @@ __global__ void mbtr_row_kernel(
     const I64 row = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (row >= atoms) return;
     double* target = output + row * features;
-    I64 structure = 0;
-    while (structure + 1 < structures && offsets[structure + 1] <= row) ++structure;
+    const I64 structure = structure_for_atom(offsets, structures, row);
     const int atom_count = static_cast<int>(offsets[structure + 1] - offsets[structure]);
     int species_counts[64]{};
     if (geometry == mbtr::kGeometryAtomicNumber) {

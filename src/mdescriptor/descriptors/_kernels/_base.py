@@ -102,8 +102,12 @@ class _Kernel:
 
     def close(self) -> None:
         self._closed = True
-        if self._native is not None:
-            self._native.close()
+        native = self._native
+        try:
+            if native is not None:
+                native.close()
+        finally:
+            self._native = None
 
 
 class _AtomKernel(_Kernel):

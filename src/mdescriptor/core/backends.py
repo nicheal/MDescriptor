@@ -316,10 +316,15 @@ class CudaBackend:
     def close(self) -> None:
         self._closed = True
         implementation = self._implementation
-        if implementation is not None:
-            close = getattr(implementation, "close", None)
-            if callable(close):
-                close()
+        try:
+            if implementation is not None:
+                close = getattr(implementation, "close", None)
+                if callable(close):
+                    close()
+        finally:
+            self._implementation = None
+            self.options.pop("_cuda_payload", None)
+            self.options.pop("model_data", None)
 
     def metadata(self) -> Mapping[str, Any]:
         implementation = self._implementation

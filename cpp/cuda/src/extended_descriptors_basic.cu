@@ -137,50 +137,71 @@ py::dict compute_spherical_pair(
     const I64 edges = static_cast<I64>(graph.pairs());
     const int radial_count = max_radial + 1;
     const I64 columns = static_cast<I64>((max_angular + 1) * (max_angular + 1) * radial_count);
-    const std::size_t output_size = static_cast<std::size_t>(edges)
-        * static_cast<std::size_t>(columns);
+    const std::size_t output_size = checked_size_product(
+        static_cast<std::size_t>(edges), static_cast<std::size_t>(columns),
+        "CUDA pair output is too large");
     double* output = context.output_buffer(output_size);
 
+    const std::size_t angular_count = static_cast<std::size_t>(max_angular + 1);
+    const std::size_t radial_count_size = static_cast<std::size_t>(radial_count);
+    const std::size_t radial_values_count = checked_size_product(
+        angular_count, radial_count_size, "CUDA pair radial payload is too large");
+    const std::size_t orthonormalization_count = checked_size_product(
+        radial_values_count, radial_count_size,
+        "CUDA pair orthonormalization payload is too large");
+    const std::size_t gto_bytes = checked_size_product(
+        radial_values_count, sizeof(double), "CUDA pair radial payload is too large");
+    const std::size_t gamma_b_bytes = checked_size_product(
+        angular_count, sizeof(double), "CUDA pair gamma payload is too large");
+    const std::size_t orthonormalization_bytes = checked_size_product(
+        orthonormalization_count, sizeof(double),
+        "CUDA pair orthonormalization payload is too large");
+    const bool payload_cached = context.static_payload_ready(0, gto_bytes)
+        && context.static_payload_ready(1, gto_bytes)
+        && context.static_payload_ready(2, gamma_b_bytes)
+        && context.static_payload_ready(3, orthonormalization_bytes);
     std::vector<double> gto_constants;
     std::vector<double> gamma_a;
     std::vector<double> gamma_b;
     std::vector<double> orthonormalization;
-    gto_constants.reserve(static_cast<std::size_t>(max_angular + 1) * radial_count);
-    gamma_a.reserve(static_cast<std::size_t>(max_angular + 1) * radial_count);
-    gamma_b.reserve(static_cast<std::size_t>(max_angular + 1));
-    orthonormalization.reserve(
-        static_cast<std::size_t>(max_angular + 1) * radial_count * radial_count);
-    for (int angular = 0; angular <= max_angular; ++angular) {
-        const detail::GtoRadialBasis basis(radial_count, cutoff, angular);
-        gto_constants.insert(gto_constants.end(), basis.gto_constants.begin(), basis.gto_constants.end());
-        gamma_a.insert(gamma_a.end(), basis.gamma_a.begin(), basis.gamma_a.end());
-        gamma_b.push_back(basis.gamma_b);
-        for (const auto& row : basis.orthonormalization) {
-            orthonormalization.insert(orthonormalization.end(), row.begin(), row.end());
+    if (!payload_cached) {
+        gto_constants.reserve(radial_values_count);
+        gamma_a.reserve(radial_values_count);
+        gamma_b.reserve(angular_count);
+        orthonormalization.reserve(orthonormalization_count);
+        for (int angular = 0; angular <= max_angular; ++angular) {
+            const detail::GtoRadialBasis basis(radial_count, cutoff, angular);
+            gto_constants.insert(gto_constants.end(), basis.gto_constants.begin(), basis.gto_constants.end());
+            gamma_a.insert(gamma_a.end(), basis.gamma_a.begin(), basis.gamma_a.end());
+            gamma_b.push_back(basis.gamma_b);
+            for (const auto& row : basis.orthonormalization) {
+                orthonormalization.insert(orthonormalization.end(), row.begin(), row.end());
+            }
         }
     }
-    const std::size_t records_size = static_cast<std::size_t>(edges) * 5U;
+    const std::size_t records_size = checked_size_product(
+        static_cast<std::size_t>(edges), 5U, "CUDA pair records are too large");
     DeviceBuffer<double> records;
     records.allocate(records_size, "could not allocate CUDA pair records");
-    DeviceBuffer<double> device_gto;
-    DeviceBuffer<double> device_gamma_a;
-    DeviceBuffer<double> device_gamma_b;
-    DeviceBuffer<double> device_orthonormalization;
-    device_gto.upload(gto_constants.data(), gto_constants.size(), context.stream(),
-        "could not upload CUDA pair radial constants");
-    device_gamma_a.upload(gamma_a.data(), gamma_a.size(), context.stream(),
-        "could not upload CUDA pair radial gamma values");
-    device_gamma_b.upload(gamma_b.data(), gamma_b.size(), context.stream(),
-        "could not upload CUDA pair radial denominators");
-    device_orthonormalization.upload(
-        orthonormalization.data(), orthonormalization.size(), context.stream(),
-        "could not upload CUDA pair radial orthonormalization");
+    const auto* device_gto = static_cast<const double*>(context.static_payload_buffer(
+        0, gto_constants.empty() ? nullptr : gto_constants.data(), gto_bytes,
+        "could not upload CUDA pair radial constants"));
+    const auto* device_gamma_a = static_cast<const double*>(context.static_payload_buffer(
+        1, gamma_a.empty() ? nullptr : gamma_a.data(), gto_bytes,
+        "could not upload CUDA pair radial gamma values"));
+    const auto* device_gamma_b = static_cast<const double*>(context.static_payload_buffer(
+        2, gamma_b.empty() ? nullptr : gamma_b.data(), gamma_b_bytes,
+        "could not upload CUDA pair radial denominators"));
+    const auto* device_orthonormalization = static_cast<const double*>(context.static_payload_buffer(
+        3, orthonormalization.empty() ? nullptr : orthonormalization.data(),
+        orthonormalization_bytes,
+        "could not upload CUDA pair radial orthonormalization"));
     if (edges > 0) {
         launch_spherical_pair_exact<0>(
             max_angular, context.stream(), graph.offsets(), graph.atoms(), graph.shifts(),
             graph.displacements(), graph.distance2(), batch.atoms(), edges, cutoff,
-            density_width, radial_count, device_gto.get(), device_gamma_a.get(),
-            device_gamma_b.get(), device_orthonormalization.get(), records.get(), output);
+            density_width, radial_count, device_gto, device_gamma_a,
+            device_gamma_b, device_orthonormalization, records.get(), output);
         check_cuda(cudaGetLastError(), "CUDA spherical pair kernel launch failed");
     }
     auto values = download_output_with_gil_release(

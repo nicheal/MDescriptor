@@ -53,6 +53,33 @@ def _batch() -> StructureBatch:
     )
 
 
+def test_cuda_backend_close_releases_native_and_heavy_options() -> None:
+    class Implementation:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    implementation = Implementation()
+    backend = CudaBackend(
+        "MTP",
+        {
+            "_cuda_payload": {"weights": np.zeros(16)},
+            "model_data": b"model snapshot",
+        },
+    )
+    backend._implementation = implementation
+
+    backend.close()
+    backend.close()
+
+    assert implementation.close_calls == 1
+    assert backend._implementation is None
+    assert "_cuda_payload" not in backend.options
+    assert "model_data" not in backend.options
+
+
 def test_cuda_descriptors_declare_the_device_in_static_metadata() -> None:
     cuda_names = {
         "SOAP",

@@ -13,6 +13,7 @@ import pytest
 import mdescriptor
 from mdescriptor import Descriptor, _cuda_loader, _runtime
 from mdescriptor.descriptors._kernels import mtp as mtp_module
+from mdescriptor.descriptors._kernels._base import _Kernel
 
 
 def test_cuda_loader_rolls_back_failed_candidate_path(monkeypatch, tmp_path) -> None:
@@ -53,6 +54,24 @@ def test_cuda_loader_rolls_back_failed_candidate_path(monkeypatch, tmp_path) -> 
     assert not hasattr(mdescriptor, "_cuda")
     assert list(mdescriptor.__path__) == original_path
     assert str(candidate.resolve()) not in mdescriptor.__path__
+
+
+def test_kernel_close_releases_native_reference() -> None:
+    class Native:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    native = Native()
+    kernel = _Kernel()
+    kernel._native = native
+
+    kernel.close()
+
+    assert native.closed
+    assert kernel._native is None
 
 
 def test_cuda_loader_loads_the_explicit_candidate_file(monkeypatch, tmp_path) -> None:

@@ -183,14 +183,19 @@ __global__ void spherical_pair_kernel(
     double harmonics[(MaxAngular + 1) * (MaxAngular + 1)]{};
     if (scale != 0.0) harmonic_values<MaxAngular>(graph_displacements + edge * 3, harmonics, max_angular);
     double* row = output + edge * feature_count;
+    if (scale == 0.0) {
+        for (I64 feature = 0; feature < feature_count; ++feature) row[feature] = 0.0;
+        return;
+    }
     for (int angular = 0; angular <= max_angular; ++angular) {
-        for (int m = -angular; m <= angular; ++m) {
-            const double harmonic = scale == 0.0 ? 0.0 : harmonics[angular * angular + angular + m];
-            const I64 base = static_cast<I64>(angular * angular + angular + m) * radial_count;
-            for (int radial = 0; radial < radial_count; ++radial) {
-                row[base + radial] = scale * harmonic * radial_value(
-                    distance, angular, radial, radial_count, density_width,
-                    gto_constants, gamma_a, gamma_b, orthonormalization);
+        for (int radial = 0; radial < radial_count; ++radial) {
+            const double radial_component = radial_value(
+                distance, angular, radial, radial_count, density_width,
+                gto_constants, gamma_a, gamma_b, orthonormalization);
+            for (int m = -angular; m <= angular; ++m) {
+                const I64 harmonic_index = static_cast<I64>(angular * angular + angular + m);
+                row[harmonic_index * radial_count + radial] = scale
+                    * harmonics[harmonic_index] * radial_component;
             }
         }
     }

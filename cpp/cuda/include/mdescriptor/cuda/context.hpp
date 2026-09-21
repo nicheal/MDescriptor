@@ -57,6 +57,7 @@ public:
         const void* source,
         std::size_t bytes,
         const char* operation);
+    bool static_payload_ready(std::size_t slot, std::size_t bytes) const noexcept;
 
     void synchronize();
     void close() noexcept;

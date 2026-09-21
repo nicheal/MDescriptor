@@ -18,6 +18,8 @@ namespace {
 using detail::Vec3;
 using detail::cancelled;
 using detail::kPi;
+using detail::effective_thread_count;
+using detail::run_captured_structures;
 using detail::run_parallel_structures;
 
 constexpr double kSqrtFourPi = 3.544907701811032054596334966682290365;
@@ -456,237 +458,258 @@ void C00PSMlffCalculator::compute(
     }
     const NeighborGraph graph = build_neighbor_graph(batch, options_.r_cut, control, options_.num_threads);
 
-    run_parallel_structures(batch.structures, options_.num_threads, control, [&](std::int64_t structure) {
-        const std::int64_t begin = batch.offsets[structure];
-        const std::int64_t end = batch.offsets[structure + 1];
-        for (std::int64_t center = begin; center < end; ++center) {
-            if (cancelled(control)) {
+    const int center_workers = effective_thread_count(batch.atoms, options_.num_threads);
+    const bool parallel_centers = batch.structures < center_workers && batch.atoms >= 32;
+    auto compute_center = [&](std::int64_t center) {
+        if (cancelled(control)) {
+            return;
+        }
+        const NeighborView neighbors = graph.for_center(center);
+        const std::int64_t center_type = mapping.at(batch.numbers[center]);
+        thread_local std::vector<Vec3> vectors;
+        thread_local std::vector<double> distances;
+        thread_local std::vector<std::int64_t> types;
+        thread_local std::vector<std::size_t> coefficient_offsets;
+        thread_local std::vector<std::size_t> radial_offsets;
+        thread_local std::vector<double> coefficients;
+        thread_local std::vector<double> neighbor_radial_values;
+        thread_local std::vector<double> radial_c00;
+        thread_local std::vector<double> harmonics;
+        thread_local std::vector<double> harmonic_legendre;
+        thread_local std::vector<std::size_t> self_power_offsets;
+        thread_local std::vector<double> self_power;
+        vectors.clear();
+        distances.clear();
+        types.clear();
+        vectors.reserve(neighbors.size);
+        distances.reserve(neighbors.size);
+        types.reserve(neighbors.size);
+        for (std::size_t index = 0; index < neighbors.size; ++index) {
+            const double distance2 = neighbors.distance2[index];
+            if (distance2 <= 1e-24) {
                 continue;
             }
-            const NeighborView neighbors = graph.for_center(center);
-            const std::int64_t center_type = mapping.at(batch.numbers[center]);
-            std::vector<Vec3> vectors;
-            std::vector<double> distances;
-            std::vector<std::int64_t> types;
-            vectors.reserve(neighbors.size);
-            distances.reserve(neighbors.size);
-            types.reserve(neighbors.size);
-            for (std::size_t index = 0; index < neighbors.size; ++index) {
-                const double distance2 = neighbors.distance2[index];
-                if (distance2 <= 1e-24) {
-                    continue;
-                }
-                const auto type_it = mapping.find(batch.numbers[neighbors.atoms[index]]);
-                if (type_it == mapping.end()) {
-                    throw std::invalid_argument("batch contains an atomic number outside calculator species");
-                }
-                vectors.push_back({
-                    neighbors.displacements[index * 3 + 0],
-                    neighbors.displacements[index * 3 + 1],
-                    neighbors.displacements[index * 3 + 2],
-                });
-                distances.push_back(std::sqrt(distance2));
-                types.push_back(type_it->second);
+            const auto type_it = mapping.find(batch.numbers[neighbors.atoms[index]]);
+            if (type_it == mapping.end()) {
+                throw std::invalid_argument("batch contains an atomic number outside calculator species");
             }
-            if (distances.empty()) {
-                continue;
-            }
+            vectors.push_back({
+                neighbors.displacements[index * 3 + 0],
+                neighbors.displacements[index * 3 + 1],
+                neighbors.displacements[index * 3 + 2],
+            });
+            distances.push_back(std::sqrt(distance2));
+            types.push_back(type_it->second);
+        }
+        if (distances.empty()) {
+            return;
+        }
 
-            double* row = output + center * features;
-            const std::size_t neighbor_count = distances.size();
-            const int coefficient_l_max = options_.include_angular ? options_.l_max : 0;
-            std::vector<std::size_t> coefficient_offsets(
-                static_cast<std::size_t>(coefficient_l_max + 1), 0);
-            std::vector<std::size_t> radial_offsets(
-                static_cast<std::size_t>(coefficient_l_max + 1), 0);
-            std::size_t coefficient_size = 0;
-            std::size_t radial_value_size = 0;
+        double* row = output + center * features;
+        const std::size_t neighbor_count = distances.size();
+        const int coefficient_l_max = options_.include_angular ? options_.l_max : 0;
+        coefficient_offsets.assign(static_cast<std::size_t>(coefficient_l_max + 1), 0);
+        radial_offsets.assign(static_cast<std::size_t>(coefficient_l_max + 1), 0);
+        std::size_t coefficient_size = 0;
+        std::size_t radial_value_size = 0;
+        for (int l = 0; l <= coefficient_l_max; ++l) {
+            const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
+            const std::size_t channels = options_.species.size()
+                * static_cast<std::size_t>(radial_count);
+            coefficient_offsets[static_cast<std::size_t>(l)] = coefficient_size;
+            coefficient_size += channels * static_cast<std::size_t>(2 * l + 1);
+            radial_offsets[static_cast<std::size_t>(l)] = radial_value_size;
+            radial_value_size += neighbor_count * static_cast<std::size_t>(radial_count);
+        }
+        coefficients.assign(coefficient_size, 0.0);
+        neighbor_radial_values.assign(radial_value_size, 0.0);
+        radial_c00.assign(static_cast<std::size_t>(radial_channels), 0.0);
+        harmonics.clear();
+        harmonic_legendre.clear();
+        for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
+            if (options_.include_angular) {
+                const Vec3 vector = vectors[neighbor];
+                const std::array<double, 3> displacement{vector.x, vector.y, vector.z};
+                detail::real_spherical_harmonics_into(
+                    displacement, options_.l_max, harmonics, harmonic_legendre);
+            }
             for (int l = 0; l <= coefficient_l_max; ++l) {
                 const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
-                const std::size_t channels = options_.species.size()
+                const std::size_t base = static_cast<std::size_t>(types[neighbor])
                     * static_cast<std::size_t>(radial_count);
-                coefficient_offsets[static_cast<std::size_t>(l)] = coefficient_size;
-                coefficient_size += channels * static_cast<std::size_t>(2 * l + 1);
-                radial_offsets[static_cast<std::size_t>(l)] = radial_value_size;
-                radial_value_size += neighbor_count * static_cast<std::size_t>(radial_count);
-            }
-            std::vector<double> coefficients(coefficient_size, 0.0);
-            std::vector<double> neighbor_radial_values(radial_value_size, 0.0);
-            std::vector<double> radial_c00(static_cast<std::size_t>(radial_channels), 0.0);
-            std::vector<double> harmonics;
-            std::vector<double> harmonic_legendre;
-            for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
-                if (options_.include_angular) {
-                    const Vec3 vector = vectors[neighbor];
-                    const std::array<double, 3> displacement{vector.x, vector.y, vector.z};
-                    detail::real_spherical_harmonics_into(
-                        displacement, options_.l_max, harmonics, harmonic_legendre);
-                }
-                for (int l = 0; l <= coefficient_l_max; ++l) {
-                    const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
-                    const std::size_t base = static_cast<std::size_t>(types[neighbor])
-                        * static_cast<std::size_t>(radial_count);
-                    const std::size_t harmonic_width = static_cast<std::size_t>(2 * l + 1);
-                    for (int n = 0; n < radial_count; ++n) {
-                        const double value = radial_value(
-                            options_, zeros_, norms_, radial_values_, l, n, distances[neighbor]);
-                        neighbor_radial_values[
-                            radial_offsets[static_cast<std::size_t>(l)]
-                            + neighbor * static_cast<std::size_t>(radial_count)
-                            + static_cast<std::size_t>(n)] = value;
-                        if (options_.include_angular) {
-                            const std::size_t channel = base + static_cast<std::size_t>(n);
-                            double* coefficient = coefficients.data()
-                                + coefficient_offsets[static_cast<std::size_t>(l)]
-                                + channel * harmonic_width;
-                            for (std::size_t m = 0; m < harmonic_width; ++m) {
-                                coefficient[m] += value * harmonics[
-                                    static_cast<std::size_t>(l * l) + m];
-                            }
-                        }
-                        if (l == 0) {
-                            radial_c00[base + static_cast<std::size_t>(n)] += value / kSqrtFourPi;
+                const std::size_t harmonic_width = static_cast<std::size_t>(2 * l + 1);
+                for (int n = 0; n < radial_count; ++n) {
+                    const double value = radial_value(
+                        options_, zeros_, norms_, radial_values_, l, n, distances[neighbor]);
+                    neighbor_radial_values[
+                        radial_offsets[static_cast<std::size_t>(l)]
+                        + neighbor * static_cast<std::size_t>(radial_count)
+                        + static_cast<std::size_t>(n)] = value;
+                    if (options_.include_angular) {
+                        const std::size_t channel = base + static_cast<std::size_t>(n);
+                        double* coefficient = coefficients.data()
+                            + coefficient_offsets[static_cast<std::size_t>(l)]
+                            + channel * harmonic_width;
+                        for (std::size_t m = 0; m < harmonic_width; ++m) {
+                            coefficient[m] += value * harmonics[
+                                static_cast<std::size_t>(l * l) + m];
                         }
                     }
-                }
-            }
-
-            if (options_.include_radial) {
-                std::copy(radial_c00.begin(), radial_c00.end(), row);
-                if (options_.normalize_radial) {
-                    double norm2 = 0.0;
-                    for (const double value : radial_c00) norm2 += value * value;
-                    if (norm2 > 1e-20) {
-                        const double scale = 1.0 / std::sqrt(norm2);
-                        for (std::int64_t channel = 0; channel < radial_channels; ++channel) {
-                            row[channel] *= scale;
-                        }
-                    }
-                }
-            }
-
-            if (options_.include_angular) {
-                const std::size_t angular_offset = options_.include_radial
-                    ? static_cast<std::size_t>(radial_channels) : 0;
-                std::vector<std::size_t> self_power_offsets(
-                    static_cast<std::size_t>(options_.l_max + 1), 0);
-                std::vector<double> self_power(static_cast<std::size_t>(angular_features), 0.0);
-                std::size_t self_power_size = 0;
-                for (int l = 0; l <= options_.l_max; ++l) {
-                    const std::int64_t channels = static_cast<std::int64_t>(options_.species.size())
-                        * radial_counts_[static_cast<std::size_t>(l)];
-                    self_power_offsets[static_cast<std::size_t>(l)] = self_power_size;
-                    self_power_size += static_cast<std::size_t>(channels * (channels + 1) / 2);
-                }
-                if (options_.exclude_self_interaction) {
-                    for (int l = 0; l <= options_.l_max; ++l) {
-                        const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
-                        const std::int64_t channels = static_cast<std::int64_t>(options_.species.size())
-                            * radial_count;
-                        const double addition = (2.0 * l + 1.0) / (4.0 * kPi);
-                        for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
-                            // Match the reference MLFF LSIC: only the centre
-                            // species receives a self-interaction correction.
-                            if (types[neighbor] != center_type) {
-                                continue;
-                            }
-                            const std::int64_t first_base = types[neighbor] * radial_count;
-                            const double* values = neighbor_radial_values.data()
-                                + radial_offsets[static_cast<std::size_t>(l)]
-                                + neighbor * static_cast<std::size_t>(radial_count);
-                            for (int first = 0; first < radial_count; ++first) {
-                                const std::int64_t first_channel = first_base + first;
-                                for (int second = first; second < radial_count; ++second) {
-                                    const std::int64_t second_channel = first_base + second;
-                                    const std::size_t pair_index = static_cast<std::size_t>(
-                                        first_channel * channels
-                                        - first_channel * (first_channel - 1) / 2
-                                        + second_channel - first_channel);
-                                    self_power[self_power_offsets[static_cast<std::size_t>(l)] + pair_index]
-                                        += addition * values[first] * values[second];
-                                }
-                            }
-                        }
-                    }
-                }
-                std::size_t angular_index = 0;
-                for (int l = 0; l <= options_.l_max; ++l) {
-                    const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
-                    const std::int64_t channels = static_cast<std::int64_t>(options_.species.size()) * radial_count;
-                    const double prefactor = std::sqrt(8.0 * kPi * kPi / (2.0 * l + 1.0));
-                    const std::size_t harmonic_width = static_cast<std::size_t>(2 * l + 1);
-                    for (std::int64_t first = 0; first < channels; ++first) {
-                        for (std::int64_t second = first; second < channels; ++second) {
-                            double total = 0.0;
-                            const double* first_coeff = coefficients.data()
-                                + coefficient_offsets[static_cast<std::size_t>(l)]
-                                + static_cast<std::size_t>(first) * harmonic_width;
-                            const double* second_coeff = coefficients.data()
-                                + coefficient_offsets[static_cast<std::size_t>(l)]
-                                + static_cast<std::size_t>(second) * harmonic_width;
-                            for (std::size_t m = 0; m < harmonic_width; ++m) {
-                                total += first_coeff[m] * second_coeff[m];
-                            }
-                            const std::size_t pair_index = static_cast<std::size_t>(
-                                first * channels - first * (first - 1) / 2 + second - first);
-                            if (options_.exclude_self_interaction) {
-                                total -= self_power[
-                                    self_power_offsets[static_cast<std::size_t>(l)] + pair_index];
-                            }
-                            // The reference WVAR distinguishes radial indices, not
-                            // flattened species/radial channels.  Therefore
-                            // cross-species channels with equal radial index
-                            // retain weight 1.0.
-                            const int first_radial = static_cast<int>(first % radial_count);
-                            const int second_radial = static_cast<int>(second % radial_count);
-                            const double radial_pair_weight = first_radial == second_radial
-                                ? 1.0 : std::sqrt(2.0);
-                            row[angular_offset + angular_index++] = radial_pair_weight * prefactor * total;
-                        }
-                    }
-                }
-                if (options_.normalize_angular) {
-                    double norm2 = 0.0;
-                    for (std::int64_t index = 0; index < angular_features; ++index) {
-                        const double value = row[angular_offset + static_cast<std::size_t>(index)];
-                        norm2 += value * value;
-                    }
-                    if (norm2 > 1e-20) {
-                        const double scale = 1.0 / std::sqrt(norm2);
-                        for (std::int64_t index = 0; index < angular_features; ++index) {
-                            row[angular_offset + static_cast<std::size_t>(index)] *= scale;
-                        }
-                    }
-                }
-            }
-
-            if (options_.super_vector) {
-                const std::int64_t radial_end = options_.include_radial ? radial_channels : 0;
-                double norm2 = 0.0;
-                if (options_.include_radial) {
-                    const double scale = std::sqrt(options_.radial_weight);
-                    for (std::int64_t index = 0; index < radial_end; ++index) {
-                        row[index] *= scale;
-                    }
-                }
-                if (options_.include_angular) {
-                    const double scale = std::sqrt(options_.angular_weight);
-                    for (std::int64_t index = radial_end; index < features; ++index) {
-                        row[index] *= scale;
-                    }
-                }
-                for (std::int64_t index = 0; index < features; ++index) {
-                    norm2 += row[index] * row[index];
-                }
-                if (norm2 > 1e-20) {
-                    const double scale = 1.0 / std::sqrt(norm2);
-                    for (std::int64_t index = 0; index < features; ++index) {
-                        row[index] *= scale;
+                    if (l == 0) {
+                        radial_c00[base + static_cast<std::size_t>(n)] += value / kSqrtFourPi;
                     }
                 }
             }
         }
-    });
+
+        if (options_.include_radial) {
+            std::copy(radial_c00.begin(), radial_c00.end(), row);
+            if (options_.normalize_radial) {
+                double norm2 = 0.0;
+                for (const double value : radial_c00) norm2 += value * value;
+                if (norm2 > 1e-20) {
+                    const double scale = 1.0 / std::sqrt(norm2);
+                    for (std::int64_t channel = 0; channel < radial_channels; ++channel) {
+                        row[channel] *= scale;
+                    }
+                }
+            }
+        }
+
+        if (options_.include_angular) {
+            const std::size_t angular_offset = options_.include_radial
+                ? static_cast<std::size_t>(radial_channels) : 0;
+            self_power_offsets.assign(static_cast<std::size_t>(options_.l_max + 1), 0);
+            self_power.assign(static_cast<std::size_t>(angular_features), 0.0);
+            std::size_t self_power_size = 0;
+            for (int l = 0; l <= options_.l_max; ++l) {
+                const std::int64_t channels = static_cast<std::int64_t>(options_.species.size())
+                    * radial_counts_[static_cast<std::size_t>(l)];
+                self_power_offsets[static_cast<std::size_t>(l)] = self_power_size;
+                self_power_size += static_cast<std::size_t>(channels * (channels + 1) / 2);
+            }
+            if (options_.exclude_self_interaction) {
+                for (int l = 0; l <= options_.l_max; ++l) {
+                    const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
+                    const std::int64_t channels = static_cast<std::int64_t>(options_.species.size())
+                        * radial_count;
+                    const double addition = (2.0 * l + 1.0) / (4.0 * kPi);
+                    for (std::size_t neighbor = 0; neighbor < neighbor_count; ++neighbor) {
+                        // Match the reference MLFF LSIC: only the centre
+                        // species receives a self-interaction correction.
+                        if (types[neighbor] != center_type) {
+                            continue;
+                        }
+                        const std::int64_t first_base = types[neighbor] * radial_count;
+                        const double* values = neighbor_radial_values.data()
+                            + radial_offsets[static_cast<std::size_t>(l)]
+                            + neighbor * static_cast<std::size_t>(radial_count);
+                        for (int first = 0; first < radial_count; ++first) {
+                            const std::int64_t first_channel = first_base + first;
+                            for (int second = first; second < radial_count; ++second) {
+                                const std::int64_t second_channel = first_base + second;
+                                const std::size_t pair_index = static_cast<std::size_t>(
+                                    first_channel * channels
+                                    - first_channel * (first_channel - 1) / 2
+                                    + second_channel - first_channel);
+                                self_power[self_power_offsets[static_cast<std::size_t>(l)] + pair_index]
+                                    += addition * values[first] * values[second];
+                            }
+                        }
+                    }
+                }
+            }
+            std::size_t angular_index = 0;
+            for (int l = 0; l <= options_.l_max; ++l) {
+                const std::int32_t radial_count = radial_counts_[static_cast<std::size_t>(l)];
+                const std::int64_t channels = static_cast<std::int64_t>(options_.species.size()) * radial_count;
+                const double prefactor = std::sqrt(8.0 * kPi * kPi / (2.0 * l + 1.0));
+                const std::size_t harmonic_width = static_cast<std::size_t>(2 * l + 1);
+                for (std::int64_t first = 0; first < channels; ++first) {
+                    for (std::int64_t second = first; second < channels; ++second) {
+                        double total = 0.0;
+                        const double* first_coeff = coefficients.data()
+                            + coefficient_offsets[static_cast<std::size_t>(l)]
+                            + static_cast<std::size_t>(first) * harmonic_width;
+                        const double* second_coeff = coefficients.data()
+                            + coefficient_offsets[static_cast<std::size_t>(l)]
+                            + static_cast<std::size_t>(second) * harmonic_width;
+                        for (std::size_t m = 0; m < harmonic_width; ++m) {
+                            total += first_coeff[m] * second_coeff[m];
+                        }
+                        const std::size_t pair_index = static_cast<std::size_t>(
+                            first * channels - first * (first - 1) / 2 + second - first);
+                        if (options_.exclude_self_interaction) {
+                            total -= self_power[
+                                self_power_offsets[static_cast<std::size_t>(l)] + pair_index];
+                        }
+                        // The reference WVAR distinguishes radial indices, not
+                        // flattened species/radial channels.  Therefore
+                        // cross-species channels with equal radial index
+                        // retain weight 1.0.
+                        const int first_radial = static_cast<int>(first % radial_count);
+                        const int second_radial = static_cast<int>(second % radial_count);
+                        const double radial_pair_weight = first_radial == second_radial
+                            ? 1.0 : std::sqrt(2.0);
+                        row[angular_offset + angular_index++] = radial_pair_weight * prefactor * total;
+                    }
+                }
+            }
+            if (options_.normalize_angular) {
+                double norm2 = 0.0;
+                for (std::int64_t index = 0; index < angular_features; ++index) {
+                    const double value = row[angular_offset + static_cast<std::size_t>(index)];
+                    norm2 += value * value;
+                }
+                if (norm2 > 1e-20) {
+                    const double scale = 1.0 / std::sqrt(norm2);
+                    for (std::int64_t index = 0; index < angular_features; ++index) {
+                        row[angular_offset + static_cast<std::size_t>(index)] *= scale;
+                    }
+                }
+            }
+        }
+
+        if (options_.super_vector) {
+            const std::int64_t radial_end = options_.include_radial ? radial_channels : 0;
+            double norm2 = 0.0;
+            if (options_.include_radial) {
+                const double scale = std::sqrt(options_.radial_weight);
+                for (std::int64_t index = 0; index < radial_end; ++index) {
+                    row[index] *= scale;
+                }
+            }
+            if (options_.include_angular) {
+                const double scale = std::sqrt(options_.angular_weight);
+                for (std::int64_t index = radial_end; index < features; ++index) {
+                    row[index] *= scale;
+                }
+            }
+            for (std::int64_t index = 0; index < features; ++index) {
+                norm2 += row[index] * row[index];
+            }
+            if (norm2 > 1e-20) {
+                const double scale = 1.0 / std::sqrt(norm2);
+                for (std::int64_t index = 0; index < features; ++index) {
+                    row[index] *= scale;
+                }
+            }
+        }
+    };
+    if (parallel_centers) {
+        run_captured_structures(batch.atoms, center_workers, control, compute_center);
+        for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+            detail::mark_completed(control);
+        }
+    } else {
+        run_parallel_structures(batch.structures, options_.num_threads, control, [&](std::int64_t structure) {
+            const std::int64_t begin = batch.offsets[structure];
+            const std::int64_t end = batch.offsets[structure + 1];
+            for (std::int64_t center = begin; center < end; ++center) {
+                compute_center(center);
+            }
+        });
+    }
 }
 
 } // namespace mdescriptor

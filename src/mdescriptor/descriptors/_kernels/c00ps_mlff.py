@@ -108,21 +108,25 @@ class C00PSMlffKernel(_Kernel):
 
         if self._native is None:
             raise RuntimeError("C00PSMLFF native calculator is not initialized")
+        radial_counts = np.asarray(self._native.radial_counts, dtype=np.int32)
+        basis_zeros = tuple(
+            np.asarray(values, dtype=np.float64)[: int(count)]
+            for values, count in zip(self._native.basis_zeros, radial_counts, strict=True)
+        )
+        basis_norms = tuple(
+            np.asarray(values, dtype=np.float64)
+            for values in self._native.basis_norms
+        )
+        basis_values = tuple(
+            np.asarray(values, dtype=np.float64)
+            for values in self._native.basis_values
+        )
         return {
             "feature_count": self.feature_count,
-            "radial_counts": np.asarray(self._native.radial_counts, dtype=np.int32),
-            "basis_zeros": tuple(
-                np.asarray(values, dtype=np.float64)
-                for values in self._native.basis_zeros
-            ),
-            "basis_norms": tuple(
-                np.asarray(values, dtype=np.float64)
-                for values in self._native.basis_norms
-            ),
-            "basis_values": tuple(
-                np.asarray(values, dtype=np.float64)
-                for values in self._native.basis_values
-            ),
+            "radial_counts": radial_counts,
+            "basis_zeros": np.concatenate(basis_zeros),
+            "basis_norms": np.concatenate(basis_norms),
+            "basis_values": np.concatenate(basis_values),
         }
 
     def _ensure_native(self, batch: StructureBatch) -> None:

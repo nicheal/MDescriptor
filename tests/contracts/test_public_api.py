@@ -227,10 +227,14 @@ def test_default_model_backed_descriptor_uses_the_resource_resolver():
         assert descriptor.model_resource is not None
         assert descriptor.resolved_model is not None
         assert descriptor.resolved_model.path == NEP_MODEL.resolve()
+        assert descriptor.resolved_model.content is not None
         assert descriptor.session is not None
         assert descriptor.session.model.path == NEP_MODEL.resolve()
     finally:
         descriptor.close()
+    assert descriptor.resolved_model is not None
+    assert descriptor.resolved_model.content is None
+    assert descriptor._resolved_model_content is None
 
 
 def test_adapters_have_explicit_signatures_and_no_legacy_attribute_leak():

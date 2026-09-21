@@ -148,9 +148,6 @@ void* CudaExecutionContext::static_payload_buffer(
     if (bytes == 0) {
         return nullptr;
     }
-    if (source == nullptr) {
-        throw std::invalid_argument("CUDA static payload source must not be null");
-    }
     if (slot >= static_payloads_.size()) {
         static_payloads_.resize(slot + 1, nullptr);
         static_payload_sizes_.resize(slot + 1, 0);
@@ -160,6 +157,9 @@ void* CudaExecutionContext::static_payload_buffer(
             throw std::invalid_argument("CUDA static payload slot changed size");
         }
         return static_payloads_[slot];
+    }
+    if (source == nullptr) {
+        throw std::invalid_argument("CUDA static payload source must not be null");
     }
     check_cuda(cudaSetDevice(device_), "could not select the CUDA device");
     void* allocation = nullptr;
@@ -175,6 +175,14 @@ void* CudaExecutionContext::static_payload_buffer(
     static_payloads_[slot] = allocation;
     static_payload_sizes_[slot] = bytes;
     return allocation;
+}
+
+bool CudaExecutionContext::static_payload_ready(
+    std::size_t slot,
+    std::size_t bytes) const noexcept {
+    return bytes != 0 && slot < static_payloads_.size()
+        && static_payloads_[slot] != nullptr
+        && static_payload_sizes_[slot] == bytes;
 }
 
 void CudaExecutionContext::synchronize() {

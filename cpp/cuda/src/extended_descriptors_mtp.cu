@@ -3,6 +3,8 @@
 
 namespace {
 
+constexpr I64 kMaxCudaMtpWorkspaceEntries = 65536;
+
 __device__ void mtp4_radial_basis_device(
     double r_sq,
     int kind,
@@ -129,7 +131,7 @@ __global__ void mtp4_cuda_kernel(
     double* eval_workspace,
     double* output) {
     const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (center >= atoms || eval_count <= 0 || eval_count > 65536) return;
+    if (center >= atoms) return;
     const int center_type = species_index(numbers[center], species, species_count);
     if (center_type < 0) return;
     double* raw = eval_workspace + center * eval_count;
@@ -251,6 +253,7 @@ py::dict compute_mtp4_descriptor(
         || min_dist < 0.0 || max_dist <= min_dist
         || model_parameters.size() < static_cast<std::size_t>(radial_parameter_count)
         || moments.size() % 4U != 0 || moment_count <= 0 || eval_count <= 0
+        || eval_count > kMaxCudaMtpWorkspaceEntries
         || eval_linear_ids.size() != static_cast<std::size_t>(eval_count * 3)
         || eval_linear_coefficients.size() != static_cast<std::size_t>(eval_count * 3)
         || eval_product_offsets.size() != static_cast<std::size_t>(eval_count + 1)
@@ -258,7 +261,10 @@ py::dict compute_mtp4_descriptor(
         || eval_product_left.size() != eval_product_coefficients.size()
         || eval_product_offsets.back() != static_cast<I64>(eval_product_left.size())
         || scalar_output_ids.size() != static_cast<std::size_t>(features)) {
-        throw std::invalid_argument("invalid MLIP-4 MTP CUDA evaluator payload");
+        throw std::invalid_argument(
+            eval_count > kMaxCudaMtpWorkspaceEntries
+                ? "MLIP-4 MTP CUDA evaluator supports at most 65536 entries"
+                : "invalid MLIP-4 MTP CUDA evaluator payload");
     }
     if (radial_kind == 0 && radial_recursive.size() < static_cast<std::size_t>(3 * (radial_basis_size - 1))) {
         throw std::invalid_argument("MLIP-4 Cinf radial evaluator payload is incomplete");
@@ -310,10 +316,16 @@ py::dict compute_mtp4_descriptor(
     const auto* d_scalar_output_ids = static_cast<const I32*>(context.static_payload_buffer(
         12, scalar_output_ids.data(), scalar_output_ids.size() * sizeof(I32),
         "could not upload MLIP-4 scalar output ids"));
-    const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
+    const std::size_t size = checked_size_product(
+        static_cast<std::size_t>(batch.atoms()), static_cast<std::size_t>(features),
+        "MLIP-4 MTP output is too large");
     double* output = context.output_buffer(size);
-    auto* workspace = static_cast<double*>(context.workspace_buffer(
-        static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(eval_count) * sizeof(double)));
+    const std::size_t workspace_elements = checked_size_product(
+        static_cast<std::size_t>(batch.atoms()), static_cast<std::size_t>(eval_count),
+        "MLIP-4 MTP workspace is too large");
+    const std::size_t workspace_bytes = checked_size_product(
+        workspace_elements, sizeof(double), "MLIP-4 MTP workspace is too large");
+    auto* workspace = static_cast<double*>(context.workspace_buffer(workspace_bytes));
     if (size > 0) {
         zeroed_output(context, output, size, "could not clear MLIP-4 MTP output");
         constexpr unsigned block_size = 64;
@@ -382,7 +394,7 @@ __global__ void mtp2_cuda_kernel(
     double* workspace,
     double* output) {
     const I64 center = static_cast<I64>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (center >= atoms || alpha_moments_count <= 0 || alpha_moments_count > 65536) return;
+    if (center >= atoms) return;
     const int center_type = species_index(numbers[center], species, species_count);
     if (center_type < 0) return;
     double* moments = workspace + center * alpha_moments_count;
@@ -470,12 +482,16 @@ py::dict compute_mtp2_descriptor(
     if (species.empty() || species_count != static_cast<int>(species.size())
         || radial_basis_size <= 0 || radial_basis_size > 128 || radial_funcs_count <= 0
         || radial_funcs_count > 64 || alpha_moments_count <= 0
+        || alpha_moments_count > kMaxCudaMtpWorkspaceEntries
         || alpha_basic.size() % 4U != 0 || alpha_times.size() % 4U != 0
         || moment_mapping.size() + 1 != static_cast<std::size_t>(features)
         || radial_coefficients.size() < static_cast<std::size_t>(species_count * species_count
             * radial_funcs_count * radial_basis_size)
         || min_dist < 0.0 || max_dist <= min_dist || features <= 0) {
-        throw std::invalid_argument("invalid MLIP-2 MTP CUDA evaluator payload");
+        throw std::invalid_argument(
+            alpha_moments_count > kMaxCudaMtpWorkspaceEntries
+                ? "MLIP-2 MTP CUDA alpha moments support at most 65536 entries"
+                : "invalid MLIP-2 MTP CUDA evaluator payload");
     }
     graph.build_dpa(context, batch, host_batch, max_dist, true, false, false);
     const auto* d_species = static_cast<const I32*>(context.static_payload_buffer(
@@ -492,11 +508,16 @@ py::dict compute_mtp2_descriptor(
     const auto* d_moment_mapping = static_cast<const I32*>(context.static_payload_buffer(
         4, moment_mapping.data(), moment_mapping.size() * sizeof(I32),
         "could not upload MLIP-2 moment mapping"));
-    const std::size_t size = static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(features);
+    const std::size_t size = checked_size_product(
+        static_cast<std::size_t>(batch.atoms()), static_cast<std::size_t>(features),
+        "MLIP-2 MTP output is too large");
     double* output = context.output_buffer(size);
-    auto* workspace = static_cast<double*>(context.workspace_buffer(
-        static_cast<std::size_t>(batch.atoms()) * static_cast<std::size_t>(alpha_moments_count)
-        * sizeof(double)));
+    const std::size_t workspace_elements = checked_size_product(
+        static_cast<std::size_t>(batch.atoms()), static_cast<std::size_t>(alpha_moments_count),
+        "MLIP-2 MTP workspace is too large");
+    const std::size_t workspace_bytes = checked_size_product(
+        workspace_elements, sizeof(double), "MLIP-2 MTP workspace is too large");
+    auto* workspace = static_cast<double*>(context.workspace_buffer(workspace_bytes));
     if (size > 0) {
         zeroed_output(context, output, size, "could not clear MLIP-2 MTP output");
         constexpr unsigned block_size = 64;

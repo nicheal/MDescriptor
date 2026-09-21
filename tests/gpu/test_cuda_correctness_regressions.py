@@ -54,6 +54,72 @@ def _atomic_mbtr_batch() -> StructureBatch:
     )
 
 
+def _single_atom_mtp_batch() -> StructureBatch:
+    return StructureBatch.from_ase(
+        [
+            Atoms(
+                numbers=[1],
+                positions=[[0.0, 0.0, 0.0]],
+                cell=np.diag([8.0, 8.0, 8.0]),
+                pbc=True,
+            )
+        ]
+    )
+
+
+def _native_mtp4_limit_options(eval_count: int) -> dict[str, object]:
+    return {
+        "species": [1],
+        "_cuda_feature_count": 1,
+        "_cuda_payload": {
+            "model_species": np.array([1], dtype=np.int32),
+            "model_parameters": np.array([1.0], dtype=np.float64),
+            "radial_kind": 1,
+            "radial_basis_size": 1,
+            "radial_funcs_count": 1,
+            "radial_min_dist": 0.0,
+            "radial_max_dist": 3.0,
+            "radial_scaling": 1.0,
+            "radial_zeroth": 1.0,
+            "radial_exp_ratio": 1.0,
+            "radial_maxdist_sq": 9.0,
+            "radial_maxdist_sq_minus_eps": 8.999999,
+            "radial_recursive": np.empty(0, dtype=np.float64),
+            "radial_vdw_params": np.empty(0, dtype=np.float64),
+            "moments": np.array([0, 0, 0, 0], dtype=np.int32),
+            "eval_kinds": np.zeros(eval_count, dtype=np.int32),
+            "eval_linear_ids": np.zeros(eval_count * 3, dtype=np.int32),
+            "eval_linear_coefficients": np.zeros(eval_count * 3, dtype=np.float64),
+            "eval_product_offsets": np.zeros(eval_count + 1, dtype=np.int64),
+            "eval_product_left": np.empty(0, dtype=np.int32),
+            "eval_product_right": np.empty(0, dtype=np.int32),
+            "eval_product_coefficients": np.empty(0, dtype=np.float64),
+            "scalar_output_ids": np.array([0], dtype=np.int32),
+        },
+    }
+
+
+def _native_mtp2_limit_options(alpha_moments_count: int) -> dict[str, object]:
+    return {
+        "species": [1],
+        "_cuda_feature_count": 1,
+        "_cuda_payload": {
+            "species_count": 1,
+            "radial_basis_size": 1,
+            "radial_funcs_count": 1,
+            "alpha_moments_count": alpha_moments_count,
+            "radial_min_dist": 0.0,
+            "radial_max_dist": 3.0,
+            "scaling": 1.0,
+            "radial_basis_type": "RBChebyshev",
+            "radial_coefficients": np.array([1.0], dtype=np.float64),
+            "alpha_index_basic": np.array([0, 0, 0, 0], dtype=np.int32),
+            "alpha_index_times": np.empty(0, dtype=np.int32),
+            "alpha_moment_mapping": np.empty(0, dtype=np.int32),
+        },
+    }
+
+
 def _native_mbtr_options(
     descriptor_name: str, options: dict[str, object]
 ) -> dict[str, object]:
@@ -290,3 +356,59 @@ def test_cuda_mtp_skips_coincident_distinct_atoms_like_cpu() -> None:
     finally:
         cpu.close()
         gpu.close()
+
+
+@pytest.mark.gpu
+def test_cuda_mtp4_rejects_evaluator_count_above_kernel_limit() -> None:
+    """MTP-4 must reject an evaluator the CUDA workspace cannot execute."""
+
+    load_cuda_for_tests()
+    from mdescriptor._cuda import CudaBackend
+
+    backend = CudaBackend("MTP", _native_mtp4_limit_options(65_537))
+    try:
+        with pytest.raises(ValueError, match="at most 65536"):
+            backend.compute(_single_atom_mtp_batch())
+    finally:
+        backend.close()
+
+
+@pytest.mark.gpu
+def test_cuda_mtp2_rejects_alpha_moment_count_above_kernel_limit() -> None:
+    """MTP-2 must reject an alpha workspace the CUDA kernel cannot index."""
+
+    load_cuda_for_tests()
+    from mdescriptor._cuda import CudaBackend
+
+    backend = CudaBackend("MTP", _native_mtp2_limit_options(65_537))
+    try:
+        with pytest.raises(ValueError, match="at most 65536"):
+            backend.compute(_single_atom_mtp_batch())
+    finally:
+        backend.close()
+
+
+@pytest.mark.gpu
+def test_cuda_mtp4_accepts_evaluator_count_at_kernel_limit() -> None:
+    load_cuda_for_tests()
+    from mdescriptor._cuda import CudaBackend
+
+    backend = CudaBackend("MTP", _native_mtp4_limit_options(65_536))
+    try:
+        result = backend.compute(_single_atom_mtp_batch())
+        assert np.asarray(result["values"]).shape == (1, 1)
+    finally:
+        backend.close()
+
+
+@pytest.mark.gpu
+def test_cuda_mtp2_accepts_alpha_moment_count_at_kernel_limit() -> None:
+    load_cuda_for_tests()
+    from mdescriptor._cuda import CudaBackend
+
+    backend = CudaBackend("MTP", _native_mtp2_limit_options(65_536))
+    try:
+        result = backend.compute(_single_atom_mtp_batch())
+        assert np.asarray(result["values"]).shape == (1, 1)
+    finally:
+        backend.close()

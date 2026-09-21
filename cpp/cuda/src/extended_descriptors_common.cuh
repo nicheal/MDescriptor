@@ -41,6 +41,17 @@ using I64 = std::int64_t;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
+
+inline std::size_t checked_size_product(
+    std::size_t left,
+    std::size_t right,
+    const char* operation) {
+    if (left != 0 && right > std::numeric_limits<std::size_t>::max() / left) {
+        throw CudaOutOfMemory(operation);
+    }
+    return left * right;
+}
+
 template <typename T>
 class DeviceBuffer {
 public:
@@ -58,15 +69,17 @@ public:
 
     void allocate(std::size_t count, const char* operation) {
         if (count == 0) return;
+        const std::size_t bytes = checked_size_product(count, sizeof(T), operation);
         check_cuda(
-            cudaMalloc(reinterpret_cast<void**>(&data_), count * sizeof(T)), operation);
+            cudaMalloc(reinterpret_cast<void**>(&data_), bytes), operation);
     }
 
     void upload(const T* source, std::size_t count, cudaStream_t stream, const char* operation) {
         allocate(count, operation);
         if (count == 0) return;
+        const std::size_t bytes = checked_size_product(count, sizeof(T), operation);
         check_cuda(
-            cudaMemcpyAsync(data_, source, count * sizeof(T), cudaMemcpyHostToDevice, stream),
+            cudaMemcpyAsync(data_, source, bytes, cudaMemcpyHostToDevice, stream),
             operation);
     }
 
