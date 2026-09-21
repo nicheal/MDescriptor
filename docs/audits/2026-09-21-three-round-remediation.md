@@ -27,7 +27,7 @@
 ## 暂缓项与边界
 
 - CPU C00PS 已增加单结构大 batch 的中心级自适应并行，并保留多结构的原有结构级调度。
-- CUDA CI 已接入可信 `main` push/周调度，并默认按发布架构列表编译；toolkit 支持矩阵仍不额外扩张。
+- CUDA CI 保留可信 runner、周调度和手动 dispatch，但不因 push 自动启动；toolkit 支持矩阵仍不额外扩张。
 
 ## 本轮验证要求
 

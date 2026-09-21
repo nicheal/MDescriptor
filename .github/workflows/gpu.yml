@@ -1,8 +1,6 @@
 name: GPU Test
 
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '17 3 * * 1'
   workflow_dispatch:
@@ -92,6 +90,16 @@ jobs:
               print(matches[0])
           PY
 
+      - name: Run C00PS CUDA regressions
+        shell: bash
+        env:
+          PYTEST_ADDOPTS: '-k c00ps'
+        run: |
+          set -o pipefail
+          python scripts/run_gpu_tests.py \
+            --plugin-dir build-cuda \
+            --native-dir build-cuda 2>&1 | tee c00ps-gpu-test.log
+
       - name: Run strict CUDA tests
         shell: bash
         run: |
@@ -109,6 +117,7 @@ jobs:
           retention-days: 14
           path: |
             gpu-environment.txt
+            c00ps-gpu-test.log
             gpu-test.log
             build-cuda/_native*
             build-cuda/_cuda*
