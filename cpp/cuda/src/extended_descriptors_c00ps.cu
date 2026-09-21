@@ -456,10 +456,14 @@ py::dict compute_c00ps_mlff_descriptor(
     auto* workspace = static_cast<double*>(context.workspace_buffer(workspace_bytes));
     if (size > 0) {
         zeroed_output(context, output, size, "could not clear C00PS output");
-        constexpr unsigned block_size = 64;
-        const auto blocks = static_cast<unsigned>((batch.atoms() + block_size - 1) / block_size);
-        c00ps_mlff_coefficient_kernel<<<blocks,
-            block_size, 0, context.stream()>>>(
+        constexpr unsigned coefficient_block_size = 64;
+        constexpr unsigned spectrum_block_size = 128;
+        const auto coefficient_blocks = static_cast<unsigned>(
+            (batch.atoms() + coefficient_block_size - 1) / coefficient_block_size);
+        const auto spectrum_blocks = static_cast<unsigned>(
+            (batch.atoms() + spectrum_block_size - 1) / spectrum_block_size);
+        c00ps_mlff_coefficient_kernel<<<coefficient_blocks,
+            coefficient_block_size, 0, context.stream()>>>(
             batch.numbers(), graph.offsets(), graph.atoms(), graph.displacements(), graph.distance2(),
             d_species, static_cast<int>(species.size()), d_radial_counts,
             d_zero_offsets, d_norm_offsets, d_table_offsets,
@@ -468,8 +472,8 @@ py::dict compute_c00ps_mlff_descriptor(
             max_angular, table_width, batch.atoms(), coefficient_stride,
             self_correction_stride, radial_value_stride, workspace);
         check_cuda(cudaGetLastError(), "CUDA C00PSMLFF kernel launch failed");
-        c00ps_mlff_spectrum_kernel<<<blocks,
-            block_size, 0, context.stream()>>>(
+        c00ps_mlff_spectrum_kernel<<<spectrum_blocks,
+            spectrum_block_size, 0, context.stream()>>>(
             batch.numbers(), d_species, static_cast<int>(species.size()), d_radial_counts,
             d_coefficient_offsets, include_radial, include_angular, normalize_radial,
             normalize_angular, super_vector, exclude_self, radial_weight, angular_weight,

@@ -21,7 +21,8 @@
 
 ## 本次推进
 
-- C00PS 多阶段 coefficient/spectrum 拆分已完成：CUDA 在同一 stream 上先生成 per-center coefficient/self-correction workspace，再独立生成 radial/power-spectrum 输出；输出布局、labels、row offsets 和 public error surface 保持不变。RTX 2080 SUPER 上同批次稳态 benchmark（5 次 warm-up、20 次采样）为 moderate 3.748→3.836 ms、heavy 6.349→5.628 ms、angular 5.882→5.921 ms。
+- C00PS 多阶段 coefficient/spectrum 拆分已完成：CUDA 在同一 stream 上先生成 per-center coefficient/self-correction workspace，再独立生成 radial/power-spectrum 输出；coefficient/spectrum launch 分别使用 64/128 threads，输出布局、labels、row offsets 和 public error surface 保持不变。RTX 2080 SUPER 上统一 native/CUDA 构建的稳态复测（10 次 warm-up、60 次采样）为 moderate 3.463 ms、heavy 5.839 ms、angular 6.082 ms；256-thread spectrum 试验在 angular 场景升至 7.302 ms，已撤回。
+- 已用当前源码重建 editable native/CUDA 扩展，`MtpOptions.model_data` 和 `NepOptions.model_data` 均可用；完整 CUDA static-payload/lifetime 回归 7 passed。
 
 ## 暂缓项与边界
 
