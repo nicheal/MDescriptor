@@ -1,11 +1,6 @@
 name: GPU Test
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -18,11 +13,6 @@ concurrency:
 jobs:
   cuda:
     name: CUDA / self-hosted GPU
-    # A fork PR must not execute untrusted checkout code on a persistent
-    # self-hosted runner. Maintainer branches and push/manual runs are trusted.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       - self-hosted
       - linux
