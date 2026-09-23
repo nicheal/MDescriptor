@@ -15,6 +15,7 @@ namespace mdescriptor::cuda {
 enum class NeighborGraphOrdering {
     Distance,
     Canonical,
+    Unsorted,
 };
 
 // An edge is the exact self pair when it connects an atom to itself in the

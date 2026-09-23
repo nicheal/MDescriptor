@@ -664,16 +664,38 @@ py::object Backend::predict(py::object batch_object, py::object control) {
         py::gil_scoped_release release;
         const double cutoff = nep_model_->neighbor_cutoff();
         device_batch_.upload(*context_, arrays.view);
-        DeviceBatch* compute_batch = &device_batch_;
-        detail::StructureBatchView compute_view = arrays.view;
-        if (nep_expanded_batch_.expand_nep(*context_, device_batch_, arrays.view, cutoff)) {
-            compute_batch = &nep_expanded_batch_;
-            compute_view = nep_expanded_batch_.metadata_view();
+        bool use_direct_image_graph = arrays.view.atoms <= 4096;
+        for (std::int64_t structure = 0;
+             use_direct_image_graph && structure < arrays.view.structures;
+             ++structure) {
+            const std::int64_t structure_atoms =
+                arrays.view.offsets[structure + 1] - arrays.view.offsets[structure];
+            use_direct_image_graph = structure_atoms <= 256;
         }
-        device_graph_.build_nep(*context_, *compute_batch, compute_view, cutoff);
-        predict_nep_into(*context_, *compute_batch, device_graph_, *nep_model_,
-            arrays.view, energy.mutable_data(), atom_energy.mutable_data(),
-            forces.mutable_data());
+        use_direct_image_graph = use_direct_image_graph
+            && nep_expanded_batch_.requires_nep_expansion(arrays.view, cutoff);
+        if (use_direct_image_graph) {
+            // Keep structures that would require replicas as image edges.
+            // Larger structures and cells that need no replicas use the
+            // NEP cell-list path.
+            device_graph_.build_dpa(
+                *context_, device_batch_, arrays.view, cutoff,
+                false, false, false, false, true, NeighborGraphOrdering::Unsorted);
+            predict_nep_into(*context_, device_batch_, device_graph_, *nep_model_,
+                arrays.view, energy.mutable_data(), atom_energy.mutable_data(),
+                forces.mutable_data());
+        } else {
+            DeviceBatch* compute_batch = &device_batch_;
+            detail::StructureBatchView compute_view = arrays.view;
+            if (nep_expanded_batch_.expand_nep(*context_, device_batch_, arrays.view, cutoff)) {
+                compute_batch = &nep_expanded_batch_;
+                compute_view = nep_expanded_batch_.metadata_view();
+            }
+            device_graph_.build_nep(*context_, *compute_batch, compute_view, cutoff);
+            predict_nep_into(*context_, *compute_batch, device_graph_, *nep_model_,
+                arrays.view, energy.mutable_data(), atom_energy.mutable_data(),
+                forces.mutable_data());
+        }
     } else if (arrays.view.atoms > 0 && name_ == "DPA4C") {
         const auto type_indices = dpa_type_indices(options_, arrays, name_);
         py::gil_scoped_release release;
