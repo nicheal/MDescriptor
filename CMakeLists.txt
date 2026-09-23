@@ -85,7 +85,7 @@ if(NOT EXISTS "${SCIPY_OPENBLAS_LICENSE}")
 endif()
 
 if(MSVC AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.30)
-    set(OpenMP_RUNTIME_MSVC llvm)
+    set(OpenMP_RUNTIME_MSVC experimental)
 endif()
 find_package(OpenMP)
 
@@ -132,10 +132,16 @@ target_include_directories(
 target_link_libraries(_native PRIVATE "${SCIPY_OPENBLAS_LIBRARY}")
 if(OpenMP_CXX_FOUND)
     if(MSVC AND CMAKE_VERSION VERSION_LESS 3.30)
-        # Older FindOpenMP versions cannot select the runtime through a variable.
-        target_compile_options(_native PRIVATE /openmp:llvm)
+        # /openmp:experimental enables the SIMD directives used by the codebase.
+        target_compile_options(_native PRIVATE /openmp:experimental)
     else()
         target_link_libraries(_native PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(MSVC)
+        # DPA4C's atomic updates need LLVM OpenMP; other files use SIMD.
+        set_source_files_properties(
+            cpp/src/model_backed/dpa4c.cpp
+            PROPERTIES COMPILE_OPTIONS /openmp:llvm)
     endif()
 endif()
 
