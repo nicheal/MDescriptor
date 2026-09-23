@@ -137,12 +137,6 @@ if(OpenMP_CXX_FOUND)
     else()
         target_link_libraries(_native PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(MSVC)
-        # DPA4C's atomic updates need LLVM OpenMP; other files use SIMD.
-        set_source_files_properties(
-            cpp/src/model_backed/dpa4c.cpp
-            PROPERTIES COMPILE_OPTIONS /openmp:llvm)
-    endif()
 endif()
 
 # Keep source-built wheels usable before auditwheel/delocate/delvewheel runs.

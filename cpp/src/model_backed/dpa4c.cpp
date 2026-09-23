@@ -1741,12 +1741,12 @@ void Dpa4cCalculator::compute_impl(
                     const double gradient = static_cast<double>(edge_gradient[
                         static_cast<std::size_t>(axis)]);
 #ifdef _OPENMP
-#pragma omp atomic update
+#pragma omp atomic
 #endif
                     forces[static_cast<std::size_t>(neighbor_atom) * 3U
                         + static_cast<std::size_t>(axis)] -= gradient;
 #ifdef _OPENMP
-#pragma omp atomic update
+#pragma omp atomic
 #endif
                     forces[static_cast<std::size_t>(center_atom) * 3U
                         + static_cast<std::size_t>(axis)] += gradient;
