@@ -109,6 +109,29 @@ DeviceBatch::~DeviceBatch() noexcept {
     clear();
 }
 
+bool DeviceBatch::requires_nep_expansion(
+    const detail::StructureBatchView& batch,
+    double cutoff) const {
+    if (batch.structures < 0 || batch.atoms < 0
+        || batch.offsets == nullptr || batch.cells == nullptr || batch.pbc == nullptr
+        || !std::isfinite(cutoff) || cutoff <= 0.0) {
+        throw std::invalid_argument("invalid batch for CUDA NEP expansion planning");
+    }
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        const std::int32_t* pbc = batch.pbc + structure * 3;
+        const bool periodic = pbc[0] == 1 && pbc[1] == 1 && pbc[2] == 1;
+        const bool isolated = pbc[0] == 0 && pbc[1] == 0 && pbc[2] == 0;
+        if (!periodic && !isolated) {
+            throw std::invalid_argument(
+                "CUDA NEP supports all-zero or all-one pbc per structure");
+        }
+        if (!periodic) continue;
+        const auto counts = nep_replication_counts(batch.cells + structure * 9, cutoff);
+        if (counts[0] > 1 || counts[1] > 1 || counts[2] > 1) return true;
+    }
+    return false;
+}
+
 void DeviceBatch::upload(
     CudaExecutionContext& context,
     const detail::StructureBatchView& batch) {

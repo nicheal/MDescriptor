@@ -1353,10 +1353,12 @@ void DeviceNeighborGraph::build_dpa(
             neighbor_overflow_, round_edge_endpoints, include_exact_self, include_boundary);
         check_cuda(cudaGetLastError(), "CUDA DPA graph neighbor fill failed");
     }
-    sort_dpa_neighbors_kernel<<<atom_blocks, block_size, 0, stream>>>(
-        static_cast<std::int64_t>(atom_count), offsets_, atoms_, shifts_,
-        displacements_, distance2_, tie_break_shifts, neighbor_overflow_);
-    check_cuda(cudaGetLastError(), "CUDA DPA graph ordering failed");
+    if (ordering == NeighborGraphOrdering::Distance) {
+        sort_dpa_neighbors_kernel<<<atom_blocks, block_size, 0, stream>>>(
+            static_cast<std::int64_t>(atom_count), offsets_, atoms_, shifts_,
+            displacements_, distance2_, tie_break_shifts, neighbor_overflow_);
+        check_cuda(cudaGetLastError(), "CUDA DPA graph ordering failed");
+    }
     pairs_ = pairs;
 }
 
