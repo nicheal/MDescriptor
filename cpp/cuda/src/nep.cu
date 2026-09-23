@@ -292,7 +292,8 @@ __device__ __forceinline__ float find_q_one(int angular, const float* s) {
     return result + kC3B[start] * s[start] * s[start];
 }
 
-__device__ __forceinline__ float q222(const float* s) {
+template <typename Value>
+__device__ __forceinline__ Value q222(const Value* s) {
     return kC4B[0] * s[3] * s[3] * s[3]
         + kC4B[1] * s[3] * (s[4] * s[4] + s[5] * s[5])
         + kC4B[2] * s[3] * (s[6] * s[6] + s[7] * s[7])
@@ -300,13 +301,15 @@ __device__ __forceinline__ float q222(const float* s) {
         + kC4B[4] * s[4] * s[5] * s[7];
 }
 
-__device__ __forceinline__ float q1111(const float* s) {
-    const float s0 = s[0] * s[0];
-    const float s12 = s[1] * s[1] + s[2] * s[2];
+template <typename Value>
+__device__ __forceinline__ Value q1111(const Value* s) {
+    const Value s0 = s[0] * s[0];
+    const Value s12 = s[1] * s[1] + s[2] * s[2];
     return kC5B[0] * s0 * s0 + kC5B[1] * s0 * s12 + kC5B[2] * s12 * s12;
 }
 
-__device__ __forceinline__ float q112(const float* s) {
+template <typename Value>
+__device__ __forceinline__ Value q112(const Value* s) {
     return kC4B2[0] * s[0] * s[0] * s[3]
         + kC4B2[1] * s[0] * (s[1] * s[4] + s[2] * s[5])
         + kC4B2[2] * s[3] * (s[1] * s[1] + s[2] * s[2])
@@ -314,8 +317,9 @@ __device__ __forceinline__ float q112(const float* s) {
         + kC4B2[4] * s[1] * s[2] * s[7];
 }
 
-__device__ __forceinline__ float q123(const float* s) {
-    float value = 0.0f;
+template <typename Value>
+__device__ __forceinline__ Value q123(const Value* s) {
+    Value value = static_cast<Value>(0.0f);
     value += kC4B123[6] * (s[12] * s[2] * s[4] - s[11] * s[2] * s[5]
         + s[1] * s[11] * s[4] + s[1] * s[12] * s[5]);
     value += kC4B123[5] * (s[0] * s[11] * s[6] + s[0] * s[12] * s[7]);
@@ -330,8 +334,9 @@ __device__ __forceinline__ float q123(const float* s) {
     return value;
 }
 
-__device__ __forceinline__ float q233(const float* s) {
-    float value = 0.0f;
+template <typename Value>
+__device__ __forceinline__ Value q233(const Value* s) {
+    Value value = static_cast<Value>(0.0f);
     value += kC4B233[0] * (s[3] * s[8] * s[8]);
     value += kC4B233[1] * (s[10] * s[10] * s[3] + s[3] * s[9] * s[9]);
     value += kC4B233[2] * (-s[10] * s[10] * s[6] + s[6] * s[9] * s[9]);
@@ -348,7 +353,8 @@ __device__ __forceinline__ float q233(const float* s) {
     return value;
 }
 
-__device__ __forceinline__ float q134(const float* s) {
+template <typename Value>
+__device__ __forceinline__ Value q134(const Value* s) {
     return kC4B134[0] * (-s[10] * s[15] * s[2] - s[1] * s[15] * s[9])
         + kC4B134[1] * (s[0] * s[15] * s[8])
         + kC4B134[2] * (-s[1] * s[13] * s[18] - s[1] * s[14] * s[19]
@@ -365,6 +371,170 @@ __device__ __forceinline__ float q134(const float* s) {
         + kC4B134[8] * (s[0] * s[13] * s[20] + s[0] * s[14] * s[21])
         + kC4B134[9] * (s[1] * s[11] * s[20] + s[1] * s[12] * s[21]
             - s[2] * s[12] * s[20] + s[2] * s[11] * s[21]);
+}
+
+struct DeviceDual3 {
+    float value = 0.0f;
+    float derivative[3] = {};
+
+    __device__ DeviceDual3(float input = 0.0f) : value(input) {}
+};
+
+__device__ __forceinline__ DeviceDual3 operator+(
+    const DeviceDual3& a, const DeviceDual3& b) {
+    DeviceDual3 result(a.value + b.value);
+    for (int axis = 0; axis < 3; ++axis) {
+        result.derivative[axis] = a.derivative[axis] + b.derivative[axis];
+    }
+    return result;
+}
+
+__device__ __forceinline__ DeviceDual3& operator+=(
+    DeviceDual3& a, const DeviceDual3& b) {
+    a.value += b.value;
+    for (int axis = 0; axis < 3; ++axis) {
+        a.derivative[axis] += b.derivative[axis];
+    }
+    return a;
+}
+
+__device__ __forceinline__ DeviceDual3& operator*=(
+    DeviceDual3& a, const DeviceDual3& b) {
+    const float old_value = a.value;
+    for (int axis = 0; axis < 3; ++axis) {
+        a.derivative[axis] = a.derivative[axis] * b.value
+            + old_value * b.derivative[axis];
+    }
+    a.value = old_value * b.value;
+    return a;
+}
+
+__device__ __forceinline__ DeviceDual3 operator-(
+    const DeviceDual3& a, const DeviceDual3& b) {
+    DeviceDual3 result(a.value - b.value);
+    for (int axis = 0; axis < 3; ++axis) {
+        result.derivative[axis] = a.derivative[axis] - b.derivative[axis];
+    }
+    return result;
+}
+
+__device__ __forceinline__ DeviceDual3 operator-(const DeviceDual3& a) {
+    DeviceDual3 result(-a.value);
+    for (int axis = 0; axis < 3; ++axis) result.derivative[axis] = -a.derivative[axis];
+    return result;
+}
+
+__device__ __forceinline__ DeviceDual3 operator*(
+    const DeviceDual3& a, const DeviceDual3& b) {
+    DeviceDual3 result(a.value * b.value);
+    for (int axis = 0; axis < 3; ++axis) {
+        result.derivative[axis] = a.derivative[axis] * b.value
+            + a.value * b.derivative[axis];
+    }
+    return result;
+}
+
+__device__ __forceinline__ DeviceDual3 dual_cos(const DeviceDual3& input) {
+    DeviceDual3 result(cosf(input.value));
+    const float scale = -sinf(input.value);
+    for (int axis = 0; axis < 3; ++axis) {
+        result.derivative[axis] = scale * input.derivative[axis];
+    }
+    return result;
+}
+
+__device__ __forceinline__ DeviceDual3 dual_sqrt(const DeviceDual3& input) {
+    DeviceDual3 result(sqrtf(input.value));
+    const float scale = 0.5f / result.value;
+    for (int axis = 0; axis < 3; ++axis) {
+        result.derivative[axis] = scale * input.derivative[axis];
+    }
+    return result;
+}
+
+__device__ __forceinline__ void basis_values_dual(
+    int basis_size, float cutoff, const DeviceDual3& distance,
+    DeviceDual3* values) {
+    const DeviceDual3 fc = 0.5f * dual_cos(distance * (kPi / cutoff)) + 0.5f;
+    const DeviceDual3 a = distance * (1.0f / cutoff) - 1.0f;
+    const DeviceDual3 x = 2.0f * a * a - 1.0f;
+    values[0] = fc;
+    if (basis_size == 0) return;
+    values[1] = 0.5f * (x + 1.0f) * fc;
+    DeviceDual3 previous(1.0f);
+    DeviceDual3 current = x;
+    for (int order = 2; order <= basis_size; ++order) {
+        const DeviceDual3 next = 2.0f * x * current - previous;
+        previous = current;
+        current = next;
+        values[order] = 0.5f * (current + 1.0f) * fc;
+    }
+}
+
+__device__ __forceinline__ void accumulate_s_dual(
+    int l_max, const DeviceDual3& distance,
+    const DeviceDual3& x, const DeviceDual3& y, const DeviceDual3& z,
+    const DeviceDual3& value, DeviceDual3* s) {
+    DeviceDual3 inverse(1.0f / distance.value);
+    for (int axis = 0; axis < 3; ++axis) {
+        inverse.derivative[axis] = -distance.derivative[axis]
+            / (distance.value * distance.value);
+    }
+    const DeviceDual3 nx = x * inverse;
+    const DeviceDual3 ny = y * inverse;
+    const DeviceDual3 nz = z * inverse;
+    if (l_max >= 1) accumulate_s_one<1>(nx, ny, nz, value, s);
+    if (l_max >= 2) accumulate_s_one<2>(nx, ny, nz, value, s);
+    if (l_max >= 3) accumulate_s_one<3>(nx, ny, nz, value, s);
+    if (l_max >= 4) accumulate_s_one<4>(nx, ny, nz, value, s);
+    if (l_max >= 5) accumulate_s_one<5>(nx, ny, nz, value, s);
+    if (l_max >= 6) accumulate_s_one<6>(nx, ny, nz, value, s);
+    if (l_max >= 7) accumulate_s_one<7>(nx, ny, nz, value, s);
+    if (l_max >= 8) accumulate_s_one<8>(nx, ny, nz, value, s);
+}
+
+template <typename Value>
+__device__ __forceinline__ Value find_q_one_value(int angular, const Value* s) {
+    const int start = angular * angular - 1;
+    const int count = 2 * angular + 1;
+    Value result = kC3B[start] * s[start] * s[start];
+    for (int k = 1; k < count; ++k) {
+        result += 2.0f * kC3B[start + k] * s[start + k] * s[start + k];
+    }
+    return result;
+}
+
+__device__ __forceinline__ DeviceDual3 angular_q_channel(
+    int channel, int l_max,
+    bool has_q_222, bool has_q_1111, bool has_q_112,
+    bool has_q_123, bool has_q_233, bool has_q_134,
+    const DeviceDual3* s) {
+    int index = 0;
+    for (int angular = 1; angular <= l_max; ++angular, ++index) {
+        if (channel == index) return find_q_one_value(angular, s);
+    }
+    if (has_q_222) {
+        if (channel == index) return q222(s);
+        ++index;
+    }
+    if (has_q_1111) {
+        if (channel == index) return q1111(s);
+        ++index;
+    }
+    if (has_q_112) {
+        if (channel == index) return q112(s);
+        ++index;
+    }
+    if (has_q_123) {
+        if (channel == index) return q123(s);
+        ++index;
+    }
+    if (has_q_233) {
+        if (channel == index) return q233(s);
+        ++index;
+    }
+    if (has_q_134 && channel == index) return q134(s);
+    return DeviceDual3{};
 }
 
 __device__ __forceinline__ void basis_values(
@@ -635,6 +805,367 @@ __global__ void compute_nep_kernel(
     }
 }
 
+__device__ __forceinline__ void graph_center_range(
+    std::int64_t center, const std::int64_t* graph_offsets,
+    const std::int32_t* graph_counts, std::int64_t graph_stride,
+    std::int64_t& begin, std::int64_t& end) {
+    begin = graph_counts == nullptr ? graph_offsets[center] : center * graph_stride;
+    end = graph_counts == nullptr ? graph_offsets[center + 1]
+        : begin + graph_counts[center];
+}
+
+__device__ __forceinline__ void atomic_add_double(double* address, double value) {
+#if __CUDA_ARCH__ >= 600
+    atomicAdd(address, value);
+#else
+    auto* bits = reinterpret_cast<unsigned long long int*>(address);
+    unsigned long long int old = atomicCAS(bits, 0ULL, 0ULL);
+    unsigned long long int assumed = 0;
+    do {
+        assumed = old;
+        old = atomicCAS(bits, assumed,
+            __double_as_longlong(value + __longlong_as_double(assumed)));
+    } while (assumed != old);
+#endif
+}
+
+__global__ void evaluate_nep_ann_kernel(
+    const std::int32_t* numbers,
+    const std::int32_t* type_lookup,
+    int num_types,
+    int version,
+    int dimension,
+    int hidden1_count,
+    int hidden2_count,
+    const double* ann,
+    std::int64_t atoms,
+    double* descriptor_or_gradient,
+    double* atom_energy) {
+    const std::int64_t atom = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (atom >= atoms) return;
+    const int atomic_number = numbers[atom];
+    const int type = atomic_number > 0 && atomic_number < kAtomicNumberCount
+        ? type_lookup[atomic_number] : -1;
+    if (type < 0) {
+        atom_energy[atom] = 0.0;
+        return;
+    }
+
+    const std::size_t stride = hidden2_count > 0
+        ? static_cast<std::size_t>(dimension + 1) * hidden1_count
+            + static_cast<std::size_t>(hidden1_count + 2) * hidden2_count
+        : static_cast<std::size_t>(dimension + 2) * hidden1_count
+            + (version == 5 ? 1U : 0U);
+    const std::size_t base = static_cast<std::size_t>(type) * stride;
+    const double* weights0 = ann + base;
+    const double* bias0 = weights0 + static_cast<std::size_t>(hidden1_count) * dimension;
+    const double* weights1 = bias0 + hidden1_count;
+    double* descriptor = descriptor_or_gradient + atom * dimension;
+    double derivative[256] = {};
+    double energy = -ann[static_cast<std::size_t>(num_types) * stride];
+
+    if (hidden2_count == 0) {
+        if (version == 5) energy -= weights1[hidden1_count];
+        for (int neuron = 0; neuron < hidden1_count; ++neuron) {
+            const double* row = weights0 + static_cast<std::size_t>(neuron) * dimension;
+            double dot = 0.0;
+            for (int feature = 0; feature < dimension; ++feature) {
+                dot += row[feature] * descriptor[feature];
+            }
+            const double hidden = tanh(dot - bias0[neuron]);
+            const double pull = weights1[neuron] * (1.0 - hidden * hidden);
+            energy += weights1[neuron] * hidden;
+            for (int feature = 0; feature < dimension; ++feature) {
+                derivative[feature] += pull * row[feature];
+            }
+        }
+    } else {
+        double hidden1[120] = {};
+        double pull1[120] = {};
+        const double* weights1_hidden = weights1;
+        const double* bias1_hidden = weights1_hidden
+            + static_cast<std::size_t>(hidden1_count) * hidden2_count;
+        const double* weights2 = bias1_hidden + hidden2_count;
+        for (int neuron = 0; neuron < hidden1_count; ++neuron) {
+            const double* row = weights0 + static_cast<std::size_t>(neuron) * dimension;
+            double dot = 0.0;
+            for (int feature = 0; feature < dimension; ++feature) {
+                dot += row[feature] * descriptor[feature];
+            }
+            hidden1[neuron] = tanh(dot - bias0[neuron]);
+        }
+        for (int neuron = 0; neuron < hidden2_count; ++neuron) {
+            const double* row = weights1_hidden + static_cast<std::size_t>(neuron) * hidden1_count;
+            double dot = 0.0;
+            for (int inner = 0; inner < hidden1_count; ++inner) {
+                dot += row[inner] * hidden1[inner];
+            }
+            const double hidden = tanh(dot - bias1_hidden[neuron]);
+            const double pull = weights2[neuron] * (1.0 - hidden * hidden);
+            energy += weights2[neuron] * hidden;
+            for (int inner = 0; inner < hidden1_count; ++inner) {
+                pull1[inner] += row[inner] * pull;
+            }
+        }
+        for (int neuron = 0; neuron < hidden1_count; ++neuron) {
+            const double pull = pull1[neuron] * (1.0 - hidden1[neuron] * hidden1[neuron]);
+            const double* row = weights0 + static_cast<std::size_t>(neuron) * dimension;
+            for (int feature = 0; feature < dimension; ++feature) {
+                derivative[feature] += pull * row[feature];
+            }
+        }
+    }
+
+    atom_energy[atom] = energy;
+    for (int feature = 0; feature < dimension; ++feature) {
+        descriptor[feature] = derivative[feature];
+    }
+}
+
+__device__ __forceinline__ double zbl_value_and_derivative(
+    std::int32_t z1, std::int32_t z2, double inner, double outer,
+    double distance, double& derivative) {
+    if (distance <= 0.0 || distance >= outer) {
+        derivative = 0.0;
+        return 0.0;
+    }
+    constexpr double parameters[8] = {
+        0.18175, 3.1998, 0.50986, 0.94229,
+        0.28022, 0.4029, 0.02817, 0.20162,
+    };
+    constexpr double pi = 3.141592653589793238462643383279502884;
+    const double a_inv = (pow(static_cast<double>(z1), 0.23)
+        + pow(static_cast<double>(z2), 0.23)) * 2.134563;
+    const double charge = 14.399645 * static_cast<double>(z1) * z2;
+    double phi = 0.0;
+    double phi_prime = 0.0;
+    for (int index = 0; index < 4; ++index) {
+        const double term = parameters[2 * index]
+            * exp(-parameters[2 * index + 1] * distance * a_inv);
+        phi += term;
+        phi_prime -= parameters[2 * index + 1] * term;
+    }
+    const double value = charge * phi / distance;
+    const double value_prime = charge * phi_prime * a_inv / distance
+        - charge * phi / (distance * distance);
+    double cutoff = 1.0;
+    double cutoff_prime = 0.0;
+    if (distance >= inner) {
+        const double factor = pi / (outer - inner);
+        cutoff = 0.5 * cos(factor * (distance - inner)) + 0.5;
+        cutoff_prime = -0.5 * sin(factor * (distance - inner)) * factor;
+    }
+    derivative = value_prime * cutoff + value * cutoff_prime;
+    return value * cutoff;
+}
+
+__global__ void compute_nep_prediction_forces_kernel(
+    const std::int32_t* numbers,
+    const std::int64_t* graph_offsets,
+    const std::int32_t* graph_counts,
+    std::int64_t graph_stride,
+    const std::int32_t* graph_atoms,
+    const double* graph_displacements,
+    const std::int32_t* type_lookup,
+    int num_types,
+    int n_max_radial,
+    int n_max_angular,
+    int basis_size_radial,
+    int basis_size_angular,
+    int l_max,
+    bool has_q_222,
+    bool has_q_1111,
+    bool has_q_112,
+    bool has_q_123,
+    bool has_q_233,
+    bool has_q_134,
+    int dimension,
+    const float* radial_cutoff_pair,
+    const float* angular_cutoff_pair,
+    const float* radial_pair_coefficients,
+    const float* angular_pair_coefficients,
+    const float* scalers,
+    int zbl_enabled,
+    double zbl_inner,
+    double zbl_outer,
+    std::int64_t atoms,
+    const double* ann_gradient,
+    double* atom_energy,
+    double* forces) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (center >= atoms) return;
+    const int center_atomic_number = numbers[center];
+    const int center_type = center_atomic_number > 0 && center_atomic_number < kAtomicNumberCount
+        ? type_lookup[center_atomic_number] : -1;
+    if (center_type < 0) return;
+
+    std::int64_t begin = 0;
+    std::int64_t end = 0;
+    graph_center_range(center, graph_offsets, graph_counts, graph_stride, begin, end);
+    const int radial_count = n_max_radial + 1;
+    const int angular_count = n_max_angular + 1;
+    const int radial_basis_count = basis_size_radial + 1;
+    const int angular_basis_count = basis_size_angular + 1;
+    const double* center_gradient = ann_gradient + center * dimension;
+    double local_force[3] = {0.0, 0.0, 0.0};
+
+    DeviceDual3 basis[17];
+    for (std::int64_t edge = begin; edge < end; ++edge) {
+        const std::int32_t neighbor = graph_atoms[edge];
+        const int neighbor_atomic_number = numbers[neighbor];
+        const int neighbor_type = neighbor_atomic_number > 0 && neighbor_atomic_number < kAtomicNumberCount
+            ? type_lookup[neighbor_atomic_number] : -1;
+        if (neighbor_type < 0) continue;
+        const int pair = center_type * num_types + neighbor_type;
+        const float cutoff = radial_cutoff_pair[pair];
+        const float dx = static_cast<float>(graph_displacements[edge * 3 + 0]);
+        const float dy = static_cast<float>(graph_displacements[edge * 3 + 1]);
+        const float dz = static_cast<float>(graph_displacements[edge * 3 + 2]);
+        if (dx == 0.0f && dy == 0.0f && dz == 0.0f) continue;
+        DeviceDual3 x(dx), y(dy), z(dz);
+        x.derivative[0] = 1.0f;
+        y.derivative[1] = 1.0f;
+        z.derivative[2] = 1.0f;
+        const DeviceDual3 distance = dual_sqrt(x * x + y * y + z * z);
+        if (distance.value >= cutoff) continue;
+        basis_values_dual(basis_size_radial, cutoff, distance, basis);
+        const float* coefficients = radial_pair_coefficients
+            + pair * radial_count * radial_basis_count;
+        double edge_force[3] = {0.0, 0.0, 0.0};
+        for (int order = 0; order < radial_count; ++order) {
+            DeviceDual3 value;
+            for (int basis_index = 0; basis_index < radial_basis_count; ++basis_index) {
+                value += coefficients[order * radial_basis_count + basis_index]
+                    * basis[basis_index];
+            }
+            const double pull = center_gradient[order] * scalers[order];
+            for (int axis = 0; axis < 3; ++axis) {
+                edge_force[axis] += pull * value.derivative[axis];
+            }
+        }
+        for (int axis = 0; axis < 3; ++axis) {
+            local_force[axis] += edge_force[axis];
+            atomic_add_double(&forces[neighbor * 3 + axis], -edge_force[axis]);
+        }
+    }
+
+    const int angular_channels = (dimension - radial_count) / angular_count;
+    if (angular_channels > 0) {
+        float total_s[kNumAngularTerms];
+        DeviceDual3 dual_s[kNumAngularTerms];
+        DeviceDual3 edge_s[kNumAngularTerms];
+        DeviceDual3 dual_basis[17];
+        for (int order = 0; order < angular_count; ++order) {
+            for (int term = 0; term < kNumAngularTerms; ++term) total_s[term] = 0.0f;
+            for (std::int64_t edge = begin; edge < end; ++edge) {
+                const std::int32_t neighbor = graph_atoms[edge];
+                const int neighbor_atomic_number = numbers[neighbor];
+                const int neighbor_type = neighbor_atomic_number > 0 && neighbor_atomic_number < kAtomicNumberCount
+                    ? type_lookup[neighbor_atomic_number] : -1;
+                if (neighbor_type < 0) continue;
+                const int pair = center_type * num_types + neighbor_type;
+                const float cutoff = angular_cutoff_pair[pair];
+                const float dx = static_cast<float>(graph_displacements[edge * 3 + 0]);
+                const float dy = static_cast<float>(graph_displacements[edge * 3 + 1]);
+                const float dz = static_cast<float>(graph_displacements[edge * 3 + 2]);
+                const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
+                if (distance <= 0.0f || distance >= cutoff) continue;
+                float radial_basis[17];
+                basis_values(basis_size_angular, cutoff, distance, radial_basis);
+                const float* coefficients = angular_pair_coefficients
+                    + (pair * angular_count + order) * angular_basis_count;
+                const float value = dot_basis(coefficients, radial_basis, angular_basis_count);
+                const float inverse = 1.0f / distance;
+                accumulate_s(l_max, dx * inverse, dy * inverse, dz * inverse,
+                    value, total_s);
+            }
+
+            for (std::int64_t edge = begin; edge < end; ++edge) {
+                const std::int32_t neighbor = graph_atoms[edge];
+                const int neighbor_atomic_number = numbers[neighbor];
+                const int neighbor_type = neighbor_atomic_number > 0 && neighbor_atomic_number < kAtomicNumberCount
+                    ? type_lookup[neighbor_atomic_number] : -1;
+                if (neighbor_type < 0) continue;
+                const int pair = center_type * num_types + neighbor_type;
+                const float cutoff = angular_cutoff_pair[pair];
+                const float dx = static_cast<float>(graph_displacements[edge * 3 + 0]);
+                const float dy = static_cast<float>(graph_displacements[edge * 3 + 1]);
+                const float dz = static_cast<float>(graph_displacements[edge * 3 + 2]);
+                if (dx == 0.0f && dy == 0.0f && dz == 0.0f) continue;
+                DeviceDual3 x(dx), y(dy), z(dz);
+                x.derivative[0] = 1.0f;
+                y.derivative[1] = 1.0f;
+                z.derivative[2] = 1.0f;
+                const DeviceDual3 distance = dual_sqrt(x * x + y * y + z * z);
+                if (distance.value >= cutoff) continue;
+                basis_values_dual(basis_size_angular, cutoff, distance, dual_basis);
+                const float* coefficients = angular_pair_coefficients
+                    + (pair * angular_count + order) * angular_basis_count;
+                DeviceDual3 value;
+                for (int basis_index = 0; basis_index < angular_basis_count; ++basis_index) {
+                    value += coefficients[basis_index] * dual_basis[basis_index];
+                }
+                for (int term = 0; term < kNumAngularTerms; ++term) edge_s[term] = DeviceDual3{};
+                accumulate_s_dual(l_max, distance, x, y, z, value, edge_s);
+                for (int term = 0; term < kNumAngularTerms; ++term) {
+                    dual_s[term] = DeviceDual3(total_s[term]);
+                    for (int axis = 0; axis < 3; ++axis) {
+                        dual_s[term].derivative[axis] = edge_s[term].derivative[axis];
+                    }
+                }
+                double edge_force[3] = {0.0, 0.0, 0.0};
+                for (int channel = 0; channel < angular_channels; ++channel) {
+                    const int feature = radial_count + channel * angular_count + order;
+                    if (feature >= dimension) continue;
+                    const DeviceDual3 q = angular_q_channel(channel, l_max,
+                        has_q_222, has_q_1111, has_q_112, has_q_123,
+                        has_q_233, has_q_134, dual_s);
+                    const double pull = center_gradient[feature] * scalers[feature];
+                    for (int axis = 0; axis < 3; ++axis) {
+                        edge_force[axis] += pull * q.derivative[axis];
+                    }
+                }
+                for (int axis = 0; axis < 3; ++axis) {
+                    local_force[axis] += edge_force[axis];
+                    atomic_add_double(&forces[neighbor * 3 + axis], -edge_force[axis]);
+                }
+            }
+        }
+    }
+
+    double zbl_energy = 0.0;
+    if (zbl_enabled) {
+        for (std::int64_t edge = begin; edge < end; ++edge) {
+            const std::int32_t neighbor = graph_atoms[edge];
+            const int neighbor_atomic_number = numbers[neighbor];
+            if (neighbor_atomic_number <= 0) continue;
+            const double dx = graph_displacements[edge * 3 + 0];
+            const double dy = graph_displacements[edge * 3 + 1];
+            const double dz = graph_displacements[edge * 3 + 2];
+            const double distance = sqrt(dx * dx + dy * dy + dz * dz);
+            if (distance <= 0.0 || distance >= zbl_outer) continue;
+            double radial_derivative = 0.0;
+            const double value = zbl_value_and_derivative(
+                center_atomic_number, neighbor_atomic_number,
+                zbl_inner, zbl_outer, distance, radial_derivative);
+            zbl_energy += 0.5 * value;
+            const double scale = 0.5 * radial_derivative / distance;
+            local_force[0] += dx * scale;
+            local_force[1] += dy * scale;
+            local_force[2] += dz * scale;
+            atomic_add_double(&forces[neighbor * 3 + 0], -dx * scale);
+            atomic_add_double(&forces[neighbor * 3 + 1], -dy * scale);
+            atomic_add_double(&forces[neighbor * 3 + 2], -dz * scale);
+        }
+    }
+    atom_energy[center] += zbl_energy;
+    for (int axis = 0; axis < 3; ++axis) {
+        atomic_add_double(&forces[center * 3 + axis], local_force[axis]);
+    }
+}
+
 // A periodic batch is physically expanded on the device so that its neighbor
 // order is identical to the ordinary NEP cell-list path.  Reduce the replica
 // rows in the same CUDA stream; each output element has one deterministic
@@ -665,6 +1196,33 @@ __global__ void reduce_expanded_nep_kernel(
     reduced_output[element] = sum / static_cast<double>(replicas);
 }
 
+__global__ void reduce_expanded_nep_prediction_kernel(
+    std::int64_t original_atoms,
+    const std::int64_t* expansion_first,
+    const std::int64_t* expansion_stride,
+    const std::int32_t* expansion_replicas,
+    const double* expanded_energy,
+    const double* expanded_forces,
+    double* reduced_energy_and_forces) {
+    const std::int64_t element = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (element >= original_atoms * 4) return;
+    const std::int64_t atom = element / 4;
+    const int component = static_cast<int>(element % 4);
+    const std::int32_t replicas = expansion_replicas[atom];
+    const std::int64_t first = expansion_first[atom];
+    const std::int64_t stride = expansion_stride[atom];
+    double sum = 0.0;
+    for (std::int32_t replica = 0; replica < replicas; ++replica) {
+        const std::int64_t expanded_atom = first
+            + static_cast<std::int64_t>(replica) * stride;
+        sum += component == 0
+            ? expanded_energy[expanded_atom]
+            : expanded_forces[expanded_atom * 3 + component - 1];
+    }
+    reduced_energy_and_forces[element] = sum / static_cast<double>(replicas);
+}
+
 } // namespace
 
 DeviceNepModel::DeviceNepModel(
@@ -675,6 +1233,7 @@ DeviceNepModel::DeviceNepModel(
       basis_size_radial_(parameters.basis_size_radial),
       basis_size_angular_(parameters.basis_size_angular), l_max_(parameters.l_max),
       dimension_(parameters.dimension),
+      version_(parameters.version),
       radial_cutoff_max_(parameters.radial_cutoff_max),
       angular_cutoff_max_(parameters.angular_cutoff_max),
       has_q_222_(parameters.has_q_222), has_q_1111_(parameters.has_q_1111),
@@ -739,6 +1298,29 @@ DeviceNepModel::DeviceNepModel(
     scalers_ = upload(scalers, "could not upload NEP q scalers");
 }
 
+DeviceNepModel::DeviceNepModel(
+    CudaExecutionContext& context,
+    const mdescriptor::NepPredictionParameters& parameters)
+    : DeviceNepModel(
+        context, static_cast<const mdescriptor::NepDescriptorParameters&>(parameters)) {
+    if (parameters.hidden_neurons1 <= 0 || parameters.hidden_neurons1 > 120
+        || parameters.hidden_neurons2 < 0 || parameters.hidden_neurons2 > 120
+        || parameters.version < 4 || parameters.version > 5
+        || parameters.ann_parameters.empty()
+        || (parameters.zbl_enabled && parameters.zbl_outer <= parameters.zbl_inner)) {
+        throw std::invalid_argument("unsupported NEP prediction model parameters");
+    }
+    hidden_neurons1_ = parameters.hidden_neurons1;
+    hidden_neurons2_ = parameters.hidden_neurons2;
+    zbl_enabled_ = parameters.zbl_enabled;
+    zbl_inner_ = parameters.zbl_inner;
+    zbl_outer_ = parameters.zbl_outer;
+    std::vector<double> ann(parameters.ann_parameters.begin(), parameters.ann_parameters.end());
+    ann_parameters_ = dpa4_common::upload_array<DeviceArray>(
+        context, ann, "could not upload NEP ANN parameters",
+        "could not select the CUDA device", true);
+}
+
 DeviceNepModel::~DeviceNepModel() noexcept = default;
 
 const std::int32_t* DeviceNepModel::type_lookup() const noexcept {
@@ -763,6 +1345,10 @@ const float* DeviceNepModel::angular_pair_coefficients() const noexcept {
 
 const float* DeviceNepModel::scalers() const noexcept {
     return dpa4_common::device_data<float>(scalers_);
+}
+
+const double* DeviceNepModel::ann_parameters() const noexcept {
+    return dpa4_common::device_data<double>(ann_parameters_);
 }
 
 bool DeviceNepModel::supports_atomic_number(std::int32_t number) const noexcept {
@@ -833,6 +1419,131 @@ void compute_nep_into(
         output + reduced_offset);
     check_cuda(cudaGetLastError(), "CUDA NEP replica reduction kernel launch failed");
     context.download_output_slice_into(reduced_offset, host_output, reduced_count);
+}
+
+void predict_nep_into(
+    CudaExecutionContext& context,
+    const DeviceBatch& batch,
+    const DeviceNeighborGraph& graph,
+    const DeviceNepModel& model,
+    const detail::StructureBatchView& original,
+    double* energy,
+    double* atom_energy,
+    double* forces) {
+    if (!model.prediction_enabled()) {
+        throw std::invalid_argument("CUDA NEP model was not loaded for prediction");
+    }
+    if (original.atoms <= 0 || batch.atoms() <= 0) {
+        return;
+    }
+    if (energy == nullptr || atom_energy == nullptr || forces == nullptr
+        || original.offsets == nullptr) {
+        throw std::invalid_argument("CUDA NEP prediction output buffers must not be null");
+    }
+    const std::size_t expanded_atoms = static_cast<std::size_t>(batch.atoms());
+    const std::size_t original_atoms = static_cast<std::size_t>(original.atoms);
+    const std::size_t dimension = static_cast<std::size_t>(model.dimension());
+    if (expanded_atoms > std::numeric_limits<std::size_t>::max() / dimension) {
+        throw CudaOutOfMemory("CUDA NEP prediction descriptors are too large");
+    }
+    const std::size_t descriptor_count = expanded_atoms * dimension;
+    if (expanded_atoms > (std::numeric_limits<std::size_t>::max() - descriptor_count) / 4) {
+        throw CudaOutOfMemory("CUDA NEP prediction output is too large");
+    }
+    const std::size_t expanded_result_count = expanded_atoms * 4;
+    std::size_t output_count = descriptor_count + expanded_result_count;
+    std::size_t reduced_offset = 0;
+    if (batch.expanded()) {
+        if (batch.original_atoms() != original.atoms
+            || original_atoms > (std::numeric_limits<std::size_t>::max() - output_count) / 4) {
+            throw CudaOutOfMemory("CUDA NEP reduced prediction output is too large");
+        }
+        reduced_offset = output_count;
+        output_count += original_atoms * 4;
+    } else if (batch.atoms() != original.atoms) {
+        throw std::invalid_argument("CUDA NEP batch does not match the original prediction batch");
+    }
+
+    double* output = context.output_buffer(output_count);
+    double* descriptors_or_gradient = output;
+    double* expanded_energy = output + descriptor_count;
+    double* expanded_forces = expanded_energy + expanded_atoms;
+    constexpr unsigned int block_size = 128;
+    const unsigned int blocks = static_cast<unsigned int>(
+        (expanded_atoms + block_size - 1) / block_size);
+
+    compute_nep_kernel<<<blocks, block_size, 0, context.stream()>>>(
+        batch.numbers(), graph.offsets(),
+        graph.slot_major() ? graph.neighbor_counts() : nullptr,
+        graph.neighbor_stride(), graph.atoms(), graph.displacements(),
+        model.type_lookup(), model.num_types(), model.n_max_radial(),
+        model.n_max_angular(), model.basis_size_radial(), model.basis_size_angular(),
+        model.l_max(), model.has_q_222(), model.has_q_1111(), model.has_q_112(),
+        model.has_q_123(), model.has_q_233(), model.has_q_134(), model.dimension(),
+        model.radial_cutoff_pair(), model.angular_cutoff_pair(),
+        model.radial_pair_coefficients(), model.angular_pair_coefficients(),
+        model.scalers(), batch.atoms(), descriptors_or_gradient);
+    check_cuda(cudaGetLastError(), "CUDA NEP prediction descriptor kernel launch failed");
+
+    evaluate_nep_ann_kernel<<<blocks, block_size, 0, context.stream()>>>(
+        batch.numbers(), model.type_lookup(), model.num_types(), model.version(),
+        model.dimension(), model.hidden_neurons1(), model.hidden_neurons2(),
+        model.ann_parameters(), batch.atoms(), descriptors_or_gradient, expanded_energy);
+    check_cuda(cudaGetLastError(), "CUDA NEP ANN prediction kernel launch failed");
+
+    check_cuda(cudaMemsetAsync(expanded_forces, 0,
+        expanded_atoms * 3 * sizeof(double), context.stream()),
+        "could not initialize CUDA NEP forces");
+    compute_nep_prediction_forces_kernel<<<blocks, block_size, 0, context.stream()>>>(
+        batch.numbers(), graph.offsets(),
+        graph.slot_major() ? graph.neighbor_counts() : nullptr,
+        graph.neighbor_stride(), graph.atoms(), graph.displacements(),
+        model.type_lookup(), model.num_types(), model.n_max_radial(),
+        model.n_max_angular(), model.basis_size_radial(), model.basis_size_angular(),
+        model.l_max(), model.has_q_222(), model.has_q_1111(), model.has_q_112(),
+        model.has_q_123(), model.has_q_233(), model.has_q_134(), model.dimension(),
+        model.radial_cutoff_pair(), model.angular_cutoff_pair(),
+        model.radial_pair_coefficients(), model.angular_pair_coefficients(),
+        model.scalers(), model.zbl_enabled() ? 1 : 0, model.zbl_inner(), model.zbl_outer(),
+        batch.atoms(), descriptors_or_gradient, expanded_energy, expanded_forces);
+    check_cuda(cudaGetLastError(), "CUDA NEP prediction force kernel launch failed");
+
+    const std::size_t output_atoms = batch.expanded() ? original_atoms : expanded_atoms;
+    const std::size_t result_count = output_atoms * 4;
+    std::vector<double> host_result(result_count);
+    if (batch.expanded()) {
+        double* reduced_output = output + reduced_offset;
+        const auto reduction_blocks = static_cast<unsigned int>(
+            (result_count + block_size - 1) / block_size);
+        reduce_expanded_nep_prediction_kernel<<<
+            reduction_blocks, block_size, 0, context.stream()>>>(
+            original.atoms, batch.expansion_first(), batch.expansion_stride(),
+            batch.expansion_replicas(), expanded_energy, expanded_forces, reduced_output);
+        check_cuda(cudaGetLastError(), "CUDA NEP prediction replica reduction failed");
+        context.download_output_slice_into(reduced_offset, host_result.data(), result_count);
+    } else {
+        context.download_output_slice_into(descriptor_count, host_result.data(), result_count);
+    }
+
+    for (std::int64_t atom = 0; atom < original.atoms; ++atom) {
+        const std::size_t energy_index = batch.expanded()
+            ? static_cast<std::size_t>(atom) * 4
+            : static_cast<std::size_t>(atom);
+        const std::size_t force_index = batch.expanded()
+            ? static_cast<std::size_t>(atom) * 4 + 1
+            : original_atoms + static_cast<std::size_t>(atom) * 3;
+        atom_energy[atom] = host_result[energy_index];
+        for (int axis = 0; axis < 3; ++axis) {
+            forces[atom * 3 + axis] = host_result[force_index + axis];
+        }
+    }
+    std::fill_n(energy, original.structures, 0.0);
+    for (std::int64_t structure = 0; structure < original.structures; ++structure) {
+        for (std::int64_t atom = original.offsets[structure];
+             atom < original.offsets[structure + 1]; ++atom) {
+            energy[structure] += atom_energy[atom];
+        }
+    }
 }
 
 } // namespace mdescriptor::cuda

@@ -96,6 +96,12 @@ struct HostPayload {
     std::vector<float> output_mean;
     std::vector<float> output_stddev;
     std::vector<std::int32_t> type_numbers;
+    std::vector<int> fitting_neurons;
+    std::vector<float> fitting_weights;
+    std::vector<float> fitting_biases;
+    std::vector<double> fitting_atom_bias;
+    std::vector<double> output_bias;
+    bool has_fitting = false;
 };
 
 HostPayload parse_payload(const py::dict& payload) {
@@ -144,6 +150,23 @@ HostPayload parse_payload(const py::dict& payload) {
     p.probe_scale = payload_array<float>(required(payload, "probe_scale"), "probe_scale");
     p.output_mean = payload_array<float>(required(payload, "output_mean"), "output_mean");
     p.output_stddev = payload_array<float>(required(payload, "output_stddev"), "output_stddev");
+    if (payload.contains("fitting_neurons")) {
+        p.fitting_neurons = py::cast<std::vector<int>>(payload["fitting_neurons"]);
+        p.fitting_weights = payload_array<float>(
+            required(payload, "fitting_weights"), "fitting_weights");
+        p.fitting_biases = payload_array<float>(
+            required(payload, "fitting_biases"), "fitting_biases");
+        p.fitting_atom_bias = payload_array<double>(
+            required(payload, "fitting_atom_bias"), "fitting_atom_bias");
+        p.output_bias = payload_array<double>(
+            required(payload, "output_bias"), "output_bias");
+        const std::string activation = py::cast<std::string>(
+            required(payload, "fitting_activation"));
+        if (activation != "silu") {
+            throw std::invalid_argument("DPA4C CUDA supports only SiLU energy fitting");
+        }
+        p.has_fitting = true;
+    }
     if (payload.contains("type_numbers")) {
         try {
             p.type_numbers = payload_array<std::int32_t>(payload["type_numbers"], "type_numbers");
@@ -210,6 +233,26 @@ HostPayload parse_payload(const py::dict& payload) {
         throw std::invalid_argument("DPA4C CUDA output standard deviations must be positive");
     if (!p.type_numbers.empty() && p.type_numbers.size() != static_cast<std::size_t>(p.ntypes))
         throw std::invalid_argument("DPA4C CUDA type_numbers must have ntypes entries");
+    if (p.has_fitting) {
+        if (p.fitting_atom_bias.size() != static_cast<std::size_t>(p.ntypes)
+            || p.output_bias.size() != static_cast<std::size_t>(p.ntypes)) {
+            throw std::invalid_argument("DPA4C CUDA fitting type arrays have unexpected shape");
+        }
+        std::size_t weight_count = 0;
+        std::size_t bias_count = 1;
+        std::size_t width = static_cast<std::size_t>(expected_features);
+        for (int next_width : p.fitting_neurons) {
+            if (next_width <= 0) {
+                throw std::invalid_argument("DPA4C CUDA fitting widths must be positive");
+            }
+            weight_count += width * static_cast<std::size_t>(next_width);
+            bias_count += static_cast<std::size_t>(next_width);
+            width = static_cast<std::size_t>(next_width);
+        }
+        weight_count += width;
+        expect_size(p.fitting_weights, weight_count, "fitting_weights");
+        expect_size(p.fitting_biases, bias_count, "fitting_biases");
+    }
     for (std::size_t index = 0; index < triples; ++index) {
         std::int64_t full_size = 1;
         int degrees[3] = {};
@@ -253,6 +296,17 @@ struct Dpa4cCudaLayout {
     std::int64_t descriptor = 0;
     std::int64_t full = 0;
     std::int64_t matrices = 0;
+    std::int64_t fitting_activations = 0;
+    std::int64_t fitting_pre = 0;
+    std::int64_t fitting_scratch = 0;
+    std::int64_t feature_gradient = 0;
+    std::int64_t block_gradient = 0;
+    std::int64_t projected_gradient = 0;
+    std::int64_t readout_scratch = 0;
+    std::int64_t scalar_adjoint = 0;
+    std::int64_t angular_adjoint = 0;
+    std::int64_t divisor_adjoint = 0;
+    std::int64_t atom_energy = 0;
 };
 
 using dpa4_common::align_bytes;
@@ -299,6 +353,14 @@ struct KernelModel {
     const float* gram_scale;
     const int* degree_channels;
     const int* bispectrum_ranks;
+    int fitting_layer_count;
+    int fitting_max_width;
+    const int* fitting_neurons;
+    const std::int64_t* fitting_activation_offsets;
+    const float* fitting_weights;
+    const float* fitting_biases;
+    const double* fitting_atom_bias;
+    const double* output_bias;
 };
 
 __device__ __forceinline__ float affine(const float* weights, int input_width, int output_width, const float* input, int output) {
@@ -346,8 +408,7 @@ __device__ void angular_basis(float x, float y, float z, int lmax, float* result
     }
 }
 
-// The projection widths are encoded by the offset arrays and the degree
-// profile is passed separately in the kernel as a compact constant-sized array.
+// The projection widths are encoded by the per-degree offset arrays.
 __device__ void packed_l2_to_stf(const float* packed, int rank, float* matrices) {
     for (int channel = 0; channel < rank; ++channel) {
         const float q0 = packed[channel], q1 = packed[rank + channel], q2 = packed[2 * rank + channel];
@@ -358,6 +419,27 @@ __device__ void packed_l2_to_stf(const float* packed, int rank, float* matrices)
         matrix[3] = qxy; matrix[4] = -q2 / kSqrt6 - q4 / kSqrt2; matrix[5] = qyz;
         matrix[6] = qxz; matrix[7] = qyz; matrix[8] = 2.0F * q2 / kSqrt6;
     }
+}
+
+__device__ __forceinline__ void packed_l2_tensor_to_stf(
+    const float* packed, int rank, int tensor, float* matrix) {
+    const float q0 = packed[tensor];
+    const float q1 = packed[rank + tensor];
+    const float q2 = packed[2 * rank + tensor];
+    const float q3 = packed[3 * rank + tensor];
+    const float q4 = packed[4 * rank + tensor];
+    const float qxy = q0 / kSqrt2;
+    const float qyz = q1 / kSqrt2;
+    const float qxz = q3 / kSqrt2;
+    matrix[0] = -q2 / kSqrt6 + q4 / kSqrt2;
+    matrix[1] = qxy;
+    matrix[2] = qxz;
+    matrix[3] = qxy;
+    matrix[4] = -q2 / kSqrt6 - q4 / kSqrt2;
+    matrix[5] = qyz;
+    matrix[6] = qxz;
+    matrix[7] = qyz;
+    matrix[8] = 2.0F * q2 / kSqrt6;
 }
 
 __device__ __forceinline__ int moment_offset_for_degree(const KernelModel& m, int degree) {
@@ -578,12 +660,706 @@ __global__ void dpa4c_kernel(
     descriptor[descriptor_offset++] = static_cast<float>(divisor_scalar);
     descriptor[descriptor_offset++] = static_cast<float>(divisor_angular);
     for (int channel = 0; channel < m.channels; ++channel) descriptor[descriptor_offset++] = m.type_embedding[center_type * m.channels + channel];
-    for (std::int64_t feature = 0; feature < m.feature_count; ++feature) {
-        double value = descriptor[feature];
-        if (m.calibrate) value = (value - m.output_mean[feature]) / m.output_stddev[feature];
-        output[center * m.feature_count + feature] = value;
+    if (output != nullptr) {
+        for (std::int64_t feature = 0; feature < m.feature_count; ++feature) {
+            double value = descriptor[feature];
+            if (m.calibrate) value = (value - m.output_mean[feature]) / m.output_stddev[feature];
+            output[center * m.feature_count + feature] = value;
+        }
     }
 }
+
+__device__ __forceinline__ float silu(float value) {
+    return value / (1.0F + expf(-value));
+}
+
+__device__ __forceinline__ float silu_derivative(float value) {
+    const float gate = 1.0F / (1.0F + expf(-value));
+    return gate * (1.0F + value * (1.0F - gate));
+}
+
+__device__ __forceinline__ int projected_count(const KernelModel& m) {
+    int count = 0;
+    for (int degree = 1; degree <= m.lmax; ++degree)
+        count += (2 * degree + 1) * m.bispectrum_ranks[degree - 1];
+    return count;
+}
+
+__device__ void packed_stf_gradient_one(
+    const double* matrix, int tensor, int rank, double* packed_gradient) {
+    packed_gradient[tensor] += (matrix[1] + matrix[3]) / kSqrt2;
+    packed_gradient[rank + tensor] += (matrix[5] + matrix[7]) / kSqrt2;
+    packed_gradient[2 * rank + tensor] +=
+        (-matrix[0] - matrix[4] + 2.0 * matrix[8]) / sqrt(6.0);
+    packed_gradient[3 * rank + tensor] += (matrix[2] + matrix[6]) / kSqrt2;
+    packed_gradient[4 * rank + tensor] += (matrix[0] - matrix[4]) / kSqrt2;
+}
+
+__device__ void dpa4c_readout_backward(
+    const KernelModel& m,
+    unsigned char* base,
+    const Dpa4cCudaLayout& layout) {
+    const auto* reduced = reinterpret_cast<const double*>(base + layout.reduced);
+    const auto* blocks = reinterpret_cast<const float*>(base + layout.blocks);
+    const auto* projected = reinterpret_cast<const float*>(base + layout.projected);
+    const auto* feature_gradient = reinterpret_cast<const double*>(base + layout.feature_gradient);
+    auto* block_gradient = reinterpret_cast<double*>(base + layout.block_gradient);
+    auto* projected_gradient = reinterpret_cast<double*>(base + layout.projected_gradient);
+    auto* scratch = reinterpret_cast<double*>(base + layout.readout_scratch);
+    auto* scalar_adjoint = reinterpret_cast<double*>(base + layout.scalar_adjoint);
+    auto* angular_adjoint = reinterpret_cast<double*>(base + layout.angular_adjoint);
+    auto* divisor_adjoint = reinterpret_cast<double*>(base + layout.divisor_adjoint);
+    divisor_adjoint[0] = 0.0;
+    divisor_adjoint[1] = 0.0;
+    const int pcount = projected_count(m);
+    for (int index = 0; index < m.moment_count; ++index) block_gradient[index] = 0.0;
+    for (int index = 0; index < pcount; ++index) projected_gradient[index] = 0.0;
+
+    int feature = 0;
+    for (int channel = 0; channel < m.channels; ++channel)
+        block_gradient[channel] = feature_gradient[feature++];
+    int gram_cursor = 0;
+    for (int degree = 1; degree <= m.lmax; ++degree) {
+        const int width = m.degree_channels[degree];
+        const int dim = 2 * degree + 1;
+        const int offset = moment_offset_for_degree(m, degree);
+        const int gram_count = width * (width + 1) / 2;
+        for (int gram = 0; gram < gram_count; ++gram) {
+            const int flat = m.gram_index[gram_cursor];
+            const int row = flat / width;
+            const int column = flat % width;
+            const double gradient = feature_gradient[feature++]
+                * m.gram_scale[gram_cursor];
+            for (int component = 0; component < dim; ++component) {
+                const int row_index = offset + component * width + row;
+                const int column_index = offset + component * width + column;
+                block_gradient[row_index] += gradient * blocks[column_index]
+                    * (row == column ? 2.0 : 1.0);
+                if (row != column)
+                    block_gradient[column_index] += gradient * blocks[row_index];
+            }
+            ++gram_cursor;
+        }
+    }
+
+    for (int triple = 0; triple < m.triple_count; ++triple) {
+        const int degree1 = m.degree_triples[triple * 3];
+        const int degree2 = m.degree_triples[triple * 3 + 1];
+        const int degree3 = m.degree_triples[triple * 3 + 2];
+        const int rank1 = m.bispectrum_ranks[degree1 - 1];
+        const int rank2 = m.bispectrum_ranks[degree2 - 1];
+        const int rank3 = m.bispectrum_ranks[degree3 - 1];
+        const int dim1 = 2 * degree1 + 1;
+        const int dim2 = 2 * degree2 + 1;
+        const int dim3 = 2 * degree3 + 1;
+        const int proj1 = projected_offset_for_degree(m, degree1);
+        const int proj2 = projected_offset_for_degree(m, degree2);
+        const int proj3 = projected_offset_for_degree(m, degree3);
+        const float* coupling = m.coupling + m.coupling_offsets[triple];
+        for (std::int64_t probe = m.probe_offsets[triple];
+             probe < m.probe_offsets[triple + 1]; ++probe) {
+            const int index = static_cast<int>(m.probe_index[probe]);
+            const int third = index % rank3;
+            const int second = (index / rank3) % rank2;
+            const int first = index / (rank2 * rank3);
+            const double gradient = feature_gradient[feature++] * m.probe_scale[probe];
+            if (degree1 == 1 && degree2 == 1 && degree3 == 2) {
+                float matrix[9];
+                packed_l2_tensor_to_stf(projected + proj3, rank3, third, matrix);
+                const double left[3] = {
+                    projected[proj1 + first],
+                    projected[proj1 + rank1 + first],
+                    projected[proj1 + 2 * rank1 + first]};
+                const double right[3] = {
+                    projected[proj2 + second],
+                    projected[proj2 + rank2 + second],
+                    projected[proj2 + 2 * rank2 + second]};
+                const double scale = -gradient / kSqrt5;
+                double matrix_gradient[9] = {};
+                for (int row = 0; row < 3; ++row) {
+                    double left_grad = 0.0;
+                    double right_grad = 0.0;
+                    for (int column = 0; column < 3; ++column) {
+                        left_grad += static_cast<double>(matrix[row * 3 + column]) * right[column];
+                        right_grad += static_cast<double>(matrix[column * 3 + row]) * left[column];
+                        matrix_gradient[row * 3 + column] += scale * left[row] * right[column];
+                    }
+                    projected_gradient[proj1 + row * rank1 + first] += scale * left_grad;
+                    projected_gradient[proj2 + row * rank2 + second] += scale * right_grad;
+                }
+                packed_stf_gradient_one(matrix_gradient, third, rank3,
+                    projected_gradient + proj3);
+            } else {
+                for (int i = 0; i < dim1; ++i) {
+                    const double left = projected[proj1 + i * rank1 + first];
+                    for (int j = 0; j < dim2; ++j) {
+                        const double middle = projected[proj2 + j * rank2 + second];
+                        for (int k = 0; k < dim3; ++k) {
+                            const double right = projected[proj3 + k * rank3 + third];
+                            const double weight = coupling[(i * dim2 + j) * dim3 + k];
+                            projected_gradient[proj1 + i * rank1 + first] +=
+                                gradient * weight * middle * right;
+                            projected_gradient[proj2 + j * rank2 + second] +=
+                                gradient * weight * left * right;
+                            projected_gradient[proj3 + k * rank3 + third] +=
+                                gradient * weight * left * middle;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const int vector_rank = m.bispectrum_ranks[0];
+    const int tensor_rank = m.bispectrum_ranks[1];
+    const int tensor_offset = projected_offset_for_degree(m, 2);
+    for (int tensor = 0; tensor < tensor_rank; ++tensor) {
+        float matrix[9];
+        packed_l2_tensor_to_stf(projected + tensor_offset, tensor_rank, tensor, matrix);
+        double tensor_matrix_gradient[9] = {};
+        for (int vector = 0; vector < vector_rank; ++vector) {
+            const double v[3] = {
+                projected[vector], projected[vector_rank + vector],
+                projected[2 * vector_rank + vector]};
+            double qv[3] = {};
+            for (int row = 0; row < 3; ++row)
+                for (int column = 0; column < 3; ++column)
+                    qv[row] += matrix[row * 3 + column] * v[column];
+            const double gradient = feature_gradient[feature++];
+            for (int column = 0; column < 3; ++column) {
+                double q2v = 0.0;
+                for (int row = 0; row < 3; ++row) {
+                    q2v += matrix[row * 3 + column] * qv[row];
+                    tensor_matrix_gradient[row * 3 + column] +=
+                        2.0 * gradient * qv[row] * v[column];
+                }
+                projected_gradient[column * vector_rank + vector] +=
+                    2.0 * gradient * q2v;
+            }
+        }
+        packed_stf_gradient_one(tensor_matrix_gradient, tensor, tensor_rank,
+            projected_gradient + tensor_offset);
+    }
+
+    const double direct_divisor_scalar = feature_gradient[feature++];
+    const double direct_divisor_angular = feature_gradient[feature++];
+    const double divisor_scalar = sqrt(reduced[0] + static_cast<double>(kNormFloor));
+    const double divisor_angular = sqrt(reduced[1] + static_cast<double>(kNormFloor));
+    const double divisor_scalar_squared = divisor_scalar * divisor_scalar;
+    const double divisor_angular_squared = divisor_angular * divisor_angular;
+
+    // Reverse the low-rank readout projections, then undo the learned degree
+    // alignments.  The scalar block has no projection or alignment.
+    for (int degree = 1; degree <= m.lmax; ++degree) {
+        const int width = m.degree_channels[degree];
+        const int rank = m.bispectrum_ranks[degree - 1];
+        const int dim = 2 * degree + 1;
+        const int block_offset = moment_offset_for_degree(m, degree);
+        const int proj_offset = projected_offset_for_degree(m, degree);
+        const std::int64_t projection_begin = m.projection_offsets[degree - 1];
+        const std::int64_t projection_end = m.projection_offsets[degree];
+        if (projection_begin == projection_end) {
+            for (int index = 0; index < dim * width; ++index)
+                block_gradient[block_offset + index] += projected_gradient[proj_offset + index];
+        } else {
+            const float* matrix = m.projections + projection_begin;
+            for (int component = 0; component < dim; ++component)
+                for (int input = 0; input < width; ++input) {
+                    double value = 0.0;
+                    for (int output = 0; output < rank; ++output)
+                        value += projected_gradient[proj_offset + component * rank + output]
+                            * matrix[input * rank + output];
+                    block_gradient[block_offset + component * width + input] += value;
+                }
+        }
+        if (degree == 1 || degree == 2) {
+            const float* alignment = m.alignment + m.alignment_offsets[degree - 1];
+            for (int component = 0; component < dim; ++component) {
+                for (int input = 0; input < width; ++input) {
+                    double value = block_gradient[block_offset + component * width + input];
+                    for (int output = 0; output < width; ++output)
+                        value += block_gradient[block_offset + component * width + output]
+                            * alignment[input * width + output];
+                    scratch[input] = value;
+                }
+                for (int channel = 0; channel < width; ++channel)
+                    block_gradient[block_offset + component * width + channel] = scratch[channel];
+            }
+        }
+    }
+
+    for (int channel = 0; channel < m.channels; ++channel) {
+        const double gradient = block_gradient[channel];
+        scalar_adjoint[channel] = gradient / divisor_scalar;
+        divisor_adjoint[0] -= gradient * reduced[2 + channel] / divisor_scalar_squared;
+    }
+    divisor_adjoint[0] += direct_divisor_scalar;
+    for (int degree = 1; degree <= m.lmax; ++degree) {
+        const int width = m.degree_channels[degree];
+        const int dim = 2 * degree + 1;
+        const int block_offset = moment_offset_for_degree(m, degree);
+        for (int index = 0; index < dim * width; ++index) {
+            const double gradient = block_gradient[block_offset + index];
+            angular_adjoint[block_offset + index] = gradient / divisor_angular;
+            divisor_adjoint[1] -= gradient * reduced[2 + block_offset + index]
+                / divisor_angular_squared;
+        }
+    }
+    divisor_adjoint[1] += direct_divisor_angular;
+}
+
+__global__ void dpa4c_fit_backward_kernel(
+    std::int64_t atoms,
+    const std::int32_t* type_indices,
+    unsigned char* workspace,
+    Dpa4cCudaLayout layout,
+    KernelModel m) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
+    if (center >= atoms) return;
+    const int thread = threadIdx.x;
+    unsigned char* base = workspace + center * layout.stride;
+    auto* activation = reinterpret_cast<float*>(base + layout.fitting_activations);
+    auto* pre = reinterpret_cast<float*>(base + layout.fitting_pre);
+    auto* scratch = reinterpret_cast<float*>(base + layout.fitting_scratch);
+    auto* feature_gradient = reinterpret_cast<double*>(base + layout.feature_gradient);
+    const auto* descriptor = reinterpret_cast<const float*>(base + layout.descriptor);
+    for (std::int64_t feature = thread; feature < m.feature_count; feature += blockDim.x) {
+        double value = descriptor[feature];
+        if (m.calibrate) value = (value - m.output_mean[feature]) / m.output_stddev[feature];
+        activation[feature] = static_cast<float>(value);
+    }
+    __syncthreads();
+
+    std::size_t weight_offset = 0;
+    std::size_t bias_offset = 0;
+    int previous_width = static_cast<int>(m.feature_count);
+    for (int layer = 0; layer < m.fitting_layer_count; ++layer) {
+        const int width = m.fitting_neurons[layer];
+        const float* previous = activation + (layer == 0
+            ? 0 : m.fitting_activation_offsets[layer - 1]);
+        float* next = activation + m.fitting_activation_offsets[layer];
+        float* layer_pre = pre + m.fitting_activation_offsets[layer] - m.feature_count;
+        const float* weights = m.fitting_weights + weight_offset;
+        const float* biases = m.fitting_biases + bias_offset;
+        for (int out = thread; out < width; out += blockDim.x) {
+            double value = biases[out];
+            for (int in = 0; in < previous_width; ++in)
+                value += static_cast<double>(previous[in]) * weights[in * width + out];
+            layer_pre[out] = static_cast<float>(value);
+            float activated = silu(layer_pre[out]);
+            if (width == previous_width) activated += previous[out];
+            next[out] = activated;
+        }
+        __syncthreads();
+        weight_offset += static_cast<std::size_t>(previous_width) * width;
+        bias_offset += static_cast<std::size_t>(width);
+        previous_width = width;
+    }
+
+    const std::int64_t final_input_offset = m.fitting_layer_count == 0 ? 0
+        : m.fitting_activation_offsets[m.fitting_layer_count - 1];
+    const float* final_input = activation + final_input_offset;
+    const float* final_weights = m.fitting_weights + weight_offset;
+    if (thread == 0) {
+        double raw_value = m.fitting_biases[bias_offset];
+        for (int in = 0; in < previous_width; ++in)
+            raw_value += static_cast<double>(final_input[in]) * final_weights[in];
+        const int type = type_indices[center];
+        const float energy_float = static_cast<float>(static_cast<float>(raw_value)
+            + static_cast<float>(m.fitting_atom_bias[type]));
+        *reinterpret_cast<double*>(base + layout.atom_energy) =
+            static_cast<double>(energy_float) + m.output_bias[type];
+    }
+
+    float* gradient = scratch;
+    float* previous_gradient = scratch + m.fitting_max_width;
+    for (int in = thread; in < previous_width; in += blockDim.x)
+        gradient[in] = final_weights[in];
+    __syncthreads();
+    for (int layer = m.fitting_layer_count - 1; layer >= 0; --layer) {
+        const int width = m.fitting_neurons[layer];
+        const int prior_width = layer == 0 ? static_cast<int>(m.feature_count)
+            : m.fitting_neurons[layer - 1];
+        std::int64_t weight_begin = 0;
+        int in_width = static_cast<int>(m.feature_count);
+        for (int index = 0; index < layer; ++index) {
+            weight_begin += static_cast<std::int64_t>(in_width) * m.fitting_neurons[index];
+            in_width = m.fitting_neurons[index];
+        }
+        const float* weights = m.fitting_weights + weight_begin;
+        const float* layer_pre = pre + m.fitting_activation_offsets[layer] - m.feature_count;
+        constexpr int kWarpSize = 32;
+        const int lane = thread & (kWarpSize - 1);
+        const int warp = thread / kWarpSize;
+        const int warp_count = blockDim.x / kWarpSize;
+        for (int in = warp; in < prior_width; in += warp_count) {
+            double value = 0.0;
+            for (int output_base = 0; output_base < width; output_base += kWarpSize) {
+                const int out = output_base + lane;
+                if (out < width) {
+                    value += static_cast<double>(gradient[out])
+                        * silu_derivative(layer_pre[out])
+                        * weights[in * width + out];
+                }
+            }
+            for (int offset = kWarpSize / 2; offset > 0; offset /= 2)
+                value += __shfl_down_sync(0xffffffffU, value, offset);
+            if (lane == 0) {
+                if (width == prior_width) value += gradient[in];
+                previous_gradient[in] = static_cast<float>(value);
+            }
+        }
+        __syncthreads();
+        float* temporary = gradient;
+        gradient = previous_gradient;
+        previous_gradient = temporary;
+    }
+    for (std::int64_t feature = thread; feature < m.feature_count; feature += blockDim.x) {
+        double value = gradient[feature];
+        if (m.calibrate) value /= m.output_stddev[feature];
+        feature_gradient[feature] = value;
+    }
+}
+
+__global__ void dpa4c_readout_backward_kernel(
+    std::int64_t atoms,
+    unsigned char* workspace,
+    Dpa4cCudaLayout layout,
+    KernelModel m) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x);
+    if (center < atoms && threadIdx.x == 0) {
+        unsigned char* base = workspace + center * layout.stride;
+        dpa4c_readout_backward(m, base, layout);
+    }
+}
+
+struct DeviceDual3 {
+    float value;
+    float derivative[3];
+};
+
+__device__ __forceinline__ DeviceDual3 dual_constant(float value) {
+    return {value, {0.0F, 0.0F, 0.0F}};
+}
+
+__device__ __forceinline__ DeviceDual3 operator+(
+    DeviceDual3 lhs, DeviceDual3 rhs) {
+    DeviceDual3 out{lhs.value + rhs.value, {}};
+    for (int axis = 0; axis < 3; ++axis)
+        out.derivative[axis] = lhs.derivative[axis] + rhs.derivative[axis];
+    return out;
+}
+
+__device__ __forceinline__ DeviceDual3 operator-(
+    DeviceDual3 lhs, DeviceDual3 rhs) {
+    DeviceDual3 out{lhs.value - rhs.value, {}};
+    for (int axis = 0; axis < 3; ++axis)
+        out.derivative[axis] = lhs.derivative[axis] - rhs.derivative[axis];
+    return out;
+}
+
+__device__ __forceinline__ DeviceDual3 operator*(
+    DeviceDual3 lhs, DeviceDual3 rhs) {
+    DeviceDual3 out{lhs.value * rhs.value, {}};
+    for (int axis = 0; axis < 3; ++axis)
+        out.derivative[axis] = lhs.derivative[axis] * rhs.value
+            + lhs.value * rhs.derivative[axis];
+    return out;
+}
+
+__device__ __forceinline__ DeviceDual3 operator*(
+    DeviceDual3 lhs, float rhs) { return lhs * dual_constant(rhs); }
+
+__device__ __forceinline__ DeviceDual3 operator/(
+    DeviceDual3 lhs, DeviceDual3 rhs) {
+    DeviceDual3 out{lhs.value / rhs.value, {}};
+    const float scale = 1.0F / (rhs.value * rhs.value);
+    for (int axis = 0; axis < 3; ++axis)
+        out.derivative[axis] = (lhs.derivative[axis] * rhs.value
+            - lhs.value * rhs.derivative[axis]) * scale;
+    return out;
+}
+
+__device__ __forceinline__ DeviceDual3 dual_sqrt(DeviceDual3 value) {
+    DeviceDual3 out{sqrtf(value.value), {}};
+    const float scale = 0.5F / out.value;
+    for (int axis = 0; axis < 3; ++axis)
+        out.derivative[axis] = value.derivative[axis] * scale;
+    return out;
+}
+
+__device__ void angular_basis_dual(
+    DeviceDual3 x, DeviceDual3 y, DeviceDual3 z, int lmax,
+    DeviceDual3* result) {
+    const DeviceDual3 norm2 = x * x + y * y + z * z;
+    const DeviceDual3 x2 = x * x, y2 = y * y, z2 = z * z;
+    for (int index = 0; index < 25; ++index) result[index] = dual_constant(0.0F);
+    result[0] = dual_constant(1.0F);
+    if (lmax >= 1) { result[1] = x; result[2] = y; result[3] = z; }
+    if (lmax >= 2) {
+        result[4] = (x * y) * kSqrt3;
+        result[5] = (y * z) * kSqrt3;
+        result[6] = (z2 * 3.0F - norm2) * 0.5F;
+        result[7] = (x * z) * kSqrt3;
+        result[8] = (x2 - y2) * (0.5F * kSqrt3);
+    }
+    if (lmax >= 3) {
+        result[9] = y * (x2 * 3.0F - y2) * sqrtf(5.0F / 8.0F);
+        result[10] = (x * y * z) * sqrtf(15.0F);
+        result[11] = y * (z2 * 5.0F - norm2) * sqrtf(3.0F / 8.0F);
+        result[12] = z * (z2 * 5.0F - norm2 * 3.0F) * 0.5F;
+        result[13] = x * (z2 * 5.0F - norm2) * sqrtf(3.0F / 8.0F);
+        result[14] = z * (x2 - y2) * (0.5F * sqrtf(15.0F));
+        result[15] = x * (x2 - y2 * 3.0F) * sqrtf(5.0F / 8.0F);
+    }
+    if (lmax >= 4) {
+        const DeviceDual3 difference = x2 - y2;
+        const DeviceDual3 z4 = z2 * z2;
+        const DeviceDual3 norm4 = norm2 * norm2;
+        result[16] = (x * y * difference) * (0.5F * sqrtf(35.0F));
+        result[17] = y * z * (x2 * 3.0F - y2) * (0.25F * sqrtf(70.0F));
+        result[18] = x * y * (z2 * 7.0F - norm2) * (0.5F * sqrtf(5.0F));
+        result[19] = y * z * (z2 * 7.0F - norm2 * 3.0F) * (0.25F * sqrtf(10.0F));
+        result[20] = (z4 * 35.0F - z2 * norm2 * 30.0F
+            + norm4 * 3.0F) * 0.125F;
+        result[21] = x * z * (z2 * 7.0F - norm2 * 3.0F) * (0.25F * sqrtf(10.0F));
+        result[22] = difference * (z2 * 7.0F - norm2) * (0.25F * sqrtf(5.0F));
+        result[23] = x * z * (x2 - y2 * 3.0F) * (0.25F * sqrtf(70.0F));
+        result[24] = (x2 * x2 - x2 * y2 * 6.0F + y2 * y2)
+            * (0.125F * sqrtf(35.0F));
+    }
+}
+
+__device__ void dpa4c_edge_gradient(
+    const KernelModel& m,
+    unsigned char* base,
+    const Dpa4cCudaLayout& layout,
+    int center_type,
+    int neighbor_type,
+    double dx,
+    double dy,
+    double dz,
+    double* result) {
+    const auto* scalar_adjoint = reinterpret_cast<const double*>(base + layout.scalar_adjoint);
+    const auto* angular_adjoint = reinterpret_cast<const double*>(base + layout.angular_adjoint);
+    const auto* divisor_adjoint = reinterpret_cast<const double*>(base + layout.divisor_adjoint);
+    const auto* reduced = reinterpret_cast<const double*>(base + layout.reduced);
+    const double divisor_scalar = sqrt(reduced[0] + static_cast<double>(kNormFloor));
+    const double divisor_angular = sqrt(reduced[1] + static_cast<double>(kNormFloor));
+    const std::int64_t pair = static_cast<std::int64_t>(center_type) * (m.ntypes + 1) + neighbor_type;
+    const float* pair_scale = m.pair_scale + pair * m.channels;
+    const float* pair_shift = m.pair_shift + pair * m.channels;
+    const float* pair_mixing = m.pair_mixing
+        + static_cast<std::int64_t>(pair) * m.channels * m.radial_modes;
+
+    const DeviceDual3 x{static_cast<float>(dx), {1.0F, 0.0F, 0.0F}};
+    const DeviceDual3 y{static_cast<float>(dy), {0.0F, 1.0F, 0.0F}};
+    const DeviceDual3 z{static_cast<float>(dz), {0.0F, 0.0F, 1.0F}};
+    const DeviceDual3 distance = dual_sqrt(
+        x * x + y * y + z * z + dual_constant(kEpsilon * kEpsilon));
+    const float rcut = static_cast<float>(m.rcut);
+    DeviceDual3 cutoff = (dual_constant(rcut) - distance) / dual_constant(rcut);
+    if (cutoff.value <= 0.0F) cutoff = dual_constant(0.0F);
+    else if (cutoff.value >= 1.0F) cutoff = dual_constant(1.0F);
+    const DeviceDual3 ux = x / distance, uy = y / distance, uz = z / distance;
+    const DeviceDual3 tx = dual_constant(1.0F) - cutoff;
+    DeviceDual3 series = dual_constant(35.0F);
+    series = dual_constant(20.0F) + tx * series;
+    series = dual_constant(10.0F) + tx * series;
+    series = dual_constant(4.0F) + tx * series;
+    series = dual_constant(1.0F) + tx * series;
+    const DeviceDual3 envelope = cutoff * cutoff * cutoff * cutoff * series;
+    DeviceDual3 basis[25];
+    angular_basis_dual(ux, uy, uz, m.lmax, basis);
+
+    double envelope_gradient = divisor_adjoint[0] / divisor_scalar * envelope.value
+        + 2.0 * divisor_adjoint[1] / divisor_angular
+            * envelope.value * envelope.value * envelope.value;
+    double amplitude_gradient[256] = {};
+    double basis_gradient[25] = {};
+    float radial_basis[256] = {};
+    float radial_pre[512] = {};
+    float radial_hidden[256] = {};
+    float radial[256] = {};
+    float modes[256] = {};
+    double amplitudes[256] = {};
+    double radial_basis_derivative[256] = {};
+
+    for (int index = 0; index < m.n_radial; ++index) {
+        const float frequency = m.radial_freqs[index];
+        const float argument = distance.value * frequency;
+        const float sinc = fabsf(argument) < 1.0e-7F
+            ? 1.0F : sinf(argument) / argument;
+        radial_basis[index] = frequency * sinc;
+        if (fabsf(argument) < 1.0e-3F) {
+            radial_basis_derivative[index] = -frequency * frequency * frequency
+                * distance.value / 3.0F;
+        } else {
+            radial_basis_derivative[index] = frequency * frequency
+                * (argument * cosf(argument) - sinf(argument))
+                / (argument * argument);
+        }
+    }
+    for (int out = 0; out < 2 * m.radial_hidden; ++out) {
+        double value = 0.0;
+        for (int in = 0; in < m.n_radial; ++in)
+            value += static_cast<double>(radial_basis[in])
+                * m.radial_w0[in * (2 * m.radial_hidden) + out];
+        radial_pre[out] = static_cast<float>(value);
+    }
+    for (int index = 0; index < m.radial_hidden; ++index) {
+        const float gate = radial_pre[index];
+        const float value = radial_pre[m.radial_hidden + index];
+        radial_hidden[index] = gate * sigmoid(gate) * value;
+    }
+    for (int out = 0; out < m.channels; ++out) {
+        double value = 0.0;
+        for (int in = 0; in < m.radial_hidden; ++in)
+            value += static_cast<double>(radial_hidden[in])
+                * m.radial_w1[in * m.channels + out];
+        radial[out] = static_cast<float>(value);
+    }
+    for (int out = 0; out < m.radial_modes; ++out) {
+        double value = 0.0;
+        for (int in = 0; in < m.radial_hidden; ++in)
+            value += static_cast<double>(radial_hidden[in])
+                * m.radial_mode_w[in * m.radial_modes + out];
+        modes[out] = static_cast<float>(value);
+    }
+    for (int channel = 0; channel < m.channels; ++channel) {
+        double amplitude = static_cast<double>(radial[channel]) * pair_scale[channel]
+            + pair_shift[channel];
+        for (int mode = 0; mode < m.radial_modes; ++mode)
+            amplitude += pair_mixing[channel * m.radial_modes + mode] * modes[mode];
+        amplitudes[channel] = amplitude;
+        amplitude_gradient[channel] = scalar_adjoint[channel] * envelope.value;
+        envelope_gradient += scalar_adjoint[channel] * amplitude;
+    }
+    int moment_offset = m.channels;
+    for (int degree = 1; degree <= m.lmax; ++degree) {
+        const int width = m.degree_channels[degree];
+        for (int component = 0; component < 2 * degree + 1; ++component) {
+            const int basis_index = degree * degree + component;
+            const double actual_basis = basis[basis_index].value;
+            for (int channel = 0; channel < width; ++channel) {
+                const double gradient = angular_adjoint[
+                    moment_offset + component * width + channel];
+                amplitude_gradient[channel] += gradient * envelope.value
+                    * envelope.value * actual_basis;
+                envelope_gradient += gradient * amplitudes[channel]
+                    * 2.0 * envelope.value * actual_basis;
+                basis_gradient[basis_index] += gradient * amplitudes[channel]
+                    * envelope.value * envelope.value;
+            }
+        }
+        moment_offset += (2 * degree + 1) * width;
+    }
+
+    double mode_gradient[256] = {};
+    double radial_gradient[256] = {};
+    for (int channel = 0; channel < m.channels; ++channel) {
+        radial_gradient[channel] = amplitude_gradient[channel] * pair_scale[channel];
+        for (int mode = 0; mode < m.radial_modes; ++mode)
+            mode_gradient[mode] += amplitude_gradient[channel]
+                * pair_mixing[channel * m.radial_modes + mode];
+    }
+    double radial_hidden_gradient[256] = {};
+    for (int hidden = 0; hidden < m.radial_hidden; ++hidden) {
+        for (int channel = 0; channel < m.channels; ++channel)
+            radial_hidden_gradient[hidden] += radial_gradient[channel]
+                * m.radial_w1[hidden * m.channels + channel];
+        for (int mode = 0; mode < m.radial_modes; ++mode)
+            radial_hidden_gradient[hidden] += mode_gradient[mode]
+                * m.radial_mode_w[hidden * m.radial_modes + mode];
+    }
+    double radial_value_gradient[256] = {};
+    double radial_gate_gradient[256] = {};
+    for (int hidden = 0; hidden < m.radial_hidden; ++hidden) {
+        const float gate = radial_pre[hidden];
+        const float value = radial_pre[m.radial_hidden + hidden];
+        const float sigmoid_gate = sigmoid(gate);
+        radial_gate_gradient[hidden] = radial_hidden_gradient[hidden] * value
+            * sigmoid_gate * (1.0F + gate * (1.0F - sigmoid_gate));
+        radial_value_gradient[hidden] = radial_hidden_gradient[hidden]
+            * gate * sigmoid_gate;
+    }
+    double basis_radial_gradient[256] = {};
+    for (int radial_index = 0; radial_index < m.n_radial; ++radial_index) {
+        for (int hidden = 0; hidden < m.radial_hidden; ++hidden) {
+            basis_radial_gradient[radial_index] += radial_gate_gradient[hidden]
+                * m.radial_w0[radial_index * (2 * m.radial_hidden) + hidden]
+                + radial_value_gradient[hidden]
+                    * m.radial_w0[radial_index * (2 * m.radial_hidden)
+                        + m.radial_hidden + hidden];
+        }
+    }
+    double radial_derivative = 0.0;
+    for (int index = 0; index < m.n_radial; ++index)
+        radial_derivative += basis_radial_gradient[index]
+            * radial_basis_derivative[index];
+
+    for (int axis = 0; axis < 3; ++axis) {
+        double value = envelope_gradient * envelope.derivative[axis]
+            + radial_derivative * distance.derivative[axis];
+        for (int basis_index = 0; basis_index < (m.lmax + 1) * (m.lmax + 1); ++basis_index)
+            value += basis_gradient[basis_index] * basis[basis_index].derivative[axis];
+        result[axis] = value;
+    }
+}
+
+__global__ void dpa4c_force_kernel(
+    const std::int64_t* graph_offsets,
+    const std::int32_t* graph_atoms,
+    const std::int32_t* graph_shifts,
+    const double* displacements,
+    const std::int32_t* type_indices,
+    std::int64_t atoms,
+    unsigned char* workspace,
+    Dpa4cCudaLayout layout,
+    KernelModel m,
+    double* forces) {
+    const std::int64_t center = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (center >= atoms) return;
+    unsigned char* base = workspace + center * layout.stride;
+    const int center_type = type_indices[center];
+    for (std::int64_t edge = graph_offsets[center]; edge < graph_offsets[center + 1]; ++edge) {
+        const std::int32_t neighbor = graph_atoms[edge];
+        if (exact_self_edge(center, neighbor, graph_shifts, edge)) continue;
+        double gradient[3] = {};
+        dpa4c_edge_gradient(m, base, layout, center_type, type_indices[neighbor],
+            displacements[edge * 3], displacements[edge * 3 + 1],
+            displacements[edge * 3 + 2], gradient);
+        for (int axis = 0; axis < 3; ++axis) {
+            atomicAdd(&forces[center * 3 + axis], gradient[axis]);
+            atomicAdd(&forces[static_cast<std::int64_t>(neighbor) * 3 + axis], -gradient[axis]);
+        }
+    }
+}
+
+__global__ void dpa4c_energy_copy_and_sum_kernel(
+    const std::int64_t* offsets,
+    std::int64_t structures,
+    std::int64_t atoms,
+    const unsigned char* workspace,
+    Dpa4cCudaLayout layout,
+    double* output) {
+    const std::int64_t index = static_cast<std::int64_t>(blockIdx.x)
+        * blockDim.x + threadIdx.x;
+    if (index < atoms) {
+        const auto* base = workspace + index * layout.stride;
+        output[index] = *reinterpret_cast<const double*>(base + layout.atom_energy);
+    }
+    if (index < structures) {
+        double total = 0.0;
+        for (std::int64_t atom = offsets[index]; atom < offsets[index + 1]; ++atom) {
+            const auto* base = workspace + atom * layout.stride;
+            total += *reinterpret_cast<const double*>(base + layout.atom_energy);
+        }
+        output[atoms + index] = total;
+    }
+}
+
 
 } // namespace
 
@@ -607,6 +1383,17 @@ DeviceDpa4cModel::DeviceDpa4cModel(CudaExecutionContext& context, py::dict paylo
     n_radial_ = p.n_radial; radial_modes_ = p.radial_modes; radial_hidden_ = p.radial_hidden;
     pair_hidden_ = p.pair_hidden; calibrate_ = p.calibrate; degree_channels_ = p.degree_channels;
     bispectrum_ranks_ = p.bispectrum_ranks;
+    has_fitting_ = p.has_fitting;
+    host_fitting_neurons_ = p.fitting_neurons;
+    fitting_max_width_ = std::max(channels_, static_cast<int>(p.output_mean.size()));
+    fitting_activation_offsets_.assign(
+        host_fitting_neurons_.size() + 1, 0);
+    fitting_activation_offsets_[0] = static_cast<std::int64_t>(p.output_mean.size());
+    for (std::size_t layer = 0; layer < host_fitting_neurons_.size(); ++layer) {
+        fitting_max_width_ = std::max(fitting_max_width_, host_fitting_neurons_[layer]);
+        fitting_activation_offsets_[layer + 1] = fitting_activation_offsets_[layer]
+            + host_fitting_neurons_[layer];
+    }
     degree_offsets_.assign(static_cast<std::size_t>(lmax_ + 2), 0);
     for (int degree = 0; degree <= lmax_; ++degree) degree_offsets_[degree + 1] = degree_offsets_[degree] + (2 * degree + 1) * degree_channels_[degree];
     moment_count_ = degree_offsets_.back();
@@ -642,6 +1429,31 @@ DeviceDpa4cModel::DeviceDpa4cModel(CudaExecutionContext& context, py::dict paylo
     layout->descriptor = reserve(static_cast<std::size_t>(feature_count_) * sizeof(float), alignof(float));
     layout->full = reserve(static_cast<std::size_t>(std::max<std::int64_t>(1, std::max(max_full, max_block))) * sizeof(float), alignof(float));
     layout->matrices = reserve(static_cast<std::size_t>(std::max(1, bispectrum_ranks_[1]) * 9) * sizeof(float), alignof(float));
+    if (has_fitting_) {
+        layout->fitting_activations = reserve(
+            static_cast<std::size_t>(fitting_activation_offsets_.back()) * sizeof(float),
+            alignof(float));
+        std::int64_t pre_count = 0;
+        for (int width : host_fitting_neurons_) pre_count += width;
+        layout->fitting_pre = reserve(
+            static_cast<std::size_t>(pre_count) * sizeof(float), alignof(float));
+        layout->fitting_scratch = reserve(
+            static_cast<std::size_t>(2 * fitting_max_width_) * sizeof(float), alignof(float));
+        layout->feature_gradient = reserve(
+            static_cast<std::size_t>(feature_count_) * sizeof(double), alignof(double));
+        layout->block_gradient = reserve(
+            static_cast<std::size_t>(moment_count_) * sizeof(double), alignof(double));
+        layout->projected_gradient = reserve(
+            static_cast<std::size_t>(projected_count) * sizeof(double), alignof(double));
+        layout->readout_scratch = reserve(
+            static_cast<std::size_t>(channels_) * sizeof(double), alignof(double));
+        layout->scalar_adjoint = reserve(
+            static_cast<std::size_t>(channels_) * sizeof(double), alignof(double));
+        layout->angular_adjoint = reserve(
+            static_cast<std::size_t>(moment_count_) * sizeof(double), alignof(double));
+        layout->divisor_adjoint = reserve(2 * sizeof(double), alignof(double));
+        layout->atom_energy = reserve(sizeof(double), alignof(double));
+    }
     bytes = align_bytes(bytes, alignof(double)); layout->fixed_bytes = static_cast<std::int64_t>(bytes);
     layout_ = std::move(layout);
 
@@ -685,6 +1497,21 @@ DeviceDpa4cModel::DeviceDpa4cModel(CudaExecutionContext& context, py::dict paylo
         output_stddev_ = upload_array(context, p.output_stddev, "could not upload DPA4C output standard deviations");
         gram_index_device_ = upload_array(context, gram_index_, "could not upload DPA4C gram indices");
         gram_scale_device_ = upload_array(context, gram_scale_, "could not upload DPA4C gram scales");
+        if (has_fitting_) {
+            fitting_neurons_ = upload_array(context, p.fitting_neurons,
+                "could not upload DPA4C fitting widths");
+            fitting_activation_offsets_device_ = upload_array(
+                context, fitting_activation_offsets_,
+                "could not upload DPA4C fitting activation offsets");
+            fitting_weights_ = upload_array(context, p.fitting_weights,
+                "could not upload DPA4C fitting weights");
+            fitting_biases_ = upload_array(context, p.fitting_biases,
+                "could not upload DPA4C fitting biases");
+            fitting_atom_bias_ = upload_array(context, p.fitting_atom_bias,
+                "could not upload DPA4C atom biases");
+            output_bias_ = upload_array(context, p.output_bias,
+                "could not upload DPA4C output biases");
+        }
     } catch (...) { release(); throw; }
 }
 
@@ -695,6 +1522,9 @@ void DeviceDpa4cModel::release() noexcept {
     pair_scale_.reset(); pair_shift_.reset(); pair_mixing_.reset(); alignment_.reset(); alignment_offsets_.reset();
     projections_.reset(); projection_offsets_.reset(); coupling_.reset(); coupling_offsets_.reset(); degree_triples_.reset();
     probe_offsets_.reset(); probe_index_.reset(); probe_scale_.reset(); output_mean_.reset(); output_stddev_.reset();
+    fitting_neurons_.reset(); fitting_activation_offsets_device_.reset();
+    fitting_weights_.reset(); fitting_biases_.reset();
+    fitting_atom_bias_.reset(); output_bias_.reset();
     gram_index_device_.reset(); gram_scale_device_.reset();
     layout_.reset();
 }
@@ -729,15 +1559,43 @@ void DeviceDpa4cModel::compute_into(
     const auto type_indices_device = upload_array(
         context, type_indices, "could not upload DPA4C CUDA type indices");
     auto* device_types = device_data<std::int32_t>(type_indices_device);
-    KernelModel model{
-        0.0, ntypes_, channels_, lmax_, n_radial_, radial_modes_, radial_hidden_, pair_hidden_, calibrate_, feature_count_, moment_count_, triple_count_,
-        device_data<float>(type_embedding_), device_data<float>(radial_freqs_), device_data<float>(radial_w0_), device_data<float>(radial_w1_), device_data<float>(radial_mode_w_),
-        device_data<float>(pair_scale_), device_data<float>(pair_shift_), device_data<float>(pair_mixing_), device_data<float>(alignment_), device_data<std::int64_t>(alignment_offsets_),
-        device_data<float>(projections_), device_data<std::int64_t>(projection_offsets_), device_data<float>(coupling_), device_data<std::int64_t>(coupling_offsets_),
-        device_data<int>(degree_triples_), device_data<std::int64_t>(probe_offsets_), device_data<std::int64_t>(probe_index_), device_data<float>(probe_scale_),
-        device_data<float>(output_mean_), device_data<float>(output_stddev_), nullptr, nullptr,
-        device_data<int>(degree_channels_device_), device_data<int>(bispectrum_ranks_device_)};
-    model.rcut = rcut_;
+    KernelModel model{};
+    model.rcut = rcut_; model.ntypes = ntypes_; model.channels = channels_; model.lmax = lmax_;
+    model.n_radial = n_radial_; model.radial_modes = radial_modes_;
+    model.radial_hidden = radial_hidden_; model.pair_hidden = pair_hidden_;
+    model.calibrate = calibrate_; model.feature_count = feature_count_;
+    model.moment_count = moment_count_; model.triple_count = triple_count_;
+    model.type_embedding = device_data<float>(type_embedding_);
+    model.radial_freqs = device_data<float>(radial_freqs_);
+    model.radial_w0 = device_data<float>(radial_w0_);
+    model.radial_w1 = device_data<float>(radial_w1_);
+    model.radial_mode_w = device_data<float>(radial_mode_w_);
+    model.pair_scale = device_data<float>(pair_scale_);
+    model.pair_shift = device_data<float>(pair_shift_);
+    model.pair_mixing = device_data<float>(pair_mixing_);
+    model.alignment = device_data<float>(alignment_);
+    model.alignment_offsets = device_data<std::int64_t>(alignment_offsets_);
+    model.projections = device_data<float>(projections_);
+    model.projection_offsets = device_data<std::int64_t>(projection_offsets_);
+    model.coupling = device_data<float>(coupling_);
+    model.coupling_offsets = device_data<std::int64_t>(coupling_offsets_);
+    model.degree_triples = device_data<int>(degree_triples_);
+    model.probe_offsets = device_data<std::int64_t>(probe_offsets_);
+    model.probe_index = device_data<std::int64_t>(probe_index_);
+    model.probe_scale = device_data<float>(probe_scale_);
+    model.output_mean = device_data<float>(output_mean_);
+    model.output_stddev = device_data<float>(output_stddev_);
+    model.degree_channels = device_data<int>(degree_channels_device_);
+    model.bispectrum_ranks = device_data<int>(bispectrum_ranks_device_);
+    model.fitting_layer_count = static_cast<int>(host_fitting_neurons_.size());
+    model.fitting_max_width = fitting_max_width_;
+    model.fitting_neurons = device_data<int>(fitting_neurons_);
+    model.fitting_activation_offsets = device_data<std::int64_t>(
+        fitting_activation_offsets_device_);
+    model.fitting_weights = device_data<float>(fitting_weights_);
+    model.fitting_biases = device_data<float>(fitting_biases_);
+    model.fitting_atom_bias = device_data<double>(fitting_atom_bias_);
+    model.output_bias = device_data<double>(output_bias_);
     // The compact gram metadata is constant per model and was uploaded once
     // at construction; no per-call workspace tail is needed.
     model.gram_index = device_data<std::int32_t>(gram_index_device_);
@@ -750,6 +1608,119 @@ void DeviceDpa4cModel::compute_into(
         batch.atoms(), workspace, layout, model, output);
     check_cuda(cudaGetLastError(), "DPA4C CUDA descriptor kernel launch failed");
     context.download_output_into(host_output, output_count);
+}
+
+void DeviceDpa4cModel::predict_into(
+    CudaExecutionContext& context, const DeviceBatch& batch,
+    const DeviceNeighborGraph& graph, const std::vector<std::int32_t>& type_indices,
+    double* energy, double* atom_energy, double* forces) const {
+    if (context.device() != device_ || !has_fitting_) {
+        throw std::invalid_argument("DPA4C CUDA prediction requires a fitted model on the active device");
+    }
+    const auto atoms = batch.atoms();
+    const auto structures = batch.structures();
+    if (atoms < 0 || structures < 0 || graph.offsets() == nullptr
+        || type_indices.size() != static_cast<std::size_t>(atoms)
+        || (atoms > 0 && (atom_energy == nullptr || forces == nullptr))
+        || (structures > 0 && energy == nullptr)) {
+        throw std::invalid_argument("DPA4C CUDA prediction received an invalid batch or output");
+    }
+    for (std::int32_t type : type_indices) {
+        if (type < 0 || type >= ntypes_) {
+            throw std::invalid_argument("DPA4C CUDA type index is outside the checkpoint type map");
+        }
+    }
+    if (atoms == 0) {
+        std::fill_n(energy, structures, 0.0);
+        return;
+    }
+
+    const std::size_t atom_count = static_cast<std::size_t>(atoms);
+    const std::size_t structure_count = static_cast<std::size_t>(structures);
+    const std::size_t stride = align_bytes(
+        static_cast<std::size_t>(layout_->fixed_bytes), alignof(double));
+    if (stride == 0 || atom_count > std::numeric_limits<std::size_t>::max() / stride
+        || atom_count > (std::numeric_limits<std::size_t>::max() - structure_count) / 4) {
+        throw CudaOutOfMemory("DPA4C CUDA prediction buffers are too large");
+    }
+    Dpa4cCudaLayout layout = *layout_;
+    layout.stride = static_cast<std::int64_t>(stride);
+    auto* workspace = static_cast<unsigned char*>(context.workspace_buffer(atom_count * stride));
+    const std::size_t output_count = atom_count * 4 + structure_count;
+    double* output = context.output_buffer(output_count);
+    double* force_output = output + atom_count + structure_count;
+    check_cuda(cudaMemsetAsync(force_output, 0, atom_count * 3 * sizeof(double),
+        context.stream()), "could not clear DPA4C CUDA forces");
+    const auto type_device = upload_array(
+        context, type_indices, "could not upload DPA4C CUDA type indices");
+    const auto* types = device_data<std::int32_t>(type_device);
+
+    KernelModel model{};
+    model.rcut = rcut_; model.ntypes = ntypes_; model.channels = channels_; model.lmax = lmax_;
+    model.n_radial = n_radial_; model.radial_modes = radial_modes_;
+    model.radial_hidden = radial_hidden_; model.pair_hidden = pair_hidden_;
+    model.calibrate = calibrate_; model.feature_count = feature_count_;
+    model.moment_count = moment_count_; model.triple_count = triple_count_;
+    model.type_embedding = device_data<float>(type_embedding_);
+    model.radial_freqs = device_data<float>(radial_freqs_);
+    model.radial_w0 = device_data<float>(radial_w0_);
+    model.radial_w1 = device_data<float>(radial_w1_);
+    model.radial_mode_w = device_data<float>(radial_mode_w_);
+    model.pair_scale = device_data<float>(pair_scale_);
+    model.pair_shift = device_data<float>(pair_shift_);
+    model.pair_mixing = device_data<float>(pair_mixing_);
+    model.alignment = device_data<float>(alignment_);
+    model.alignment_offsets = device_data<std::int64_t>(alignment_offsets_);
+    model.projections = device_data<float>(projections_);
+    model.projection_offsets = device_data<std::int64_t>(projection_offsets_);
+    model.coupling = device_data<float>(coupling_);
+    model.coupling_offsets = device_data<std::int64_t>(coupling_offsets_);
+    model.degree_triples = device_data<int>(degree_triples_);
+    model.probe_offsets = device_data<std::int64_t>(probe_offsets_);
+    model.probe_index = device_data<std::int64_t>(probe_index_);
+    model.probe_scale = device_data<float>(probe_scale_);
+    model.output_mean = device_data<float>(output_mean_);
+    model.output_stddev = device_data<float>(output_stddev_);
+    model.degree_channels = device_data<int>(degree_channels_device_);
+    model.bispectrum_ranks = device_data<int>(bispectrum_ranks_device_);
+    model.gram_index = device_data<std::int32_t>(gram_index_device_);
+    model.gram_scale = device_data<float>(gram_scale_device_);
+    model.fitting_layer_count = static_cast<int>(host_fitting_neurons_.size());
+    model.fitting_max_width = fitting_max_width_;
+    model.fitting_neurons = device_data<int>(fitting_neurons_);
+    model.fitting_activation_offsets = device_data<std::int64_t>(
+        fitting_activation_offsets_device_);
+    model.fitting_weights = device_data<float>(fitting_weights_);
+    model.fitting_biases = device_data<float>(fitting_biases_);
+    model.fitting_atom_bias = device_data<double>(fitting_atom_bias_);
+    model.output_bias = device_data<double>(output_bias_);
+
+    const auto atom_blocks = static_cast<unsigned int>((atom_count + 127) / 128);
+    dpa4c_kernel<<<atom_blocks, 128, 0, context.stream()>>>(
+        graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(),
+        types, atoms, workspace, layout, model, nullptr);
+    check_cuda(cudaGetLastError(), "DPA4C CUDA descriptor kernel launch failed");
+    dpa4c_fit_backward_kernel<<<static_cast<unsigned int>(atom_count), 256, 0, context.stream()>>>(
+        atoms, types, workspace, layout, model);
+    check_cuda(cudaGetLastError(), "DPA4C CUDA fitting kernel launch failed");
+    dpa4c_readout_backward_kernel<<<static_cast<unsigned int>(atom_count), 1, 0, context.stream()>>>(
+        atoms, workspace, layout, model);
+    check_cuda(cudaGetLastError(), "DPA4C CUDA readout backward kernel launch failed");
+    dpa4c_force_kernel<<<atom_blocks, 128, 0, context.stream()>>>(
+        graph.offsets(), graph.atoms(), graph.shifts(), graph.displacements(),
+        types, atoms, workspace, layout, model, force_output);
+    check_cuda(cudaGetLastError(), "DPA4C CUDA force kernel launch failed");
+    const auto output_blocks = static_cast<unsigned int>(
+        (std::max(atom_count, structure_count) + 127) / 128);
+    dpa4c_energy_copy_and_sum_kernel<<<output_blocks, 128, 0, context.stream()>>>(
+        batch.offsets(), structures, atoms, workspace, layout, output);
+    check_cuda(cudaGetLastError(), "DPA4C CUDA energy kernel launch failed");
+
+    const auto host_output = context.download_output(output_count);
+    std::copy_n(host_output.data(), atom_count, atom_energy);
+    std::copy_n(host_output.data() + atom_count, structure_count, energy);
+    std::copy_n(host_output.data() + atom_count + structure_count,
+        atom_count * 3, forces);
 }
 
 } // namespace mdescriptor::cuda

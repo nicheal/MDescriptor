@@ -78,6 +78,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"required native preload failed: {error}", file=sys.stderr)
         return 1
     os.environ.update(environment)
+    from mdescriptor._cuda_loader import load_cuda_plugin
+
+    try:
+        loaded_cuda_dir = load_cuda_plugin(plugin_dir)
+        if loaded_cuda_dir.resolve() != plugin_dir:
+            raise ImportError(f"loaded CUDA plugin from {loaded_cuda_dir}, expected {plugin_dir}")
+    except (ImportError, OSError, RuntimeError) as error:
+        print(f"required CUDA preload failed: {error}", file=sys.stderr)
+        return 1
     print(f"required CUDA plugin: {plugin_dir}")
     print(f"required native extension: {native_extension.resolve()}")
     return int(

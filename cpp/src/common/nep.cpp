@@ -139,24 +139,25 @@ double z_coefficient(int n1, int n2) {
     return kZ8[n1][n2];
 }
 
-void complex_product(double a, double b, double& real, double& imag) {
-    const double old_real = real;
+template <typename Scalar>
+void complex_product(Scalar a, Scalar b, Scalar& real, Scalar& imag) {
+    const Scalar old_real = real;
     real = a * old_real - b * imag;
     imag = a * imag + b * old_real;
 }
 
-template <int L>
-void accumulate_s_one(double x, double y, double z, double fn, double* s) {
+template <int L, typename Scalar>
+void accumulate_s_one(Scalar x, Scalar y, Scalar z, Scalar fn, Scalar* s) {
     int index = L * L - 1;
-    double z_power[L + 1] = {1.0};
+    Scalar z_power[L + 1] = {1.0};
     for (int n = 1; n <= L; ++n) {
         z_power[n] = z * z_power[n - 1];
     }
-    double real = x;
-    double imag = y;
+    Scalar real = x;
+    Scalar imag = y;
     for (int n1 = 0; n1 <= L; ++n1) {
         const int start = (L + n1) % 2 == 0 ? 0 : 1;
-        double z_factor = 0.0;
+        Scalar z_factor = 0.0;
         for (int n2 = start; n2 <= L - n1; n2 += 2) {
             z_factor += z_coefficient<L>(n1, n2) * z_power[n2];
         }
@@ -217,18 +218,19 @@ void accumulate_s(int l_max, double distance, double x, double y, double z, doub
     if (l_max >= 8) accumulate_s_one<8>(x, y, z, fn, s);
 }
 
-template <int L>
-double find_q_one(const double* s) {
+template <int L, typename Scalar>
+Scalar find_q_one(const Scalar* s) {
     const int start = L * L - 1;
     const int count = 2 * L + 1;
-    double q = kC3B[start] * s[start] * s[start];
+    Scalar q = kC3B[start] * s[start] * s[start];
     for (int k = 1; k < count; ++k) {
         q += 2.0 * kC3B[start + k] * s[start + k] * s[start + k];
     }
     return q;
 }
 
-double q222(const double* s) {
+template <typename Scalar>
+Scalar q222(const Scalar* s) {
     return kC4B[0] * s[3] * s[3] * s[3]
         + kC4B[1] * s[3] * (s[4] * s[4] + s[5] * s[5])
         + kC4B[2] * s[3] * (s[6] * s[6] + s[7] * s[7])
@@ -236,13 +238,15 @@ double q222(const double* s) {
         + kC4B[4] * s[4] * s[5] * s[7];
 }
 
-double q1111(const double* s) {
-    const double s0 = s[0] * s[0];
-    const double s12 = s[1] * s[1] + s[2] * s[2];
+template <typename Scalar>
+Scalar q1111(const Scalar* s) {
+    const Scalar s0 = s[0] * s[0];
+    const Scalar s12 = s[1] * s[1] + s[2] * s[2];
     return kC5B[0] * s0 * s0 + kC5B[1] * s0 * s12 + kC5B[2] * s12 * s12;
 }
 
-double q112(const double* s) {
+template <typename Scalar>
+Scalar q112(const Scalar* s) {
     return kC4B2[0] * s[0] * s[0] * s[3]
         + kC4B2[1] * s[0] * (s[1] * s[4] + s[2] * s[5])
         + kC4B2[2] * s[3] * (s[1] * s[1] + s[2] * s[2])
@@ -250,8 +254,9 @@ double q112(const double* s) {
         + kC4B2[4] * s[1] * s[2] * s[7];
 }
 
-double q123(const double* s) {
-    double value = 0.0;
+template <typename Scalar>
+Scalar q123(const Scalar* s) {
+    Scalar value = 0.0;
     value += kC4B123[6] * (s[12] * s[2] * s[4] - s[11] * s[2] * s[5]
         + s[1] * s[11] * s[4] + s[1] * s[12] * s[5]);
     value += kC4B123[5] * (s[0] * s[11] * s[6] + s[0] * s[12] * s[7]);
@@ -266,8 +271,9 @@ double q123(const double* s) {
     return value;
 }
 
-double q233(const double* s) {
-    double value = 0.0;
+template <typename Scalar>
+Scalar q233(const Scalar* s) {
+    Scalar value = 0.0;
     value += kC4B233[0] * (s[3] * s[8] * s[8]);
     value += kC4B233[1] * (s[10] * s[10] * s[3] + s[3] * s[9] * s[9]);
     value += kC4B233[2] * (-s[10] * s[10] * s[6] + s[6] * s[9] * s[9]);
@@ -284,7 +290,8 @@ double q233(const double* s) {
     return value;
 }
 
-double q134(const double* s) {
+template <typename Scalar>
+Scalar q134(const Scalar* s) {
     return kC4B134[0] * (-s[10] * s[15] * s[2] - s[1] * s[15] * s[9])
         + kC4B134[1] * (s[0] * s[15] * s[8])
         + kC4B134[2] * (-s[1] * s[13] * s[18] - s[1] * s[14] * s[19]
@@ -301,6 +308,83 @@ double q134(const double* s) {
         + kC4B134[8] * (s[0] * s[13] * s[20] + s[0] * s[14] * s[21])
         + kC4B134[9] * (s[1] * s[11] * s[20] + s[1] * s[12] * s[21]
             - s[2] * s[12] * s[20] + s[2] * s[11] * s[21]);
+}
+
+struct Dual3 {
+    double value = 0.0;
+    std::array<double, 3> derivative{};
+
+    Dual3(double value_in = 0.0) : value(value_in) {}
+};
+
+Dual3 operator+(const Dual3& a, const Dual3& b) {
+    Dual3 result(a.value + b.value);
+    for (int d = 0; d < 3; ++d) result.derivative[d] = a.derivative[d] + b.derivative[d];
+    return result;
+}
+
+Dual3& operator+=(Dual3& a, const Dual3& b) {
+    a.value += b.value;
+    for (int d = 0; d < 3; ++d) a.derivative[d] += b.derivative[d];
+    return a;
+}
+
+Dual3& operator*=(Dual3& a, const Dual3& b) {
+    const double old_value = a.value;
+    for (int d = 0; d < 3; ++d) {
+        a.derivative[d] = a.derivative[d] * b.value + old_value * b.derivative[d];
+    }
+    a.value = old_value * b.value;
+    return a;
+}
+
+Dual3 operator-(const Dual3& a, const Dual3& b) {
+    Dual3 result(a.value - b.value);
+    for (int d = 0; d < 3; ++d) result.derivative[d] = a.derivative[d] - b.derivative[d];
+    return result;
+}
+
+Dual3 operator-(const Dual3& a) {
+    Dual3 result(-a.value);
+    for (int d = 0; d < 3; ++d) result.derivative[d] = -a.derivative[d];
+    return result;
+}
+
+Dual3 operator*(const Dual3& a, const Dual3& b) {
+    Dual3 result(a.value * b.value);
+    for (int d = 0; d < 3; ++d) {
+        result.derivative[d] = a.derivative[d] * b.value + a.value * b.derivative[d];
+    }
+    return result;
+}
+
+template <typename Scalar>
+Scalar find_q_one_dynamic(int l, const Scalar* s) {
+    switch (l) {
+    case 1: return find_q_one<1>(s);
+    case 2: return find_q_one<2>(s);
+    case 3: return find_q_one<3>(s);
+    case 4: return find_q_one<4>(s);
+    case 5: return find_q_one<5>(s);
+    case 6: return find_q_one<6>(s);
+    case 7: return find_q_one<7>(s);
+    default: return find_q_one<8>(s);
+    }
+}
+
+int angular_q_channels(
+    int l_max, bool has_q_222, bool has_q_1111, bool has_q_112,
+    bool has_q_123, bool has_q_233, bool has_q_134,
+    const Dual3* s, Dual3* q) {
+    int count = 0;
+    for (int l = 1; l <= l_max; ++l) q[count++] = find_q_one_dynamic(l, s);
+    if (has_q_222) q[count++] = q222(s);
+    if (has_q_1111) q[count++] = q1111(s);
+    if (has_q_112) q[count++] = q112(s);
+    if (has_q_123) q[count++] = q123(s);
+    if (has_q_233) q[count++] = q233(s);
+    if (has_q_134) q[count++] = q134(s);
+    return count;
 }
 
 void fill_angular_q(
@@ -458,6 +542,12 @@ struct NepModel {
     int dimension = 0;
     double radial_cutoff_max = 0.0;
     double angular_cutoff_max = 0.0;
+    int hidden_neurons1 = 0;
+    int hidden_neurons2 = 0;
+    bool zbl_enabled = false;
+    double zbl_inner = 0.0;
+    double zbl_outer = 0.0;
+    std::vector<double> ann_parameters;
     std::vector<std::int32_t> species;
     std::vector<double> radial_cutoff;
     std::vector<double> angular_cutoff;
@@ -520,6 +610,7 @@ std::shared_ptr<NepModel> load_model(
         || header.find("dipole") != std::string::npos || header.find("polar") != std::string::npos) {
         throw std::invalid_argument("NepCalculator currently supports ordinary NEP descriptors only");
     }
+    model->zbl_enabled = header.find("_zbl") != std::string::npos;
     model->num_types = parse_int(lines[0][1], "number of NEP atom types");
     if (model->num_types <= 0 || static_cast<std::size_t>(model->num_types + 2) != lines[0].size()) {
         throw std::invalid_argument("NEP model header has an invalid atom type list");
@@ -537,7 +628,22 @@ std::shared_ptr<NepModel> load_model(
         return lines[line_index++];
     };
     auto line = next_line();
-    if (!line.empty() && line[0] == "zbl") line = next_line();
+    if (!line.empty() && line[0] == "zbl") {
+        if (!model->zbl_enabled || (line.size() != 3 && line.size() != 4)) {
+            throw std::invalid_argument("invalid NEP ZBL cutoff line");
+        }
+        model->zbl_inner = parse_double(line[1], "NEP ZBL inner cutoff");
+        model->zbl_outer = parse_double(line[2], "NEP ZBL outer cutoff");
+        if (model->zbl_inner < 0.0 || model->zbl_outer <= model->zbl_inner) {
+            throw std::invalid_argument("NEP ZBL requires 0 <= inner cutoff < outer cutoff");
+        }
+        if (line.size() == 4) {
+            throw std::invalid_argument("typewise NEP ZBL cutoffs are not supported");
+        }
+        line = next_line();
+    } else if (model->zbl_enabled) {
+        throw std::invalid_argument("NEP ZBL model is missing its cutoff line");
+    }
     while (!line.empty() && line[0].rfind("spin_", 0) == 0) {
         throw std::invalid_argument("spin NEP descriptors are not supported by NepCalculator");
     }
@@ -612,6 +718,8 @@ std::shared_ptr<NepModel> load_model(
     const int neurons1 = parse_int(line[1], "NEP first hidden layer size");
     const int neurons2 = parse_int(line[2], "NEP second hidden layer size");
     if (neurons1 <= 0 || neurons2 < 0) throw std::invalid_argument("invalid NEP ANN sizes");
+    model->hidden_neurons1 = neurons1;
+    model->hidden_neurons2 = neurons2;
     std::size_t ann_parameters = 0;
     if (neurons2 > 0) {
         if (model->version != 4) throw std::invalid_argument("unsupported two-layer NEP model");
@@ -643,6 +751,8 @@ std::shared_ptr<NepModel> load_model(
     const std::size_t required = ann_parameters + radial_count + angular_count
         + static_cast<std::size_t>(model->dimension);
     if (numeric.size() < required) throw std::invalid_argument("NEP model parameter block is truncated");
+    model->ann_parameters.assign(
+        numeric.begin(), numeric.begin() + static_cast<std::ptrdiff_t>(ann_parameters));
     std::size_t cursor = ann_parameters;
     model->radial_coefficients.assign(numeric.begin() + static_cast<std::ptrdiff_t>(cursor),
         numeric.begin() + static_cast<std::ptrdiff_t>(cursor + radial_count));
@@ -715,12 +825,48 @@ void basis_values(int basis_size, double cutoff, double distance, double* values
     }
 }
 
+void basis_values_and_derivative(
+    int basis_size, double cutoff, double distance, double* values, double* derivatives) {
+    const double inverse_cutoff = 1.0 / cutoff;
+    const double angle = kPi * distance * inverse_cutoff;
+    const double cutoff_value = 0.5 * std::cos(angle) + 0.5;
+    const double cutoff_derivative = -0.5 * std::sin(angle) * kPi * inverse_cutoff;
+    const double a = distance * inverse_cutoff - 1.0;
+    const double x = 2.0 * a * a - 1.0;
+    const double x_derivative = 4.0 * a * inverse_cutoff;
+    values[0] = cutoff_value;
+    derivatives[0] = cutoff_derivative;
+    if (basis_size == 0) return;
+
+    values[1] = 0.5 * (x + 1.0) * cutoff_value;
+    derivatives[1] = 0.5 * (x_derivative * cutoff_value
+        + (x + 1.0) * cutoff_derivative);
+    double previous = 1.0;
+    double previous_derivative = 0.0;
+    double current = x;
+    double current_derivative = x_derivative;
+    for (int order = 2; order <= basis_size; ++order) {
+        const double next = 2.0 * x * current - previous;
+        const double next_derivative = 2.0 * x_derivative * current
+            + 2.0 * x * current_derivative - previous_derivative;
+        previous = current;
+        previous_derivative = current_derivative;
+        current = next;
+        current_derivative = next_derivative;
+        values[order] = 0.5 * (current + 1.0) * cutoff_value;
+        derivatives[order] = 0.5 * (current_derivative * cutoff_value
+            + (current + 1.0) * cutoff_derivative);
+    }
+}
+
 void compute_nep(
     const StructureBatchView& batch,
     const NepModel& model,
     int num_threads,
     double* output,
-    const std::shared_ptr<ComputeControl>& control) {
+    const std::shared_ptr<ComputeControl>& control,
+    std::vector<NeighborGraph>* retained_graphs = nullptr,
+    double cutoff_override = 0.0) {
     if (control) {
         control->reset(batch.structures);
     }
@@ -835,8 +981,12 @@ void compute_nep(
         }
     };
 
+    if (retained_graphs != nullptr) {
+        retained_graphs->resize(static_cast<std::size_t>(batch.structures));
+    }
     const std::size_t workspace_basis = std::max(radial_basis, angular_basis);
-    const double neighbor_cutoff = std::max(model.radial_cutoff_max, model.angular_cutoff_max);
+    const double neighbor_cutoff = std::max({
+        model.radial_cutoff_max, model.angular_cutoff_max, cutoff_override});
 
     // Batch NEP implementations benefit from keeping the neighbor graph next
     // to the descriptor work that consumes it.  The old batch path first built
@@ -868,13 +1018,16 @@ void compute_nep(
         // This path is already inside the worker-level parallel region.  A
         // single-thread graph build prevents nested OpenMP teams while still
         // allowing every worker to build its own structure graph concurrently.
-        const NeighborGraph graph = build_neighbor_graph(
+        NeighborGraph graph = build_neighbor_graph(
             local_batch, neighbor_cutoff, control, 1, true, false, false);
         const int* local_types = atom_types.data() + begin;
         for (std::int64_t local = 0; local < atom_count; ++local) {
             compute_center(
                 graph, local_types, local, begin + local,
                 radial, sums, angular, basis);
+        }
+        if (retained_graphs != nullptr) {
+            (*retained_graphs)[static_cast<std::size_t>(structure)] = std::move(graph);
         }
     };
 
@@ -918,7 +1071,7 @@ void compute_nep(
         return;
     }
 
-    const NeighborGraph graph = build_neighbor_graph(
+    NeighborGraph graph = build_neighbor_graph(
         batch, neighbor_cutoff, control, num_threads, true, false, false);
 #ifdef _OPENMP
     const int workers = num_threads > 0 ? num_threads : omp_get_max_threads();
@@ -944,11 +1097,328 @@ void compute_nep(
         compute_center(graph, atom_types.data(), center, center, radial, sums, angular, basis);
     }
 #endif
+    if (retained_graphs != nullptr) {
+        (*retained_graphs)[0] = std::move(graph);
+    }
     if (control && control->cancelled()) throw CancelledError();
     if (control) {
         control->mark_completed();
     }
 }
+
+namespace {
+
+double evaluate_ann(const NepModel& model, int type, const double* q, double* derivative) {
+    const int dim = model.dimension;
+    const int h1 = model.hidden_neurons1;
+    const int h2 = model.hidden_neurons2;
+    const std::size_t stride = h2 > 0
+        ? static_cast<std::size_t>(dim + 1) * h1 + static_cast<std::size_t>(h1 + 2) * h2
+        : static_cast<std::size_t>(dim + 2) * h1 + (model.version == 5 ? 1 : 0);
+    const std::size_t base = static_cast<std::size_t>(type) * stride;
+    const double* w0 = model.ann_parameters.data() + base;
+    const double* b0 = w0 + static_cast<std::size_t>(h1) * dim;
+    const double* w1 = b0 + h1;
+    std::fill_n(derivative, dim, 0.0);
+    double energy = -model.ann_parameters[static_cast<std::size_t>(model.num_types) * stride];
+    if (h2 == 0) {
+        if (model.version == 5) energy -= w1[h1];
+        for (int n = 0; n < h1; ++n) {
+            const double* row = w0 + static_cast<std::size_t>(n) * dim;
+            double dot = 0.0;
+            for (int d = 0; d < dim; ++d) dot += row[d] * q[d];
+            const double hidden = std::tanh(dot - b0[n]);
+            energy += w1[n] * hidden;
+            const double pull = w1[n] * (1.0 - hidden * hidden);
+            for (int d = 0; d < dim; ++d) derivative[d] += pull * row[d];
+        }
+        return energy;
+    }
+
+    const double* w1_hidden = w1;
+    const double* b1_hidden = w1_hidden + static_cast<std::size_t>(h1) * h2;
+    const double* w2 = b1_hidden + h2;
+    std::array<double, 120> hidden1{};
+    std::array<double, 120> pull1{};
+    for (int n = 0; n < h1; ++n) {
+        const double* row = w0 + static_cast<std::size_t>(n) * dim;
+        double dot = 0.0;
+        for (int d = 0; d < dim; ++d) dot += row[d] * q[d];
+        hidden1[n] = std::tanh(dot - b0[n]);
+    }
+    for (int n = 0; n < h2; ++n) {
+        const double* row = w1_hidden + static_cast<std::size_t>(n) * h1;
+        double dot = 0.0;
+        for (int k = 0; k < h1; ++k) dot += row[k] * hidden1[k];
+        const double hidden = std::tanh(dot - b1_hidden[n]);
+        energy += w2[n] * hidden;
+        const double pull = w2[n] * (1.0 - hidden * hidden);
+        for (int k = 0; k < h1; ++k) pull1[k] += row[k] * pull;
+    }
+    for (int n = 0; n < h1; ++n) {
+        const double pull = pull1[n] * (1.0 - hidden1[n] * hidden1[n]);
+        const double* row = w0 + static_cast<std::size_t>(n) * dim;
+        for (int d = 0; d < dim; ++d) derivative[d] += pull * row[d];
+    }
+    return energy;
+}
+
+void accumulate_s_dual(
+    int l_max, const Dual3& distance, const Dual3& x, const Dual3& y,
+    const Dual3& z, const Dual3& value, Dual3* s) {
+    Dual3 inverse(1.0 / distance.value);
+    for (int d = 0; d < 3; ++d) {
+        inverse.derivative[d] = -distance.derivative[d] / (distance.value * distance.value);
+    }
+    const Dual3 nx = x * inverse;
+    const Dual3 ny = y * inverse;
+    const Dual3 nz = z * inverse;
+    if (l_max >= 1) accumulate_s_one<1>(nx, ny, nz, value, s);
+    if (l_max >= 2) accumulate_s_one<2>(nx, ny, nz, value, s);
+    if (l_max >= 3) accumulate_s_one<3>(nx, ny, nz, value, s);
+    if (l_max >= 4) accumulate_s_one<4>(nx, ny, nz, value, s);
+    if (l_max >= 5) accumulate_s_one<5>(nx, ny, nz, value, s);
+    if (l_max >= 6) accumulate_s_one<6>(nx, ny, nz, value, s);
+    if (l_max >= 7) accumulate_s_one<7>(nx, ny, nz, value, s);
+    if (l_max >= 8) accumulate_s_one<8>(nx, ny, nz, value, s);
+}
+
+double zbl_value_and_derivative(
+    const NepModel& model, std::int32_t z1, std::int32_t z2,
+    double distance, double& derivative) {
+    if (!model.zbl_enabled || distance <= 0.0 || distance >= model.zbl_outer) {
+        derivative = 0.0;
+        return 0.0;
+    }
+    constexpr double parameters[8] = {
+        0.18175, 3.1998, 0.50986, 0.94229,
+        0.28022, 0.4029, 0.02817, 0.20162,
+    };
+    const double a_inv = (std::pow(static_cast<double>(z1), 0.23)
+        + std::pow(static_cast<double>(z2), 0.23)) * 2.134563;
+    const double charge = 14.399645 * static_cast<double>(z1) * z2;
+    double phi = 0.0;
+    double phi_prime = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        const double term = parameters[2 * i] * std::exp(-parameters[2 * i + 1] * distance * a_inv);
+        phi += term;
+        phi_prime -= parameters[2 * i + 1] * term;
+    }
+    const double unscreened = charge * phi;
+    const double value = unscreened / distance;
+    const double value_prime = charge * phi_prime * a_inv / distance
+        - unscreened / (distance * distance);
+    double cutoff = 0.0;
+    double cutoff_prime = 0.0;
+    if (distance < model.zbl_inner) {
+        cutoff = 1.0;
+    } else {
+        const double factor = kPi / (model.zbl_outer - model.zbl_inner);
+        cutoff = 0.5 * std::cos(factor * (distance - model.zbl_inner)) + 0.5;
+        cutoff_prime = -0.5 * std::sin(factor * (distance - model.zbl_inner)) * factor;
+    }
+    derivative = value_prime * cutoff + value * cutoff_prime;
+    return value * cutoff;
+}
+
+void compute_nep_prediction(
+    const StructureBatchView& batch, const NepModel& model, int num_threads,
+    double* energies, double* atom_energies, double* forces,
+    const std::shared_ptr<ComputeControl>& control) {
+    detail::validate_batch(batch);
+    if ((batch.structures > 0 && energies == nullptr)
+        || (batch.atoms > 0 && (atom_energies == nullptr || forces == nullptr))) {
+        throw std::invalid_argument("NEP prediction output buffers must not be null");
+    }
+    if (control) control->reset(batch.structures);
+    if (batch.structures > 0) std::fill_n(energies, batch.structures, 0.0);
+    if (batch.atoms > 0) {
+        std::fill_n(atom_energies, batch.atoms, 0.0);
+        std::fill_n(forces, batch.atoms * 3, 0.0);
+    }
+    if (batch.atoms == 0) {
+        detail::mark_completed_structures(control, batch.structures);
+        return;
+    }
+
+    const std::size_t dimension = static_cast<std::size_t>(model.dimension);
+    std::vector<double> descriptors(static_cast<std::size_t>(batch.atoms) * dimension);
+    std::vector<NeighborGraph> graphs;
+    compute_nep(batch, model, num_threads, descriptors.data(), control,
+        &graphs, model.zbl_outer);
+    if (control) control->reset(batch.structures);
+    std::vector<int> types(static_cast<std::size_t>(batch.atoms));
+    std::vector<double> ann_gradient(descriptors.size());
+    for (std::int64_t atom = 0; atom < batch.atoms; ++atom) {
+        types[static_cast<std::size_t>(atom)] = model.type_of(batch.numbers[atom]);
+        atom_energies[atom] = evaluate_ann(model, types[static_cast<std::size_t>(atom)],
+            descriptors.data() + atom * model.dimension,
+            ann_gradient.data() + atom * model.dimension);
+    }
+    const std::size_t radial_n = static_cast<std::size_t>(model.n_max_radial + 1);
+    const std::size_t angular_n = static_cast<std::size_t>(model.n_max_angular + 1);
+    const std::size_t radial_basis = static_cast<std::size_t>(model.basis_size_radial + 1);
+    const std::size_t angular_basis = static_cast<std::size_t>(model.basis_size_angular + 1);
+    std::vector<double> sums(angular_n * kNumAngularTerms);
+    std::vector<double> basis(std::max(radial_basis, angular_basis));
+    std::vector<double> basis_derivative(basis.size());
+    std::vector<double> angular_values;
+    std::vector<double> angular_derivatives;
+
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        detail::check_cancelled(control);
+        const std::int64_t structure_begin = batch.offsets[structure];
+        const NeighborGraph& graph = graphs[static_cast<std::size_t>(structure)];
+        for (std::int64_t center = structure_begin;
+             center < batch.offsets[structure + 1]; ++center) {
+            const std::int64_t local_center = center - structure_begin;
+            const int center_type = types[static_cast<std::size_t>(center)];
+            const NeighborView neighbors = graph.for_center(local_center);
+            std::fill(sums.begin(), sums.end(), 0.0);
+            if (model.l_max > 0) {
+                angular_values.resize(neighbors.size * angular_n);
+                angular_derivatives.resize(neighbors.size * angular_n);
+            }
+            // Build the aggregate angular moments once for this center. The
+            // per-edge pass below differentiates each contribution against
+            // these totals, so work stays linear in the neighbor count.
+            for (std::size_t edge = 0; model.l_max > 0 && edge < neighbors.size; ++edge) {
+                const double distance2 = neighbors.distance2[edge];
+                if (distance2 <= 0.0) continue;
+                const double distance = std::sqrt(distance2);
+                const std::int64_t neighbor = structure_begin + neighbors.atoms[edge];
+                const int neighbor_type = types[static_cast<std::size_t>(neighbor)];
+                const std::size_t pair = static_cast<std::size_t>(
+                    center_type * model.num_types + neighbor_type);
+                const double rc = model.angular_cutoff_pair[pair];
+                if (distance >= rc) continue;
+                basis_values_and_derivative(
+                    model.basis_size_angular, rc, distance, basis.data(), basis_derivative.data());
+                const double* coefficients = model.angular_pair_coefficients.data()
+                    + pair * angular_n * angular_basis;
+                for (std::size_t n = 0; n < angular_n; ++n) {
+                    const double* c_n = coefficients + n * angular_basis;
+                    const double value = dot_basis_dynamic(angular_basis, c_n, basis.data());
+                    const double value_derivative = dot_basis_dynamic(
+                        angular_basis, c_n, basis_derivative.data());
+                    const std::size_t cache_index = edge * angular_n + n;
+                    angular_values[cache_index] = value;
+                    angular_derivatives[cache_index] = value_derivative;
+                    accumulate_s(model.l_max, distance,
+                        neighbors.displacements[edge * 3],
+                        neighbors.displacements[edge * 3 + 1],
+                        neighbors.displacements[edge * 3 + 2], value,
+                        sums.data() + n * kNumAngularTerms);
+                }
+            }
+
+            const double* center_gradient = ann_gradient.data() + center * model.dimension;
+            for (std::size_t edge = 0; edge < neighbors.size; ++edge) {
+                const std::int64_t neighbor = structure_begin + neighbors.atoms[edge];
+                const int neighbor_type = types[static_cast<std::size_t>(neighbor)];
+                const std::size_t pair = static_cast<std::size_t>(
+                    center_type * model.num_types + neighbor_type);
+                const double distance2 = neighbors.distance2[edge];
+                if (distance2 <= 0.0) continue;
+                const double distance = std::sqrt(distance2);
+                std::array<double, 3> gradient{};
+
+                const double radial_rc = model.radial_cutoff_pair[pair];
+                if (distance < radial_rc) {
+                    basis_values_and_derivative(model.basis_size_radial, radial_rc,
+                        distance, basis.data(), basis_derivative.data());
+                    const double* coefficients = model.radial_pair_coefficients.data()
+                        + pair * radial_n * radial_basis;
+                    for (std::size_t n = 0; n < radial_n; ++n) {
+                        const double radial_derivative = dot_basis_dynamic(radial_basis,
+                            coefficients + n * radial_basis, basis_derivative.data());
+                        const double pull = center_gradient[n] * model.scalers[n];
+                        for (int axis = 0; axis < 3; ++axis) {
+                            gradient[axis] += pull * radial_derivative
+                                * neighbors.displacements[edge * 3 + axis] / distance;
+                        }
+                    }
+                }
+
+                const double angular_rc = model.angular_cutoff_pair[pair];
+                if (model.l_max > 0 && distance < angular_rc) {
+                    std::array<Dual3, 3> xyz{
+                        Dual3(neighbors.displacements[edge * 3]),
+                        Dual3(neighbors.displacements[edge * 3 + 1]),
+                        Dual3(neighbors.displacements[edge * 3 + 2]),
+                    };
+                    Dual3 r(distance);
+                    for (int axis = 0; axis < 3; ++axis) {
+                        xyz[axis].derivative[axis] = 1.0;
+                        r.derivative[axis] = xyz[axis].value / distance;
+                    }
+                    for (std::size_t n = 0; n < angular_n; ++n) {
+                        const std::size_t cache_index = edge * angular_n + n;
+                        Dual3 value(angular_values[cache_index]);
+                        const double value_derivative = angular_derivatives[cache_index];
+                        for (int axis = 0; axis < 3; ++axis) {
+                            value.derivative[axis] = value_derivative
+                                * neighbors.displacements[edge * 3 + axis] / distance;
+                        }
+                        std::array<Dual3, kNumAngularTerms> edge_sums{};
+                        accumulate_s_dual(model.l_max, r, xyz[0], xyz[1], xyz[2],
+                            value, edge_sums.data());
+                        std::array<Dual3, kNumAngularTerms> total_sums{};
+                        const double* sum_values = sums.data() + n * kNumAngularTerms;
+                        for (int k = 0; k < kNumAngularTerms; ++k) {
+                            total_sums[k].value = sum_values[k];
+                            total_sums[k].derivative = edge_sums[k].derivative;
+                        }
+                        std::array<Dual3, 14> q_derivatives{};
+                        const int channels = angular_q_channels(model.l_max,
+                            model.has_q_222, model.has_q_1111, model.has_q_112,
+                            model.has_q_123, model.has_q_233, model.has_q_134,
+                            total_sums.data(), q_derivatives.data());
+                        if (channels != model.num_l) {
+                            throw std::logic_error("NEP angular channel count mismatch");
+                        }
+                        for (int channel = 0; channel < channels; ++channel) {
+                            const std::size_t feature = radial_n
+                                + static_cast<std::size_t>(channel) * angular_n + n;
+                            const double pull = center_gradient[feature] * model.scalers[feature];
+                            for (int axis = 0; axis < 3; ++axis) {
+                                gradient[axis] += pull * q_derivatives[channel].derivative[axis];
+                            }
+                        }
+                    }
+                }
+
+                for (int axis = 0; axis < 3; ++axis) {
+                    forces[center * 3 + axis] += gradient[axis];
+                    forces[neighbor * 3 + axis] -= gradient[axis];
+                }
+
+                if (model.zbl_enabled && distance < model.zbl_outer) {
+                    double radial_derivative = 0.0;
+                    const double value = zbl_value_and_derivative(
+                        model, batch.numbers[center], batch.numbers[neighbor],
+                        distance, radial_derivative);
+                    atom_energies[center] += 0.5 * value;
+                    const double scale = 0.5 * radial_derivative / distance;
+                    for (int axis = 0; axis < 3; ++axis) {
+                        const double force = neighbors.displacements[edge * 3 + axis] * scale;
+                        forces[center * 3 + axis] += force;
+                        forces[neighbor * 3 + axis] -= force;
+                    }
+                }
+            }
+        }
+        if (control) control->mark_completed();
+    }
+    for (std::int64_t structure = 0; structure < batch.structures; ++structure) {
+        for (std::int64_t atom = batch.offsets[structure]; atom < batch.offsets[structure + 1]; ++atom) {
+            energies[structure] += atom_energies[atom];
+        }
+    }
+    detail::check_cancelled(control);
+}
+
+} // namespace
 
 NepCalculator::NepCalculator(NepOptions options)
     : model_(load_model(options.model_path, options.model_digest, options.model_data)),
@@ -993,6 +1463,18 @@ NepDescriptorParameters NepCalculator::descriptor_parameters() const {
     return result;
 }
 
+NepPredictionParameters NepCalculator::prediction_parameters() const {
+    NepPredictionParameters result;
+    static_cast<NepDescriptorParameters&>(result) = descriptor_parameters();
+    result.hidden_neurons1 = model_->hidden_neurons1;
+    result.hidden_neurons2 = model_->hidden_neurons2;
+    result.zbl_enabled = model_->zbl_enabled;
+    result.zbl_inner = model_->zbl_inner;
+    result.zbl_outer = model_->zbl_outer;
+    result.ann_parameters = model_->ann_parameters;
+    return result;
+}
+
 void NepCalculator::compute(
     const StructureBatchView& batch,
     double* output,
@@ -1002,6 +1484,38 @@ void NepCalculator::compute(
     std::lock_guard<std::mutex> lock(compute_mutex_);
     if (batch.atoms == 0) return;
     compute_nep(batch, *model_, num_threads_, output, control);
+}
+
+NepPredictor::NepPredictor(NepOptions options)
+    : model_(load_model(options.model_path, options.model_digest, options.model_data)),
+      num_threads_(options.num_threads) {
+    if (num_threads_ < 0) throw std::invalid_argument("NEP num_threads must be non-negative");
+    if (model_->version < 4 || model_->version > 5) {
+        throw std::invalid_argument("NEP prediction supports NEP4 and NEP5 models only");
+    }
+    if (model_->hidden_neurons1 > 120 || model_->hidden_neurons2 > 120) {
+        throw std::invalid_argument("NEP prediction supports at most 120 neurons per layer");
+    }
+}
+
+const std::vector<std::int32_t>& NepPredictor::species() const noexcept {
+    return model_->species;
+}
+
+const std::string& NepPredictor::model_path() const noexcept {
+    return model_->path;
+}
+
+void NepPredictor::predict(
+    const StructureBatchView& batch,
+    double* energy,
+    double* atom_energy,
+    double* forces,
+    const std::shared_ptr<ComputeControl>& control
+) const {
+    assert_open("NEP predictor");
+    std::lock_guard<std::mutex> lock(compute_mutex_);
+    compute_nep_prediction(batch, *model_, num_threads_, energy, atom_energy, forces, control);
 }
 
 } // namespace mdescriptor

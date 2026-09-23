@@ -29,6 +29,7 @@ using mdescriptor::ComputeControl;
 using mdescriptor::MtpCalculator;
 using mdescriptor::MtpOptions;
 using mdescriptor::NepCalculator;
+using mdescriptor::NepPredictor;
 using mdescriptor::NepOptions;
 using mdescriptor::SoapCalculator;
 using mdescriptor::SoapOptions;
@@ -132,6 +133,19 @@ Dpa4cOptions dpa4c_options_from_payload(const py::dict& payload) {
         required_payload_value(payload, "output_mean"), "output_mean");
     options.output_stddev = vector_from_array<float>(
         required_payload_value(payload, "output_stddev"), "output_stddev");
+    if (payload.contains("fitting_neurons")) {
+        options.fitting_neurons = py::cast<std::vector<int>>(payload["fitting_neurons"]);
+        options.fitting_weights = vector_from_array<float>(
+            required_payload_value(payload, "fitting_weights"), "fitting_weights");
+        options.fitting_biases = vector_from_array<float>(
+            required_payload_value(payload, "fitting_biases"), "fitting_biases");
+        options.fitting_activation = py::cast<std::string>(
+            required_payload_value(payload, "fitting_activation"));
+        options.fitting_atom_bias = vector_from_array<double>(
+            required_payload_value(payload, "fitting_atom_bias"), "fitting_atom_bias");
+        options.output_bias = vector_from_array<double>(
+            required_payload_value(payload, "output_bias"), "output_bias");
+    }
     return options;
 }
 
@@ -362,6 +376,56 @@ py::array compute_atoms_array(
 ) {
     return compute_batch_array(
         calculator, numbers, positions, cells, pbc, offsets, control, false);
+}
+
+py::tuple predict_nep_array(
+    const NepPredictor& predictor,
+    const py::object& value,
+    const std::shared_ptr<ComputeControl>& control
+) {
+    const I32Array numbers(value.attr("numbers"));
+    const F64Array positions(value.attr("positions"));
+    const F64Array cells(value.attr("cells"));
+    const I32Array pbc(value.attr("pbc"));
+    const I64Array offsets(value.attr("offsets"));
+    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
+    py::array_t<double> energy(batch.structures);
+    py::array_t<double> atom_energy(batch.atoms);
+    py::array_t<double> forces({batch.atoms, static_cast<std::int64_t>(3)});
+    auto ctrl = control_or_default(control);
+    {
+        py::gil_scoped_release release;
+        predictor.predict(batch, energy.mutable_data(), atom_energy.mutable_data(),
+            forces.mutable_data(), ctrl);
+    }
+    return py::make_tuple(std::move(energy), std::move(atom_energy), std::move(forces));
+}
+
+py::tuple predict_dpa4c_array(
+    const Dpa4cCalculator& predictor,
+    const py::object& value,
+    const I32Array& type_indices,
+    const std::shared_ptr<ComputeControl>& control
+) {
+    const I32Array numbers(value.attr("numbers"));
+    const F64Array positions(value.attr("positions"));
+    const F64Array cells(value.attr("cells"));
+    const I32Array pbc(value.attr("pbc"));
+    const I64Array offsets(value.attr("offsets"));
+    const auto batch = view_batch(numbers, positions, cells, pbc, offsets);
+    if (type_indices.ndim() != 1 || type_indices.shape(0) != batch.atoms) {
+        throw std::invalid_argument("DPA4C type_indices must have one entry per atom");
+    }
+    py::array_t<double> energy(batch.structures);
+    py::array_t<double> atom_energy(batch.atoms);
+    py::array_t<double> forces({batch.atoms, static_cast<std::int64_t>(3)});
+    auto ctrl = control_or_default(control);
+    {
+        py::gil_scoped_release release;
+        predictor.predict(batch, type_indices.data(), energy.mutable_data(),
+            atom_energy.mutable_data(), forces.mutable_data(), ctrl);
+    }
+    return py::make_tuple(std::move(energy), std::move(atom_energy), std::move(forces));
 }
 
 py::array compute_soap_array(
@@ -1112,6 +1176,14 @@ PYBIND11_MODULE(_native, module) {
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
              py::arg("offsets"), py::arg("control") = nullptr);
 
+    py::class_<NepPredictor>(module, "NepPredictor")
+        .def(py::init<NepOptions>())
+        .def_property_readonly("species", &NepPredictor::species)
+        .def("close", [](NepPredictor& self) { self.close(); })
+        .def("closed", [](const NepPredictor& self) { return self.closed(); })
+        .def("predict", &predict_nep_array,
+             py::arg("batch"), py::arg("control") = nullptr);
+
     py::class_<Dpa4cCalculator, std::shared_ptr<Dpa4cCalculator>>(
         module, "Dpa4cCalculator")
         .def(py::init([](const py::dict& payload) {
@@ -1123,7 +1195,10 @@ PYBIND11_MODULE(_native, module) {
         .def("closed", [](const Dpa4cCalculator& self) { return self.closed(); })
         .def("compute", &compute_dpa_array<Dpa4cCalculator>,
              py::arg("numbers"), py::arg("positions"), py::arg("cells"), py::arg("pbc"),
-             py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr);
+             py::arg("offsets"), py::arg("type_indices"), py::arg("control") = nullptr)
+        .def("predict", &predict_dpa4c_array,
+             py::arg("batch"), py::arg("type_indices"), py::arg("control") = nullptr);
+    module.attr("Dpa4cPredictor") = module.attr("Dpa4cCalculator");
 
     py::class_<Dpa4Calculator, std::shared_ptr<Dpa4Calculator>>(
         module, "Dpa4Calculator")

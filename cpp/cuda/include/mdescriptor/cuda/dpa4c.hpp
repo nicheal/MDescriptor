@@ -35,6 +35,17 @@ public:
         const std::vector<std::int32_t>& type_indices,
         double* output) const;
 
+    // Compute total/atomic energies and analytic forces entirely on the
+    // device.  Results are copied to the caller's host arrays on completion.
+    void predict_into(
+        CudaExecutionContext& context,
+        const DeviceBatch& batch,
+        const DeviceNeighborGraph& graph,
+        const std::vector<std::int32_t>& type_indices,
+        double* energy,
+        double* atom_energy,
+        double* forces) const;
+
 public:
     struct DeviceArray;
     struct Layout;
@@ -87,6 +98,16 @@ private:
     std::unique_ptr<DeviceArray> probe_scale_;
     std::unique_ptr<DeviceArray> output_mean_;
     std::unique_ptr<DeviceArray> output_stddev_;
+    std::unique_ptr<DeviceArray> fitting_neurons_;
+    std::unique_ptr<DeviceArray> fitting_activation_offsets_device_;
+    std::unique_ptr<DeviceArray> fitting_weights_;
+    std::unique_ptr<DeviceArray> fitting_biases_;
+    std::unique_ptr<DeviceArray> fitting_atom_bias_;
+    std::unique_ptr<DeviceArray> output_bias_;
+    std::vector<int> host_fitting_neurons_;
+    std::vector<std::int64_t> fitting_activation_offsets_;
+    int fitting_max_width_ = 0;
+    bool has_fitting_ = false;
     // The compact gram metadata is constant per model; it is uploaded once at
     // construction instead of being copied into the workspace tail per call.
     std::unique_ptr<DeviceArray> gram_index_device_;

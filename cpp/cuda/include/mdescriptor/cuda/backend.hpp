@@ -26,6 +26,7 @@ public:
 
     std::int64_t feature_count() const noexcept { return feature_count_; }
     pybind11::object compute(pybind11::object batch, pybind11::object control);
+    pybind11::object predict(pybind11::object batch, pybind11::object control);
     pybind11::dict metadata() const;
     void close() noexcept;
 

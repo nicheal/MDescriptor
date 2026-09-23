@@ -162,6 +162,33 @@ The sample layouts are:
 - atom level: `[structure, local_atom]`
 - pair level: `[structure, local_atom_1, local_atom_2, shift_a, shift_b, shift_c]`
 
+## Energy and force predictions / 能量与力预测
+
+NEP and DPA4C predictions use a separate namespace so descriptor feature
+matrices keep their existing meaning. Both predictors accept the same
+`StructureBatch` or ASE inputs, and return total energy per structure, atomic
+energy per atom, and Cartesian forces in eV and eV/angstrom:
+
+```python
+from mdescriptor import ExecutionOptions
+from mdescriptor.predictors import DPA4C, NEP
+
+with NEP(execution=ExecutionOptions(device="cpu")) as model:
+    result = model.predict(batch)
+
+print(result.energy.shape)       # (number of structures,)
+print(result.atom_energy.shape)  # (number of atoms,)
+print(result.forces.shape)       # (number of atoms, 3)
+```
+
+`PredictionResult` also carries the input `structure_ids`, atom `offsets`, and
+resolved model metadata. Its arrays are read-only snapshots. Select CUDA with
+`ExecutionOptions(device="cuda")`; CUDA initialization remains lazy until the
+first prediction. NEP prediction supports NEP4/NEP5 models, including ZBL.
+DPA4C prediction accepts uncompressed, spin-free energy
+checkpoints supported by the native inference backend. DPA4 descriptors remain
+available through `mdescriptor.descriptors`.
+
 ## Built-in descriptors / 内置描述符
 
 The built-in registry currently contains 28 descriptors:

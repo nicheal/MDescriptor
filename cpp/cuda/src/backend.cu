@@ -313,9 +313,15 @@ Backend::Backend(std::string name, py::dict options)
         }
         nep_options.num_threads = 0;
         mdescriptor::NepCalculator calculator(nep_options);
-        const auto parameters = calculator.descriptor_parameters();
-        feature_count_ = parameters.dimension;
-        nep_model_ = std::make_unique<DeviceNepModel>(*context_, parameters);
+        if (option(options_, "_prediction", false)) {
+            const auto parameters = calculator.prediction_parameters();
+            feature_count_ = parameters.dimension;
+            nep_model_ = std::make_unique<DeviceNepModel>(*context_, parameters);
+        } else {
+            const auto parameters = calculator.descriptor_parameters();
+            feature_count_ = parameters.dimension;
+            nep_model_ = std::make_unique<DeviceNepModel>(*context_, parameters);
+        }
     } else if (name_ == "DPA4C") {
         dpa4c_model_ = std::make_unique<DeviceDpa4cModel>(
             *context_, dpa_payload_option(options_, name_));
@@ -622,6 +628,67 @@ py::object Backend::compute(py::object batch_object, py::object control) {
     result["labels"] = labels_option(options_, name_, features);
     result["metadata"] = mdescriptor::cuda::metadata(options_, name_);
     return std::move(result);
+}
+
+py::object Backend::predict(py::object batch_object, py::object control) {
+    std::unique_lock<std::mutex> guard(compute_mutex_, std::defer_lock);
+    {
+        py::gil_scoped_release release;
+        guard.lock();
+    }
+    if (closed_ || context_ == nullptr) {
+        throw std::runtime_error("CUDA backend is closed");
+    }
+    if (!option(options_, "_prediction", false)
+        || (name_ != "NEP" && name_ != "DPA4C")) {
+        throw std::invalid_argument("CUDA backend is not a predictor");
+    }
+    BatchArrays arrays = arrays_from_batch(batch_object);
+    reset_control(control, arrays.view.structures);
+    check_cancelled(control);
+    py::array_t<double> energy(arrays.view.structures);
+    py::array_t<double> atom_energy(arrays.view.atoms);
+    py::array_t<double> forces({arrays.view.atoms, static_cast<std::int64_t>(3)});
+    std::fill_n(energy.mutable_data(), arrays.view.structures, 0.0);
+    std::fill_n(atom_energy.mutable_data(), arrays.view.atoms, 0.0);
+    std::fill_n(forces.mutable_data(), arrays.view.atoms * 3, 0.0);
+
+    if (arrays.view.atoms > 0 && name_ == "NEP") {
+        for (std::int64_t atom = 0; atom < arrays.view.atoms; ++atom) {
+            if (!nep_model_->supports_atomic_number(arrays.view.numbers[atom])) {
+                throw std::invalid_argument(
+                    "structure contains an element not present in the NEP model: "
+                    + std::to_string(arrays.view.numbers[atom]));
+            }
+        }
+        py::gil_scoped_release release;
+        const double cutoff = nep_model_->neighbor_cutoff();
+        device_batch_.upload(*context_, arrays.view);
+        DeviceBatch* compute_batch = &device_batch_;
+        detail::StructureBatchView compute_view = arrays.view;
+        if (nep_expanded_batch_.expand_nep(*context_, device_batch_, arrays.view, cutoff)) {
+            compute_batch = &nep_expanded_batch_;
+            compute_view = nep_expanded_batch_.metadata_view();
+        }
+        device_graph_.build_nep(*context_, *compute_batch, compute_view, cutoff);
+        predict_nep_into(*context_, *compute_batch, device_graph_, *nep_model_,
+            arrays.view, energy.mutable_data(), atom_energy.mutable_data(),
+            forces.mutable_data());
+    } else if (arrays.view.atoms > 0 && name_ == "DPA4C") {
+        const auto type_indices = dpa_type_indices(options_, arrays, name_);
+        py::gil_scoped_release release;
+        device_batch_.upload(*context_, arrays.view);
+        device_graph_.build_dpa(*context_, device_batch_, arrays.view,
+            dpa4c_model_->cutoff(), false, false);
+        dpa4c_model_->predict_into(*context_, device_batch_, device_graph_,
+            type_indices, energy.mutable_data(), atom_energy.mutable_data(),
+            forces.mutable_data());
+    }
+    check_cancelled(control);
+    for (std::int64_t structure = 0; structure < arrays.view.structures; ++structure) {
+        mark_completed(control);
+    }
+    return py::make_tuple(std::move(energy), std::move(atom_energy), std::move(forces));
 }
 
 py::dict Backend::metadata() const {

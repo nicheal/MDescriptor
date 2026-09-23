@@ -2,6 +2,7 @@
 
 #include "descriptor.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -52,6 +53,21 @@ struct NepDescriptorParameters {
     std::vector<double> scalers;
 };
 
+// Additional immutable data needed by an energy/force predictor. Kept apart
+// from descriptor_parameters() so descriptor-only users do not acquire ANN
+// or ZBL state as part of their model contract.
+struct NepPredictionParameters : NepDescriptorParameters {
+    int hidden_neurons1 = 0;
+    int hidden_neurons2 = 0;
+    bool zbl_enabled = false;
+    double zbl_inner = 0.0;
+    double zbl_outer = 0.0;
+    double neighbor_cutoff() const noexcept {
+        return std::max({radial_cutoff_max, angular_cutoff_max, zbl_outer});
+    }
+    std::vector<double> ann_parameters;
+};
+
 struct NepModel;
 
 class NepCalculator : public detail::CalculatorBase {
@@ -67,10 +83,31 @@ public:
     int n_max_angular() const noexcept;
     int l_max() const noexcept;
     NepDescriptorParameters descriptor_parameters() const;
+    NepPredictionParameters prediction_parameters() const;
 
     void compute(
         const StructureBatchView& batch,
         double* output,
+        const std::shared_ptr<ComputeControl>& control
+    ) const;
+
+private:
+    std::shared_ptr<const NepModel> model_;
+    int num_threads_ = 0;
+};
+
+class NepPredictor : public detail::CalculatorBase {
+public:
+    explicit NepPredictor(NepOptions options);
+
+    const std::vector<std::int32_t>& species() const noexcept;
+    const std::string& model_path() const noexcept;
+
+    void predict(
+        const StructureBatchView& batch,
+        double* energy,
+        double* atom_energy,
+        double* forces,
         const std::shared_ptr<ComputeControl>& control
     ) const;
 

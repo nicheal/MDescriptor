@@ -3,6 +3,7 @@
 #include <pybind11/pybind11.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace py = pybind11;
@@ -22,12 +23,29 @@ PYBIND11_MODULE(_cuda, module) {
         .def(py::init<std::string, py::dict>())
         .def_property_readonly("feature_count", &Backend::feature_count)
         .def("compute", &Backend::compute, py::arg("batch"), py::arg("control") = py::none())
+        .def("predict", &Backend::predict, py::arg("batch"), py::arg("control") = py::none())
         .def("metadata", &Backend::metadata)
         .def("close", &Backend::close, py::call_guard<py::gil_scoped_release>());
 
     module.def("create_backend", [](const std::string& name, const py::dict& options) {
         try {
             return std::make_shared<Backend>(name, options);
+        } catch (const CudaUnavailable& error) {
+            PyErr_SetString(PyExc_ImportError, error.what());
+            throw py::error_already_set();
+        } catch (const CudaOutOfMemory& error) {
+            PyErr_SetString(PyExc_MemoryError, error.what());
+            throw py::error_already_set();
+        }
+    });
+    module.def("create_predictor", [](const std::string& name, const py::dict& options) {
+        if (name != "NEP" && name != "DPA4C") {
+            throw std::invalid_argument("CUDA prediction supports NEP and DPA4C only");
+        }
+        py::dict predictor_options(options);
+        predictor_options["_prediction"] = true;
+        try {
+            return std::make_shared<Backend>(name, predictor_options);
         } catch (const CudaUnavailable& error) {
             PyErr_SetString(PyExc_ImportError, error.what());
             throw py::error_already_set();

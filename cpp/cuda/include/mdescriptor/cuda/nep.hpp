@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -24,6 +25,9 @@ public:
     DeviceNepModel(
         CudaExecutionContext& context,
         const mdescriptor::NepDescriptorParameters& parameters);
+    DeviceNepModel(
+        CudaExecutionContext& context,
+        const mdescriptor::NepPredictionParameters& parameters);
     DeviceNepModel(const DeviceNepModel&) = delete;
     DeviceNepModel& operator=(const DeviceNepModel&) = delete;
     ~DeviceNepModel() noexcept;
@@ -37,6 +41,16 @@ public:
     int dimension() const noexcept { return dimension_; }
     double radial_cutoff_max() const noexcept { return radial_cutoff_max_; }
     double angular_cutoff_max() const noexcept { return angular_cutoff_max_; }
+    int version() const noexcept { return version_; }
+    double neighbor_cutoff() const noexcept {
+        return std::max({radial_cutoff_max_, angular_cutoff_max_, zbl_outer_});
+    }
+    bool prediction_enabled() const noexcept { return hidden_neurons1_ > 0; }
+    int hidden_neurons1() const noexcept { return hidden_neurons1_; }
+    int hidden_neurons2() const noexcept { return hidden_neurons2_; }
+    bool zbl_enabled() const noexcept { return zbl_enabled_; }
+    double zbl_inner() const noexcept { return zbl_inner_; }
+    double zbl_outer() const noexcept { return zbl_outer_; }
     bool has_q_222() const noexcept { return has_q_222_; }
     bool has_q_1111() const noexcept { return has_q_1111_; }
     bool has_q_112() const noexcept { return has_q_112_; }
@@ -55,6 +69,7 @@ public:
     const float* radial_pair_coefficients() const noexcept;
     const float* angular_pair_coefficients() const noexcept;
     const float* scalers() const noexcept;
+    const double* ann_parameters() const noexcept;
 
 private:
     int num_types_ = 0;
@@ -64,8 +79,14 @@ private:
     int basis_size_angular_ = 0;
     int l_max_ = 0;
     int dimension_ = 0;
+    int version_ = 0;
     double radial_cutoff_max_ = 0.0;
     double angular_cutoff_max_ = 0.0;
+    int hidden_neurons1_ = 0;
+    int hidden_neurons2_ = 0;
+    bool zbl_enabled_ = false;
+    double zbl_inner_ = 0.0;
+    double zbl_outer_ = 0.0;
     bool has_q_222_ = false;
     bool has_q_1111_ = false;
     bool has_q_112_ = false;
@@ -80,6 +101,7 @@ private:
     std::unique_ptr<DeviceArray> radial_pair_coefficients_;
     std::unique_ptr<DeviceArray> angular_pair_coefficients_;
     std::unique_ptr<DeviceArray> scalers_;
+    std::unique_ptr<DeviceArray> ann_parameters_;
 };
 
 void compute_nep_into(
@@ -88,5 +110,15 @@ void compute_nep_into(
     const DeviceNeighborGraph& graph,
     const DeviceNepModel& model,
     double* output);
+
+void predict_nep_into(
+    CudaExecutionContext& context,
+    const DeviceBatch& batch,
+    const DeviceNeighborGraph& graph,
+    const DeviceNepModel& model,
+    const detail::StructureBatchView& original,
+    double* energy,
+    double* atom_energy,
+    double* forces);
 
 } // namespace mdescriptor::cuda

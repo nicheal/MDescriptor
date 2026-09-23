@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace mdescriptor {
@@ -50,6 +51,15 @@ struct Dpa4cOptions {
 
     std::vector<float> output_mean;
     std::vector<float> output_stddev;
+
+    // Optional energy fitting payload. Descriptor-only construction leaves
+    // these arrays empty; prediction requires a validated one-output MLP.
+    std::vector<int> fitting_neurons;
+    std::vector<float> fitting_weights;
+    std::vector<float> fitting_biases;
+    std::string fitting_activation = "silu";
+    std::vector<double> fitting_atom_bias;
+    std::vector<double> output_bias;
 };
 
 class Dpa4cCalculator : public detail::CalculatorBase {
@@ -65,6 +75,15 @@ public:
         const std::shared_ptr<ComputeControl>& control
     ) const;
 
+    void predict(
+        const StructureBatchView& batch,
+        const std::int32_t* type_indices,
+        double* energy,
+        double* atom_energy,
+        double* forces,
+        const std::shared_ptr<ComputeControl>& control
+    ) const;
+
 private:
     struct PairCoefficients {
         std::vector<float> scale;
@@ -75,6 +94,16 @@ private:
     // Fills lazily computed pair coefficients; the caller must hold
     // ``compute_mutex_`` (compute takes it like every other calculator).
     void fill_pair_cache(const std::vector<std::size_t>& pair_indices) const;
+
+    void compute_impl(
+        const StructureBatchView& batch,
+        const std::int32_t* type_indices,
+        double* output,
+        double* energy,
+        double* atom_energy,
+        double* forces,
+        const std::shared_ptr<ComputeControl>& control
+    ) const;
 
     Dpa4cOptions options_;
     std::int64_t feature_count_ = 0;

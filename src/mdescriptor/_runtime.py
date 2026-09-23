@@ -87,9 +87,7 @@ def _cuda_factory() -> Any:
 
     factory = getattr(module, "create_backend", None)
     if not callable(factory):
-        error = ImportError(
-            "the CUDA plugin does not expose create_backend(name, options)"
-        )
+        error = ImportError("the CUDA plugin does not expose create_backend(name, options)")
         raise error
     _CUDA_FACTORY = factory
     return factory
@@ -127,8 +125,38 @@ def create_cuda_backend(name: str, options: dict[str, Any]) -> Any:
         ) from exc
 
 
+def create_cuda_predictor(name: str, options: dict[str, Any]) -> Any:
+    """Create a prediction backend lazily with the descriptor CUDA error contract."""
+
+    from .core.errors import ModelLoadError, translate_backend_error
+
+    try:
+        _cuda_factory()
+        module = importlib.import_module("mdescriptor._cuda")
+        factory = module.create_predictor
+    except (ImportError, OSError, AttributeError) as exc:
+        raise translate_backend_error(
+            exc,
+            unavailable_message="CUDA backend is unavailable",
+            failure_message="CUDA predictor failed to initialize",
+        ) from exc
+    if options.get("model_data") is not None and _CUDA_MODEL_SNAPSHOT_ABI != 1:
+        raise ModelLoadError(
+            "CUDA plugin lacks immutable model snapshot support; rebuild MDescriptor"
+        )
+    try:
+        return factory(name, dict(options))
+    except Exception as exc:
+        raise translate_backend_error(
+            exc,
+            unavailable_message="CUDA backend is unavailable",
+            failure_message="CUDA predictor failed to initialize",
+        ) from exc
+
+
 __all__ = [
     "create_cuda_backend",
+    "create_cuda_predictor",
     "native_extension_available",
     "preload_native",
 ]
