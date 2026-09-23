@@ -85,7 +85,7 @@ if(NOT EXISTS "${SCIPY_OPENBLAS_LICENSE}")
 endif()
 
 if(MSVC AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.30)
-    set(OpenMP_RUNTIME_MSVC experimental)
+    set(OpenMP_RUNTIME_MSVC llvm)
 endif()
 find_package(OpenMP)
 
@@ -132,8 +132,8 @@ target_include_directories(
 target_link_libraries(_native PRIVATE "${SCIPY_OPENBLAS_LIBRARY}")
 if(OpenMP_CXX_FOUND)
     if(MSVC AND CMAKE_VERSION VERSION_LESS 3.30)
-        # /openmp:experimental subsumes /openmp and enables omp simd.
-        target_compile_options(_native PRIVATE /openmp:experimental)
+        # Older FindOpenMP versions cannot select the runtime through a variable.
+        target_compile_options(_native PRIVATE /openmp:llvm)
     else()
         target_link_libraries(_native PRIVATE OpenMP::OpenMP_CXX)
     endif()
