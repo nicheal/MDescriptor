@@ -1,8 +1,8 @@
-"""Compare prediction latency with the pinned NEPAdapters/DeepMD references.
+"""Compare prediction accuracy and latency with pinned NEPAdapters/DeepMD references.
 
 Run CPU and CUDA as separate processes so DeepMD chooses the requested device
-before importing Torch. This script is diagnostic: precision is enforced by
-the reference tests, while timing is reported rather than gated by hardware.
+before importing Torch. Timings are observations, and accuracy uses the tolerances
+from the corresponding external-reference checks.
 """
 
 from __future__ import annotations
@@ -11,22 +11,79 @@ import argparse
 import importlib.util
 import json
 import os
+import platform
 import sys
+from importlib.metadata import version as package_version
 from pathlib import Path
 from statistics import median
 from time import perf_counter
 from typing import Any
 
 
-def _median_seconds(call: Any, warmup: int, repeats: int) -> float:
+def _measure(call: Any, warmup: int, repeats: int) -> tuple[list[float], Any]:
     for _ in range(warmup):
         call()
     samples = []
+    result = None
     for _ in range(repeats):
         start = perf_counter()
-        call()
+        result = call()
         samples.append(perf_counter() - start)
-    return median(samples)
+    return samples, result
+
+
+def _prediction_arrays(result: Any) -> dict[str, np.ndarray]:
+    return {
+        "energy": np.asarray(result.energy),
+        "atom_energy": np.asarray(result.atom_energy),
+        "forces": np.asarray(result.forces),
+    }
+
+
+def _reference_arrays(model: str, result: Any) -> dict[str, np.ndarray]:
+    if model == "nep":
+        return {
+            "energy": np.asarray(result.energy),
+            "atom_energy": np.asarray(result.potential),
+            "forces": np.asarray(result.forces),
+        }
+    return {
+        "energy": np.asarray(result[0]).reshape(-1),
+        "atom_energy": np.asarray(result[3]).reshape(-1),
+        "forces": np.asarray(result[1]).reshape(-1, 3),
+    }
+
+
+def _accuracy(
+    actual: dict[str, np.ndarray],
+    expected: dict[str, np.ndarray],
+    tolerances: dict[str, tuple[float, float]],
+) -> dict[str, Any]:
+    fields = {}
+    for name, values in actual.items():
+        reference = expected[name]
+        if values.shape != reference.shape:
+            fields[name] = {
+                "shape": {"mdescriptor": list(values.shape), "reference": list(reference.shape)},
+                "pass": False,
+            }
+            continue
+        error = np.abs(values - reference)
+        nonzero = reference != 0
+        rtol, atol = tolerances[name]
+        fields[name] = {
+            "shape": list(values.shape),
+            "max_abs_error": float(error.max(initial=0.0)),
+            "max_rel_error_nonzero_reference": float(
+                (error[nonzero] / np.abs(reference[nonzero])).max(initial=0.0)
+            ),
+            "rmse": float(np.sqrt(np.mean(np.square(error)))),
+            "values": int(values.size),
+            "pass": bool(np.allclose(values, reference, rtol=rtol, atol=atol)),
+            "rtol": rtol,
+            "atol": atol,
+        }
+    return {"fields": fields, "pass": all(v["pass"] for v in fields.values())}
 
 
 def main() -> None:
@@ -37,6 +94,7 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=7)
+    parser.add_argument("--output", type=Path, help="write the full comparison JSON here")
     parser.add_argument(
         "--native-dir", type=Path, help="directory containing the built _native extension"
     )
@@ -54,9 +112,12 @@ def main() -> None:
     if args.plugin_dir is not None:
         os.environ["MDESCRIPTOR_CUDA_PLUGIN_DIR"] = str(args.plugin_dir.resolve())
 
-    if args.native_dir is not None:
-        import mdescriptor
+    global np
+    import numpy as np
 
+    import mdescriptor
+
+    if args.native_dir is not None:
         extensions = sorted(args.native_dir.resolve().glob("_native*.so"))
         if len(extensions) != 1:
             parser.error("--native-dir must contain exactly one _native extension")
@@ -71,8 +132,6 @@ def main() -> None:
         from mdescriptor._cuda_loader import load_cuda_plugin
 
         load_cuda_plugin(args.plugin_dir.resolve())
-
-    import numpy as np
 
     from mdescriptor import ExecutionOptions, StructureBatch
     from mdescriptor.models import DPA4C_MODEL, NEP_MODEL
@@ -97,6 +156,9 @@ def main() -> None:
             from ase.data import chemical_symbols
             from nep_adapters import NEPCalculator
 
+            reference_version = package_version("nep-adapters")
+            if reference_version != "1.0.2":
+                parser.error("NEP reference requires nep-adapters==1.0.2")
             reference = NEPCalculator(str(NEP_MODEL), backend=args.device)
             reference_types = np.asarray(
                 [reference.type_dict[chemical_symbols[int(number)]] for number in batch.numbers],
@@ -115,6 +177,9 @@ def main() -> None:
         else:
             from deepmd.infer import DeepPot
 
+            reference_version = package_version("deepmd-kit")
+            if reference_version != "3.2.0":
+                parser.error("DPA4C reference requires deepmd-kit==3.2.0")
             reference = DeepPot(str(DPA4C_MODEL), neighbor_graph_method="ase")
             type_map = {symbol: index for index, symbol in enumerate(reference.get_type_map())}
             atom_types = np.array([type_map[symbol] for symbol in ("O", "H", "H")], dtype=np.int32)
@@ -128,8 +193,8 @@ def main() -> None:
                 )
 
         try:
-            reference_seconds = _median_seconds(run_reference, args.warmup, args.repeats)
-            predicted_seconds = _median_seconds(
+            reference_samples, reference_result = _measure(run_reference, args.warmup, args.repeats)
+            predicted_samples, predicted_result = _measure(
                 lambda: predictor.predict(batch), args.warmup, args.repeats
             )
         finally:
@@ -138,20 +203,48 @@ def main() -> None:
                 close()
     finally:
         predictor.close()
-    print(
-        json.dumps(
-            {
-                "model": args.model,
-                "device": args.device,
-                "structures": args.structures,
-                "atoms": batch.atoms,
-                "threads": args.threads,
-                "reference_median_ms": round(reference_seconds * 1000, 3),
-                "mdescriptor_median_ms": round(predicted_seconds * 1000, 3),
-                "ratio_to_reference": round(predicted_seconds / reference_seconds, 3),
-            }
-        )
-    )
+    if args.model == "dpa4c":
+        field_tolerances = {
+            "energy": (2e-5, 1e-5),
+            "atom_energy": (2e-5, 1e-5),
+            "forces": (2e-4, 1e-4),
+        }
+    elif args.device == "cuda":
+        field_tolerances = {name: (1e-5, 1e-4) for name in ("energy", "atom_energy", "forces")}
+    else:
+        field_tolerances = {name: (1e-6, 1e-6) for name in ("energy", "atom_energy", "forces")}
+    actual = _prediction_arrays(predicted_result)
+    expected = _reference_arrays(args.model, reference_result)
+    accuracy = _accuracy(actual, expected, field_tolerances)
+    reference_median = median(reference_samples)
+    predicted_median = median(predicted_samples)
+    output = {
+        "model": args.model,
+        "device": args.device,
+        "structures": args.structures,
+        "atoms": batch.atoms,
+        "threads": args.threads,
+        "warmup": args.warmup,
+        "repeats": args.repeats,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "mdescriptor_version": mdescriptor.__version__,
+        "reference_version": reference_version,
+        "mdescriptor_raw_ms": [value * 1000 for value in predicted_samples],
+        "reference_raw_ms": [value * 1000 for value in reference_samples],
+        "mdescriptor_median_ms": predicted_median * 1000,
+        "reference_median_ms": reference_median * 1000,
+        "speedup_mdescriptor_vs_reference": reference_median / predicted_median,
+        "accuracy": accuracy,
+        "pass": accuracy["pass"],
+    }
+    serialized = json.dumps(output, indent=2, sort_keys=True)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(serialized + "\n", encoding="utf-8")
+    print(serialized)
+    if not output["pass"]:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,49 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GOLDEN_ROOT = ROOT / "tests" / "golden"
 
 
+def _accuracy(result: Any, manifest: dict[str, Any], arrays: Any) -> dict[str, Any]:
+    actual = np.asarray(result.values)
+    expected = np.asarray(arrays["values"])
+    tolerance = manifest["tolerance"]
+    if actual.shape != expected.shape:
+        return {
+            "shape": {"actual": list(actual.shape), "expected": list(expected.shape)},
+            "pass": False,
+        }
+    error = np.abs(actual - expected)
+    nonzero = expected != 0
+    expected_result = manifest["result"]
+    offsets = expected_result["row_offsets"]
+    contract = (
+        result.level.value == expected_result["level"]
+        and result.feature_count == expected_result["feature_count"]
+        and result.labels == tuple(expected_result["labels"])
+        and result.structure_ids == tuple(expected_result["structure_ids"])
+        and (
+            offsets is None
+            if result.row_offsets is None
+            else np.array_equal(result.row_offsets, offsets)
+        )
+        and np.array_equal(result.samples, arrays["samples"])
+    )
+    values_pass = bool(
+        np.allclose(actual, expected, rtol=tolerance["rtol"], atol=tolerance["atol"])
+    )
+    return {
+        "shape": list(actual.shape),
+        "values": int(actual.size),
+        "max_abs_error": float(error.max(initial=0.0)),
+        "max_rel_error_nonzero_reference": float(
+            (error[nonzero] / np.abs(expected[nonzero])).max(initial=0.0)
+        ),
+        "rmse": float(np.sqrt(np.mean(np.square(error)))),
+        "tolerance": tolerance,
+        "values_pass": values_pass,
+        "result_contract_pass": contract,
+        "pass": values_pass and contract,
+    }
+
+
 def _configuration(manifest: dict[str, Any]) -> DescriptorConfiguration:
     value = _restore_paths(manifest["configuration"])
     parameters = dict(value["parameters"])
@@ -70,9 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     for fixture_dir, manifest in _cases(args.golden_root):
         batch = _batch_from_npz(fixture_dir / manifest["input"], tuple(manifest["input_ids"]))
         compute_batch = (
-            _single_structure(batch, 0)
-            if manifest["nonperiodic"]["mode"] != "output"
-            else batch
+            _single_structure(batch, 0) if manifest["nonperiodic"]["mode"] != "output" else batch
         )
         descriptor = create_descriptor(_configuration(manifest))
         try:
@@ -83,6 +124,30 @@ def main(argv: list[str] | None = None) -> int:
                 started = time.perf_counter()
                 result = descriptor.compute(compute_batch)
                 elapsed.append(time.perf_counter() - started)
+            accuracy_manifest_path = fixture_dir / "external_manifest.json"
+            accuracy_manifest = (
+                json.loads(accuracy_manifest_path.read_text(encoding="utf-8"))
+                if accuracy_manifest_path.is_file()
+                else manifest
+            )
+            accuracy_result = result
+            if accuracy_manifest is not manifest:
+                accuracy_batch = _batch_from_npz(
+                    fixture_dir / accuracy_manifest["input"],
+                    tuple(accuracy_manifest["input_ids"]),
+                )
+                accuracy_batch = (
+                    _single_structure(accuracy_batch, 0)
+                    if accuracy_manifest["nonperiodic"]["mode"] != "output"
+                    else accuracy_batch
+                )
+                accuracy_descriptor = create_descriptor(_configuration(accuracy_manifest))
+                try:
+                    accuracy_result = accuracy_descriptor.compute(accuracy_batch)
+                finally:
+                    accuracy_descriptor.close()
+            with np.load(fixture_dir / accuracy_manifest["expected_output"]) as arrays:
+                accuracy = _accuracy(accuracy_result, accuracy_manifest, arrays)
             measurements.append(
                 {
                     "name": manifest["descriptor"],
@@ -93,6 +158,11 @@ def main(argv: list[str] | None = None) -> int:
                     "raw_seconds": elapsed,
                     "median_seconds": float(np.median(elapsed)),
                     "p95_seconds": float(np.percentile(elapsed, 95)),
+                    "accuracy_reference": accuracy_manifest.get(
+                        "numeric_baseline", accuracy_manifest.get("reference", {})
+                    ),
+                    "accuracy_dataset_sha256": accuracy_manifest.get("dataset", {}).get("sha256"),
+                    "accuracy": accuracy,
                 }
             )
         finally:
